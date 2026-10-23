@@ -187,7 +187,10 @@ Pour régénérer les icônes et les tuiles du Store à partir de `assets/logo.s
 La compilation Windows produit aussi `tourdetable-windows-x64.msix`, le paquet pour le
 Microsoft Store (manifeste : `packaging/windows/AppxManifest.xml`, identité du Partner Center).
 Il n'est pas signé : le Store le signe à la publication. Les textes de la fiche du Store sont dans
-`packaging/windows/fiche-store.md`, et la politique de confidentialité dans `CONFIDENTIALITE.md`.
+`packaging/windows/fiche-store.md`, et la politique de confidentialité dans `CONFIDENTIALITE.md`. Celle-ci est publiée à
+https://danlizhot.github.io/tour-de-table-confidentialite/ (dépôt public séparé). Après une
+modification, régénérez la page avec
+`python3 -I packaging/politique_html.py CONFIDENTIALITE.md <dépôt-public>/index.html`, puis poussez.
 
 ## Architecture
 
