@@ -44,7 +44,7 @@ Importez un enregistrement existant (Teams, Zoom, téléphone : MP4, M4A, MP3, W
 transcrire et en tirer le compte rendu.
 
 **Léger et rapide**
-Application native d'environ 20 Mo. Fonctionne avec 8 Go de mémoire ; 16 Go sont conseillés pour
+Application native d'environ 25 Mo. Fonctionne avec 8 Go de mémoire ; 16 Go sont conseillés pour
 la rédaction des comptes rendus.
 
 Rien d'autre à installer : au premier usage, Tour de table télécharge une seule fois son modèle de
