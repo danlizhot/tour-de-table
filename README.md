@@ -216,6 +216,10 @@ Une **table ronde** vue de haut, huit **participants** autour et, au centre, une
 la conversation qui fait le tour de la table. Le tout sur le **bleu du drapeau du Québec**.
 Source vectorielle : `assets/logo.svg`.
 
+## Nous joindre
+
+[tourdetable.app@outlook.com](mailto:tourdetable.app@outlook.com)
+
 ## Licence
 
 MIT. Inspiré de Meetily (MIT, Zackriya Solutions).

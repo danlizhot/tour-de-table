@@ -79,6 +79,7 @@ Première version de Tour de table.
 * **Catégorie** : Productivité
 * **Prix** : gratuit (ou selon votre choix)
 * **Politique de confidentialité** : adresse publique du fichier `CONFIDENTIALITE.md`
+* **Courriel de soutien** (Propriétés → Coordonnées) : tourdetable.app@outlook.com
 * **Classification par âge** : questionnaire IARC. L'application n'a ni contenu violent, ni
   achats, ni échanges entre utilisateurs, et ne partage pas la position.
 * **Captures d'écran** : au moins une, en 1366 × 768 ou plus grand (PNG)

@@ -66,4 +66,4 @@ Toute modification de cette politique sera publiée à cette adresse, avec sa da
 
 ## Nous joindre
 
-Pour toute question : [courriel de contact à préciser]
+Pour toute question : [tourdetable.app@outlook.com](mailto:tourdetable.app@outlook.com)
