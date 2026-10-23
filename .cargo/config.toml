@@ -1,0 +1,9 @@
+# Windows : bibliothèque d'exécution Visual C++ intégrée à l'exécutable (/MT).
+# Sans cela, TourDeTable.exe exige VCRUNTIME140_1.dll, absente d'un Windows neuf.
+# Le crate `cc` passe alors -MT à whisper.cpp ; la CI vérifie qu'aucune DLL du
+# runtime Visual C++ n'est importée.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -52,11 +52,32 @@ jobs:
           echo "GGML_FMA=ON" >> $GITHUB_ENV
           echo "GGML_F16C=ON" >> $GITHUB_ENV
 
+      # whisper.cpp déclare une vieille version minimale de CMake : on active la
+      # politique moderne pour que le choix du runtime statique (/MT) s'applique.
+      - name: Runtime Visual C++ statique (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "CMAKE_POLICY_DEFAULT_CMP0091=NEW" >> $GITHUB_ENV
+          echo "CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded" >> $GITHUB_ENV
+
       - name: Tests
         run: cargo test ${{ matrix.features }}
 
       - name: Compilation
         run: cargo build --release ${{ matrix.features }}
+
+      # Garde-fou : l'exécutable doit démarrer sur un Windows neuf, sans le
+      # « Redistribuable Visual C++ » (erreur VCRUNTIME140_1.dll introuvable).
+      - name: Vérification des DLL (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $objdump = Get-ChildItem "C:\Program Files\LLVM\bin\llvm-objdump.exe", "${env:ProgramFiles}\LLVM\bin\llvm-objdump.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $dlls = & $objdump.FullName -p target/release/tourdetable.exe | Select-String "DLL Name" | ForEach-Object { ($_ -split ":")[1].Trim() }
+          Write-Host "DLL importées :"; $dlls | ForEach-Object { Write-Host "  $_" }
+          $bad = $dlls | Where-Object { $_ -match '^(vcruntime|msvcp|concrt|api-ms-win-crt)' }
+          if ($bad) { Write-Error "Dépendance au runtime Visual C++ : $($bad -join ', ')"; exit 1 }
 
       - name: Emballage Windows
         if: runner.os == 'Windows'
