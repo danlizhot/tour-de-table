@@ -1,5 +1,5 @@
 //! Mode ligne de commande :
-//! * `tourdetable --transcrire enregistrement.wav [modele.bin]`
+//! * `tourdetable --transcrire enregistrement.(wav|mp3|m4a|mp4|flac|ogg) [modele.bin]`
 //! * `tourdetable --compte-rendu ordre-du-jour.docx (transcription.txt | enregistrement.wav)`
 //!
 //! Même chaîne que l'application, sans interface.
@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 
-use crate::audio::dsp::{Resampler, Segmenter};
+use crate::audio::dsp::Segmenter;
 use crate::audio::{SAMPLE_RATE, Source};
 use crate::config::Config;
 use crate::quebec::Glossary;
@@ -23,18 +23,7 @@ fn transcribe(wav: &str, model: Option<&str>) -> Result<Meeting> {
     let cfg = Config::load();
     let model_path = model.map(std::path::PathBuf::from).unwrap_or_else(|| cfg.model_path());
 
-    let mut reader = hound::WavReader::open(wav).with_context(|| format!("Lecture de {wav}"))?;
-    let spec = reader.spec();
-    let raw: Vec<f32> = match spec.sample_format {
-        hound::SampleFormat::Float => reader.samples::<f32>().collect::<Result<_, _>>()?,
-        hound::SampleFormat::Int => {
-            let max = (1i64 << (spec.bits_per_sample - 1)) as f32;
-            reader.samples::<i32>().map(|s| s.map(|v| v as f32 / max)).collect::<Result<_, _>>()?
-        }
-    };
-    let mono = crate::audio::dsp::downmix(&raw, spec.channels as usize);
-    let mut audio = Vec::with_capacity(mono.len() / 2);
-    Resampler::new(spec.sample_rate).process(&mono, &mut audio);
+    let audio = crate::audio::import::decode(std::path::Path::new(wav))?;
     let duration = audio.len() as f32 / SAMPLE_RATE as f32;
 
     let mut utterances = Vec::new();
@@ -96,7 +85,7 @@ pub fn compte_rendu(agenda_path: &str, source: &str) -> Result<()> {
     let agenda = crate::agenda::read(std::path::Path::new(agenda_path))?;
     eprintln!("Ordre du jour lu ({} caractères) :\n{agenda}\n", agenda.chars().count());
 
-    let (transcript, duration) = if source.to_lowercase().ends_with(".wav") {
+    let (transcript, duration) = if crate::audio::import::is_audio(std::path::Path::new(source)) {
         let m = transcribe(source, None)?;
         (m.plain_text(), crate::storage::clock(m.duration_s * 1000))
     } else {
@@ -113,9 +102,10 @@ pub fn compte_rendu(agenda_path: &str, source: &str) -> Result<()> {
             l.trim_end_matches(|c: char| c == '–' || c == '-' || c == ':' || c.is_whitespace()).to_string()
         })
         .unwrap_or_else(|| std::path::Path::new(source).file_stem().unwrap_or_default().to_string_lossy().into_owned());
+    let moteur = cfg.moteur();
     let req = crate::summary::Request {
-        base_url: &cfg.ollama_url,
-        model: &cfg.ollama_model,
+        moteur: &moteur,
+        progress: None,
         title: &title,
         date: &chrono::Local::now().format("%Y-%m-%d").to_string(),
         duration: &duration,
@@ -124,6 +114,6 @@ pub fn compte_rendu(agenda_path: &str, source: &str) -> Result<()> {
     };
     let cr = crate::summary::compte_rendu(&req)?;
     println!("{cr}");
-    eprintln!("Compte rendu rédigé en {:.0} s par {}", t.elapsed().as_secs_f32(), cfg.ollama_model);
+    eprintln!("Compte rendu rédigé en {:.0} s par {}", t.elapsed().as_secs_f32(), moteur.nom());
     Ok(())
 }

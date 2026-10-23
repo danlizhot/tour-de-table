@@ -2,7 +2,7 @@
 name = "tourdetable"
 description = "Transcription locale de rencontres en français québécois"
 license = "MIT"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 
 [dependencies]
@@ -26,12 +26,16 @@ ureq = { version = "3.5.0", features = ["json"] }
 whisper-rs = { version = "0.16.0", features = ["log_backend"] }
 zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }
 egui-wgpu = { version = "0.37", default-features = false }
+symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "aac", "alac", "isomp4", "flac", "ogg", "vorbis", "wav", "pcm", "adpcm"] }
 
 [dev-dependencies]
 resvg = "0.48.1"
 
 [target."cfg(windows)".build-dependencies]
 winresource = "0.1.34"
+
+[workspace]
+members = [".", "redaction"]
 
 [features]
 default = []

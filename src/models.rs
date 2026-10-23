@@ -50,8 +50,47 @@ pub const CATALOG: &[ModelInfo] = &[
     },
 ];
 
+/// Modèles de langue pour rédiger les comptes rendus (format GGUF, llama.cpp).
+/// Licence Apache 2.0 tous les deux : utilisables sans restriction par un organisme.
+pub const LLM_RECOMMENDED: &str = "Qwen3-4B-Instruct-2507-Q4_K_M.gguf";
+
+pub struct LlmInfo {
+    pub file: &'static str,
+    pub label: &'static str,
+    pub url: &'static str,
+    pub size_mb: u32,
+    pub ram_mb: u32,
+    pub note: &'static str,
+}
+
+pub const LLM_CATALOG: &[LlmInfo] = &[
+    LlmInfo {
+        file: LLM_RECOMMENDED,
+        label: "Qwen3 4B Instruct",
+        url: "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+        size_mb: 2500,
+        ram_mb: 3200,
+        note: "Recommandé avec 8 Go de mémoire",
+    },
+    LlmInfo {
+        file: "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+        label: "Qwen2.5 7B Instruct",
+        url: "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+        size_mb: 4700,
+        ram_mb: 5200,
+        note: "Meilleure rédaction ; 16 Go de mémoire conseillés",
+    },
+];
+
+pub fn llm_info(file: &str) -> Option<&'static LlmInfo> {
+    LLM_CATALOG.iter().find(|m| m.file == file)
+}
+
 fn url(file: &str) -> String {
-    format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{file}")
+    match llm_info(file) {
+        Some(info) => info.url.to_string(),
+        None => format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{file}"),
+    }
 }
 
 pub fn path(file: &str) -> PathBuf {

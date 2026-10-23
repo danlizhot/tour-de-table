@@ -89,20 +89,23 @@ saisir à la main.
 * **Longues rencontres** : au-delà d'environ 24 000 caractères (~45 min), la transcription est
   d'abord condensée par tranches, puis le compte rendu est rédigé à partir de ces notes. Les petits
   modèles locaux gardent ainsi le fil, et la mémoire reste maîtrisée.
-* Le contexte d'Ollama est dimensionné automatiquement (8 k à 16 k jetons). Par défaut, Ollama
-  tronquerait sans rien dire les longues transcriptions.
 * Exporté dans `compte-rendu.md`, et inclus dans `transcription.md`.
 
-**Modèle de langue conseillé** (Paramètres → Résumé), installé une fois avec `ollama pull` :
+**Modèle de langue intégré : rien à installer.** Le programme auxiliaire `tourdetable-redaction`,
+livré avec l'application, fait tourner llama.cpp sur l'ordinateur. Le modèle se télécharge une
+fois, d'un clic (bouton « Installer le modèle de rédaction », ou Paramètres) :
 
-| RAM | Modèle Ollama | Taille |
-|---|---|---|
-| 8 Go | `llama3.2:3b` | ~2 Go |
-| 16 Go | `qwen2.5:7b` ou `mistral` | ~4,5 Go, nettement meilleur en français |
+| RAM | Modèle (licence Apache 2.0) | Téléchargement | RAM pendant la rédaction |
+|---|---|---|---|
+| 8 Go | **Qwen3 4B Instruct** (défaut) | 2,5 Go | ~3,2 Go |
+| 16 Go | **Qwen2.5 7B Instruct** | 4,7 Go | ~5,2 Go (mesuré : 5,1 Go) |
 
-Mesuré avec `qwen2.5:7b` sur le portable de test, sans GPU : environ 3,5 minutes pour le compte
-rendu d'une rencontre courte, et 5,5 Go de RAM pour Ollama. La transcription doit être terminée
-avant : les deux modèles ne calculent jamais en même temps (Whisper reste chargé, environ 1,1 Go, mais au repos).
+Mesuré avec Qwen2.5 7B sur le portable de test, sans GPU : environ 4 minutes pour le compte rendu
+d'une rencontre courte. La transcription doit être terminée avant : les deux modèles ne calculent
+jamais en même temps (Whisper reste chargé, environ 1,1 Go, mais au repos).
+
+Ceux qui utilisent déjà [Ollama](https://ollama.com) peuvent le choisir dans les Paramètres
+(« Ollama, avancé ») ; son contexte est alors dimensionné automatiquement (8 k à 16 k jetons).
 
 ## Sources audio
 
@@ -128,14 +131,19 @@ source sur l'horloge pour garder des horodatages justes.
 2. Choisissez le micro et la sortie audio, puis cliquez sur **Démarrer**.
 3. La transcription s'affiche au fil de la rencontre et elle est sauvegardée après chaque phrase.
    Vous ne perdez donc rien en cas de panne.
-4. À l'arrêt : **Rédiger le compte rendu** avec [Ollama](https://ollama.com) en local,
-   **Exporter** (Markdown, texte, sous-titres SRT) ou **Copier**.
+4. À l'arrêt : **Rédiger le compte rendu** (modèle de langue local, installé d'un clic la
+   première fois), **Exporter** (Markdown, texte, sous-titres SRT) ou **Copier**.
+
+**Importer un enregistrement existant** : bouton « Importer un enregistrement… » ou glisser le
+fichier dans la fenêtre. Formats : MP4 (enregistrements Teams), M4A (Zoom, téléphones), MP3, WAV,
+FLAC, OGG. Le fichier devient une rencontre comme les autres : ordre du jour, transcription et
+compte rendu. Décodage entièrement intégré (Symphonia), sans logiciel à installer.
 
 Ligne de commande, pour transcrire un enregistrement existant :
 
 ```
-tourdetable --transcrire enregistrement.wav [modele.bin]
-tourdetable --compte-rendu ordre-du-jour.docx enregistrement.wav   # ou transcription.txt
+tourdetable --transcrire enregistrement.m4a [modele.bin]          # MP4, M4A, MP3, WAV, FLAC, OGG
+tourdetable --compte-rendu ordre-du-jour.docx enregistrement.mp4   # ou transcription.txt
 ```
 
 Emplacement des données (l'application s'appelait auparavant « Noter » : ses données sont
@@ -200,7 +208,9 @@ src/
   storage.rs     rencontres (JSON) et exports MD/TXT/SRT
   models.rs      catalogue et téléchargement des modèles
   agenda.rs      lecture de l'ordre du jour (Word, PDF, texte)
-  summary.rs     compte rendu local via Ollama (avec découpage des longues rencontres)
+  summary.rs     compte rendu : modèle intégré ou Ollama (découpage des longues rencontres)
+  audio/import.rs  import d'enregistrements (MP4, M4A, MP3, WAV, FLAC, OGG)
+redaction/       programme auxiliaire de rédaction (llama.cpp), séparé à cause de ggml
   cli.rs         commandes --transcrire et --compte-rendu
 ```
 

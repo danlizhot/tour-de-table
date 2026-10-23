@@ -36,15 +36,20 @@ Les chiffres qui n'apparaissent pas dans la transcription sont signalés pour v�
 
 **Privé par conception**
 Aucun compte, aucun abonnement, aucune donnée envoyée en ligne. La reconnaissance vocale tourne
-sur votre ordinateur, et les comptes rendus sont rédigés par un modèle de langue local (Ollama).
-Vos rencontres, même confidentielles, ne quittent jamais votre poste.
+sur votre ordinateur, et les comptes rendus sont rédigés par un modèle de langue intégré, lui aussi
+local. Vos rencontres, même confidentielles, ne quittent jamais votre poste.
+
+**Vos enregistrements aussi**
+Importez un enregistrement existant (Teams, Zoom, téléphone : MP4, M4A, MP3, WAV) pour le
+transcrire et en tirer le compte rendu.
 
 **Léger et rapide**
-Application native d'environ 13 Mo. Fonctionne avec 8 Go de mémoire ; 16 Go sont conseillés pour
+Application native d'environ 20 Mo. Fonctionne avec 8 Go de mémoire ; 16 Go sont conseillés pour
 la rédaction des comptes rendus.
 
-Au premier lancement, Tour de table télécharge une seule fois son modèle de reconnaissance vocale
-(574 Mo). La rédaction des comptes rendus nécessite le logiciel gratuit Ollama (ollama.com).
+Rien d'autre à installer : au premier usage, Tour de table télécharge une seule fois son modèle de
+reconnaissance vocale (574 Mo) et, si vous rédigez des comptes rendus, son modèle de rédaction
+(2,5 Go, ou 4,7 Go pour la version la plus précise).
 
 ## Fonctionnalités (jusqu'à 20, ≤ 200 caractères chacune)
 
@@ -58,6 +63,8 @@ Au premier lancement, Tour de table télécharge une seule fois son modèle de r
 8. Typographie de l'OQLF : 14 h 30, 2 500 $
 9. Exports Markdown, texte et sous-titres SRT
 10. 100 % local : aucun compte, aucune donnée envoyée en ligne
+11. Import d'enregistrements Teams, Zoom ou téléphone (MP4, M4A, MP3, WAV)
+12. Rédaction intégrée : aucun logiciel supplémentaire à installer
 
 ## Mots-clés (jusqu'à 7)
 
@@ -65,14 +72,18 @@ transcription · compte rendu · réunion · procès-verbal · québécois · or
 
 ## Notes de version
 
-Première version de Tour de table.
+Version 0.1.1
+* Rédaction des comptes rendus intégrée : plus besoin d'installer Ollama.
+* Import d'enregistrements existants : MP4 (Teams), M4A (Zoom, téléphones), MP3, WAV, FLAC, OGG.
+* Démarrage plus robuste (machines virtuelles, bureau à distance) et journal de diagnostic.
 
 ## Configuration requise
 
 * Windows 10 (version 1809) ou plus récent, 64 bits
 * Mémoire : 8 Go minimum, 16 Go conseillés
-* Espace disque : 1 Go pour le modèle de reconnaissance vocale
-* Micro ; Ollama (gratuit) pour les comptes rendus
+* Espace disque : 1 Go pour la reconnaissance vocale, 3 à 5 Go de plus pour la rédaction des
+  comptes rendus
+* Micro
 
 ## Autres renseignements demandés par le Partner Center
 

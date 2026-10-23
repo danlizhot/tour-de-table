@@ -1,13 +1,40 @@
-//! Compte rendu de rencontre par un modèle de langue local (Ollama).
-//! Rien ne quitte la machine : l'appel se fait sur `localhost` par défaut.
+//! Compte rendu de rencontre par un modèle de langue local.
+//!
+//! Par défaut, le modèle est intégré : le programme auxiliaire
+//! `tourdetable-redaction` (llama.cpp) le fait tourner sur l'ordinateur, sans
+//! rien à installer. Ollama reste possible en option avancée. Dans les deux
+//! cas, rien ne quitte la machine.
 //!
 //! Avec un ordre du jour, le compte rendu suit ses points dans l'ordre ;
 //! sans ordre du jour, on produit un résumé structuré.
 
+use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use serde_json::json;
+
+/// Qui rédige.
+#[derive(Clone, Debug)]
+pub enum Moteur {
+    Integre { modele: PathBuf, fils: usize },
+    Ollama { url: String, modele: String },
+}
+
+impl Moteur {
+    pub fn nom(&self) -> String {
+        match self {
+            Moteur::Integre { modele, .. } => crate::models::llm_info(
+                &modele.file_name().unwrap_or_default().to_string_lossy(),
+            )
+            .map_or_else(|| modele.display().to_string(), |m| m.label.to_string()),
+            Moteur::Ollama { modele, .. } => format!("Ollama · {modele}"),
+        }
+    }
+}
 
 const STYLE: &str = "Rédige en français québécois standard, selon l'orthographe, la terminologie \
 et la typographie de l'Office québécois de la langue française : « courriel », « rencontre », \
@@ -54,8 +81,9 @@ sinon, omets cette section. Omets « Sujets hors ordre du jour » si tout a ét�
 const CHUNK_CHARS: usize = 24_000;
 
 pub struct Request<'a> {
-    pub base_url: &'a str,
-    pub model: &'a str,
+    pub moteur: &'a Moteur,
+    /// Jetons rédigés jusqu'ici (affichage de l'avancement).
+    pub progress: Option<&'a AtomicUsize>,
     pub title: &'a str,
     pub date: &'a str,
     pub duration: &'a str,
@@ -84,7 +112,7 @@ pub fn compte_rendu(r: &Request) -> Result<String> {
     }
     prompt.push_str("\n\n=== TRANSCRIPTION ===\n");
     prompt.push_str(&transcript);
-    let mut doc = generate(r.base_url, r.model, &prompt)?;
+    let mut doc = generate(r, &prompt)?;
 
     // Garde-fou : un modèle local peut se tromper dans un calcul ou inventer un
     // chiffre. On signale tout nombre absent des sources.
@@ -184,14 +212,85 @@ fn condense(r: &Request) -> Result<String> {
         prompt.push_str("\n\n=== PASSAGE ===\n");
         prompt.push_str(&chunk);
         notes.push_str(&format!("\n--- Notes, partie {part} ---\n"));
-        notes.push_str(&generate(r.base_url, r.model, &prompt)?);
+        notes.push_str(&generate(r, &prompt)?);
         start = end;
         part += 1;
     }
     Ok(notes)
 }
 
-fn generate(base_url: &str, model: &str, prompt: &str) -> Result<String> {
+fn generate(r: &Request, prompt: &str) -> Result<String> {
+    let texte = match r.moteur {
+        Moteur::Integre { modele, fils } => generate_integre(modele, *fils, prompt, r.progress)?,
+        Moteur::Ollama { url, modele } => generate_ollama(url, modele, prompt)?,
+    };
+    Ok(tidy_answer(&crate::quebec::normalize_document(texte.trim())))
+}
+
+/// Emplacement du programme auxiliaire : à côté de l'exécutable principal.
+fn helper() -> Result<PathBuf> {
+    let exe = std::env::current_exe()?;
+    let path = exe
+        .with_file_name(format!("tourdetable-redaction{}", std::env::consts::EXE_SUFFIX));
+    if !path.exists() {
+        bail!("Programme de rédaction introuvable ({}) : réinstallez Tour de table", path.display());
+    }
+    Ok(path)
+}
+
+fn generate_integre(modele: &std::path::Path, fils: usize, prompt: &str, progress: Option<&AtomicUsize>) -> Result<String> {
+    if !modele.exists() {
+        bail!("Le modèle de rédaction n'est pas installé : téléchargez-le dans les Paramètres");
+    }
+    // Contexte de travail : invite (≈ 3 caractères par jeton en français) + réponse.
+    // Plafonné à 12 k jetons pour rester raisonnable sur un poste de 8 Go.
+    let contexte = (prompt.chars().count() / 3 + 3072).clamp(8192, 12288);
+    let mut cmd = Command::new(helper()?);
+    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        // Programme console : sans ce drapeau, une fenêtre noire apparaîtrait.
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let mut child = cmd.spawn().context("Lancement du programme de rédaction")?;
+    let requete = json!({
+        "modele": modele,
+        "invite": prompt,
+        "contexte": contexte,
+        "max_jetons": 3072,
+        "temperature": 0.2,
+        "fils": fils,
+    });
+    {
+        let mut stdin = child.stdin.take().expect("entrée redirigée");
+        stdin.write_all(requete.to_string().as_bytes())?;
+    } // fermer l'entrée signale la fin de la requête
+
+    let mut texte = None;
+    let mut erreur = None;
+    for line in BufReader::new(child.stdout.take().expect("sortie redirigée")).lines() {
+        let line = line?;
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+        if let (Some(n), Some(p)) = (v["progres"].as_u64(), progress) {
+            p.store(n as usize, Ordering::Relaxed);
+        }
+        if let Some(t) = v["texte"].as_str() {
+            texte = Some(t.to_string());
+        }
+        if let Some(e) = v["erreur"].as_str() {
+            erreur = Some(e.to_string());
+        }
+    }
+    let status = child.wait()?;
+    match (texte, erreur) {
+        (Some(t), _) => Ok(t),
+        (None, Some(e)) => bail!("Rédaction : {e}"),
+        (None, None) => bail!("Le programme de rédaction s'est arrêté ({status}) : mémoire insuffisante?"),
+    }
+}
+
+fn generate_ollama(base_url: &str, model: &str, prompt: &str) -> Result<String> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(1800)))
         .build()
@@ -216,10 +315,7 @@ fn generate(base_url: &str, model: &str, prompt: &str) -> Result<String> {
         other => other.with_context(|| format!("Ollama injoignable à {base_url} : est-il démarré?"))?,
     };
     let body: serde_json::Value = resp.body_mut().with_config().limit(32 << 20).read_json()?;
-    body["response"]
-        .as_str()
-        .map(|s| tidy_answer(&crate::quebec::normalize_document(s.trim())))
-        .context("Réponse Ollama inattendue")
+    body["response"].as_str().map(str::to_string).context("Réponse Ollama inattendue")
 }
 
 /// Les petits modèles ajoutent parfois « Aucun » après un contenu réel

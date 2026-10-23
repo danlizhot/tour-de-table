@@ -28,7 +28,7 @@ jobs:
             features: ""
           - os: macos-14
             artifact: tourdetable-macos-arm64
-            features: "--features metal"
+            features: "--features metal,tourdetable-redaction/metal"
           - os: ubuntu-24.04
             artifact: tourdetable-linux-x64
             features: ""
@@ -60,12 +60,14 @@ jobs:
         run: |
           echo "CMAKE_POLICY_DEFAULT_CMP0091=NEW" >> $GITHUB_ENV
           echo "CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded" >> $GITHUB_ENV
+          # llama.cpp (programme de rédaction) n'adopte /MT que sur demande explicite.
+          echo "LLAMA_STATIC_CRT=1" >> $GITHUB_ENV
 
       - name: Tests
-        run: cargo test ${{ matrix.features }}
+        run: cargo test --workspace ${{ matrix.features }}
 
       - name: Compilation
-        run: cargo build --release ${{ matrix.features }}
+        run: cargo build --release --workspace ${{ matrix.features }}
 
       # Garde-fou : l'exécutable doit démarrer sur un Windows neuf, sans le
       # « Redistribuable Visual C++ » (erreur VCRUNTIME140_1.dll introuvable).
@@ -74,10 +76,12 @@ jobs:
         shell: pwsh
         run: |
           $objdump = Get-ChildItem "C:\Program Files\LLVM\bin\llvm-objdump.exe", "${env:ProgramFiles}\LLVM\bin\llvm-objdump.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          $dlls = & $objdump.FullName -p target/release/tourdetable.exe | Select-String "DLL Name" | ForEach-Object { ($_ -split ":")[1].Trim() }
-          Write-Host "DLL importées :"; $dlls | ForEach-Object { Write-Host "  $_" }
-          $bad = $dlls | Where-Object { $_ -match '^(vcruntime|msvcp|concrt|api-ms-win-crt)' }
-          if ($bad) { Write-Error "Dépendance au runtime Visual C++ : $($bad -join ', ')"; exit 1 }
+          foreach ($exe in "tourdetable.exe", "tourdetable-redaction.exe") {
+            $dlls = & $objdump.FullName -p "target/release/$exe" | Select-String "DLL Name" | ForEach-Object { ($_ -split ":")[1].Trim() }
+            Write-Host "DLL importées par $exe :"; $dlls | ForEach-Object { Write-Host "  $_" }
+            $bad = $dlls | Where-Object { $_ -match '^(vcruntime|msvcp|concrt|vcomp|api-ms-win-crt)' }
+            if ($bad) { Write-Error "$exe dépend du runtime Visual C++ : $($bad -join ', ')"; exit 1 }
+          }
 
       - name: Emballage Windows
         if: runner.os == 'Windows'
@@ -85,6 +89,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/tourdetable.exe dist/TourDeTable.exe
+          Copy-Item target/release/tourdetable-redaction.exe dist/
           Copy-Item README.md dist/
           Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}.zip
 
@@ -97,6 +102,7 @@ jobs:
           $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value + ".0"
           New-Item -ItemType Directory -Force msix/Assets | Out-Null
           Copy-Item target/release/tourdetable.exe msix/TourDeTable.exe
+          Copy-Item target/release/tourdetable-redaction.exe msix/
           Copy-Item packaging/windows/Assets/* msix/Assets/
           (Get-Content packaging/windows/AppxManifest.xml -Raw) -replace 'Version="0\.0\.0\.0"', "Version=`"$version`"" |
             Set-Content msix/AppxManifest.xml -Encoding utf8
@@ -111,7 +117,7 @@ jobs:
         run: |
           APP="dist/Tour de table.app/Contents"
           mkdir -p "$APP/MacOS" "$APP/Resources"
-          cp target/release/tourdetable "$APP/MacOS/tourdetable"
+          cp target/release/tourdetable target/release/tourdetable-redaction "$APP/MacOS/"
           cp packaging/macos/Info.plist "$APP/"
           mkdir tourdetable.iconset
           for s in 16 32 128 256 512; do
@@ -126,7 +132,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist
-          cp target/release/tourdetable packaging/linux/tourdetable.desktop assets/icon-256.png README.md dist/
+          cp target/release/tourdetable target/release/tourdetable-redaction packaging/linux/tourdetable.desktop assets/icon-256.png README.md dist/
           tar -czf ${{ matrix.artifact }}.tar.gz -C dist .
 
       - uses: actions/upload-artifact@v7

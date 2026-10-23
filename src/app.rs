@@ -10,7 +10,7 @@ use eframe::egui::{
 };
 
 use crate::audio::{self, DeviceInfo, Source, dsp::Utterance};
-use crate::config::{CaptureMode, Config};
+use crate::config::{CaptureMode, Config, LlmBackend};
 use crate::models::{self, Progress};
 use crate::quebec::Glossary;
 use crate::recorder::{Options, Recorder};
@@ -69,10 +69,13 @@ pub struct TourDeTableApp {
     view: View,
     show_settings: bool,
     download: Option<Download>,
-    summary_job: Option<(String, Receiver<Result<String, String>>)>,
+    /// Rédaction en cours : (rencontre, résultat, jetons rédigés, début).
+    summary_job: Option<(String, Receiver<Result<String, String>>, Arc<std::sync::atomic::AtomicUsize>, std::time::Instant)>,
     notices: Vec<(String, bool)>,
     /// Ordre du jour déposé avant de démarrer : rattaché à la prochaine rencontre.
     draft_agenda: Option<Agenda>,
+    /// Fichier audio en cours de décodage (nom affiché, résultat : énoncés et durée).
+    import_job: Option<(String, Receiver<Result<(Vec<Utterance>, u64), String>>)>,
 }
 
 impl TourDeTableApp {
@@ -100,6 +103,7 @@ impl TourDeTableApp {
             summary_job: None,
             notices: Vec::new(),
             draft_agenda: None,
+            import_job: None,
             cfg,
         };
         app.push_settings();
@@ -203,8 +207,82 @@ impl TourDeTableApp {
         }
     }
 
+    /// Importe un enregistrement existant (Teams, Zoom, téléphone…) : il devient
+    /// une rencontre comme les autres, transcrite par la même chaîne.
+    fn import_audio(&mut self, path: &std::path::Path) {
+        if self.recorder.is_some() || self.finishing || self.import_job.is_some() {
+            self.notify("Attendez la fin de la transcription en cours avant d'importer un fichier.", true);
+            return;
+        }
+        if !matches!(self.model, ModelState::Ready(_)) {
+            self.notify("Installez ou chargez d'abord un modèle de reconnaissance (Paramètres).", true);
+            return;
+        }
+        let name = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let mut meeting = Meeting::new(&self.cfg.model);
+        meeting.title = name.clone();
+        // Date de l'enregistrement plutôt que celle de l'import, si connue.
+        if let Ok(modified) = path.metadata().and_then(|m| m.modified()) {
+            meeting.started_at = modified.into();
+        }
+        meeting.agenda = self.draft_agenda.take();
+        let _ = meeting.save();
+        self.live = Some(meeting);
+        self.view = View::Live;
+        self.push_settings();
+
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        let (path, sensitivity) = (path.to_path_buf(), self.cfg.vad_sensitivity);
+        std::thread::spawn(move || {
+            let result = audio::import::decode(&path).map(|samples| {
+                let duration = samples.len() as u64 / audio::SAMPLE_RATE as u64;
+                let mut utterances = Vec::new();
+                let mut seg = audio::dsp::Segmenter::new(Source::Mixte, sensitivity);
+                seg.push(&samples, &mut utterances);
+                seg.flush(&mut utterances);
+                (utterances, duration)
+            });
+            let _ = tx.send(result.map_err(|e| format!("{e:#}")));
+        });
+        self.import_job = Some((name, rx));
+    }
+
+    fn pick_audio(&mut self) {
+        let picked = rfd::FileDialog::new()
+            .set_title("Importer un enregistrement")
+            .add_filter("Enregistrement audio ou vidéo", audio::import::EXTENSIONS)
+            .pick_file();
+        if let Some(path) = picked {
+            self.import_audio(&path);
+        }
+    }
+
     /// Traitement hors affichage : canaux des fils audio, Whisper et tâches.
     fn pump(&mut self) {
+        if let Some((name, rx)) = &self.import_job {
+            if let Ok(result) = rx.try_recv() {
+                let name = name.clone();
+                self.import_job = None;
+                match result {
+                    Ok((utterances, duration)) => {
+                        log::info!("Import « {name} » : {duration} s, {} énoncés", utterances.len());
+                        if let Some(m) = self.live.as_mut() {
+                            m.duration_s = duration;
+                        }
+                        for u in utterances {
+                            let _ = self.utt_tx.send(u);
+                        }
+                        self.finishing = true;
+                    }
+                    Err(e) => {
+                        if let Some(m) = self.live.take() {
+                            let _ = std::fs::remove_dir_all(m.dir());
+                        }
+                        self.notify(format!("Import de « {name} » : {e}"), true);
+                    }
+                }
+            }
+        }
         while let Ok(u) = self.utt_rx.try_recv() {
             let context = self.live.as_ref().map(|m| m.recent_text()).unwrap_or_default();
             if matches!(self.model, ModelState::Ready(_)) {
@@ -256,7 +334,7 @@ impl TourDeTableApp {
             }
         }
 
-        if let Some((id, rx)) = &self.summary_job {
+        if let Some((id, rx, _, _)) = &self.summary_job {
             if let Ok(res) = rx.try_recv() {
                 let id = id.clone();
                 self.summary_job = None;
@@ -286,8 +364,9 @@ impl TourDeTableApp {
     fn summarize(&mut self, idx: usize) {
         let m = &self.meetings[idx];
         let (tx, rx) = crossbeam_channel::bounded(1);
-        let url = self.cfg.ollama_url.clone();
-        let model = self.cfg.ollama_model.clone();
+        let moteur = self.cfg.moteur();
+        let progress = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let progress_thread = progress.clone();
         let title = m.title.clone();
         let date = m.started_at.format("%Y-%m-%d à %H h %M").to_string();
         let duration = clock(m.duration_s * 1000);
@@ -295,8 +374,8 @@ impl TourDeTableApp {
         let transcript = m.plain_text();
         std::thread::spawn(move || {
             let req = crate::summary::Request {
-                base_url: &url,
-                model: &model,
+                moteur: &moteur,
+                progress: Some(&progress_thread),
                 title: &title,
                 date: &date,
                 duration: &duration,
@@ -305,7 +384,7 @@ impl TourDeTableApp {
             };
             let _ = tx.send(crate::summary::compte_rendu(&req).map_err(|e| format!("{e:#}")));
         });
-        self.summary_job = Some((m.id.clone(), rx));
+        self.summary_job = Some((m.id.clone(), rx, progress, std::time::Instant::now()));
     }
 
     /// Ordre du jour visé par un dépôt : la rencontre affichée, sinon la prochaine.
@@ -448,6 +527,14 @@ impl TourDeTableApp {
         {
             self.view = View::Live;
         }
+        let idle = self.recorder.is_none() && !self.finishing && self.import_job.is_none();
+        if ui
+            .add_enabled(idle, egui::Button::new("Importer un enregistrement…").min_size(Vec2::new(ui.available_width(), 28.0)))
+            .on_hover_text("MP3, M4A, MP4 (Teams), WAV, FLAC ou OGG. Vous pouvez aussi glisser le fichier dans la fenêtre.")
+            .clicked()
+        {
+            self.pick_audio();
+        }
         ui.add_space(8.0);
         ui.label(RichText::new("Historique").small().weak());
         egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
@@ -537,7 +624,13 @@ impl TourDeTableApp {
             (Some(m), _) => {
                 if m.segments.is_empty() {
                     ui.centered_and_justified(|ui| {
-                        ui.label(RichText::new("À l'écoute… la transcription apparaît au fil de la rencontre.").weak());
+                        let text = match &self.import_job {
+                            Some((name, _)) => format!("Lecture de « {name} »…"),
+                            None if self.finishing => "Transcription de l'enregistrement…".to_string(),
+                            None => "À l'écoute… la transcription apparaît au fil de la rencontre.".to_string(),
+                        };
+                        ui.spinner();
+                        ui.label(RichText::new(text).weak());
                     });
                 } else {
                     transcript(ui, m, true);
@@ -622,15 +715,42 @@ impl TourDeTableApp {
         self.agenda_card(ui);
         ui.add_space(6.0);
 
-        let busy = self.summary_job.as_ref().is_some_and(|(id, _)| *id == self.meetings[idx].id);
+        let busy = self
+            .summary_job
+            .as_ref()
+            .filter(|(id, ..)| *id == self.meetings[idx].id)
+            .map(|(_, _, p, t0)| (p.load(Ordering::Relaxed), t0.elapsed().as_secs()));
+        // Modèle de rédaction intégré pas encore téléchargé : on propose de l'installer.
+        let llm_missing = (self.cfg.llm_backend == LlmBackend::Integre && !models::installed(&self.cfg.llm_model))
+            .then(|| models::llm_info(&self.cfg.llm_model))
+            .flatten();
         let has_agenda = self.meetings[idx].agenda.is_some();
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 ui.label(RichText::new(if has_agenda { "Compte rendu" } else { "Résumé" }).strong());
-                if busy {
+                if let Some((jetons, secs)) = busy {
                     ui.spinner();
-                    ui.label(RichText::new("Rédaction par le modèle local… (quelques minutes)").weak());
+                    let etat = if jetons == 0 {
+                        format!("Lecture de la transcription par le modèle local… {}", clock(secs * 1000))
+                    } else {
+                        // ≈ 0,75 mot par jeton en français
+                        format!("Rédaction en cours : environ {} mots · {}", jetons * 3 / 4, clock(secs * 1000))
+                    };
+                    ui.label(RichText::new(etat).weak());
+                } else if let Some(info) = llm_missing {
+                    if let Some(dl) = self.download.as_ref().filter(|d| d.file == info.file) {
+                        download_bar(ui, dl);
+                    } else if ui
+                        .add_enabled(self.download.is_none(), egui::Button::new(format!(
+                            "Installer le modèle de rédaction ({:.1} Go, une seule fois)",
+                            info.size_mb as f32 / 1000.0
+                        )).small())
+                        .on_hover_text(format!("{} · {}", info.label, info.note))
+                        .clicked()
+                    {
+                        action = Some("install-llm");
+                    }
                 } else {
                     let label = match (self.meetings[idx].summary.is_some(), has_agenda) {
                         (true, _) => "Régénérer",
@@ -644,7 +764,7 @@ impl TourDeTableApp {
                     };
                     if ui
                         .small_button(label)
-                        .on_hover_text(format!("{hover}\nModèle local : {} ({})", self.cfg.ollama_model, self.cfg.ollama_url))
+                        .on_hover_text(format!("{hover}\nModèle local : {}", self.cfg.moteur().nom()))
                         .clicked()
                     {
                         action = Some("summary");
@@ -678,6 +798,10 @@ impl TourDeTableApp {
                 Err(e) => self.notify(format!("Export : {e:#}"), true),
             },
             Some("summary") => self.summarize(idx),
+            Some("install-llm") => {
+                let file = self.cfg.llm_model.clone();
+                self.start_download(&file);
+            }
             _ => {}
         }
     }
@@ -765,15 +889,49 @@ impl TourDeTableApp {
                         .changed();
 
                     ui.separator();
-                    ui.heading("Résumé (optionnel, Ollama local)");
-                    ui.horizontal(|ui| {
-                        ui.label("Adresse");
-                        ui.text_edit_singleline(&mut self.cfg.ollama_url);
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Modèle");
-                        ui.text_edit_singleline(&mut self.cfg.ollama_model);
-                    });
+                    ui.heading("Rédaction des comptes rendus");
+                    ui.radio_value(&mut self.cfg.llm_backend, LlmBackend::Integre, "Modèle intégré (recommandé : rien à installer)");
+                    ui.radio_value(&mut self.cfg.llm_backend, LlmBackend::Ollama, "Ollama (avancé, si vous l'utilisez déjà)");
+                    ui.add_space(4.0);
+                    if self.cfg.llm_backend == LlmBackend::Integre {
+                        for info in models::LLM_CATALOG {
+                            ui.horizontal(|ui| {
+                                let installed = models::installed(info.file);
+                                ui.radio_value(&mut self.cfg.llm_model, info.file.to_string(), info.label);
+                                ui.label(
+                                    RichText::new(format!("{} · {:.1} Go · ~{:.1} Go de RAM", info.note, info.size_mb as f32 / 1000.0, info.ram_mb as f32 / 1000.0))
+                                        .small()
+                                        .weak(),
+                                );
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    if installed {
+                                        ui.label(RichText::new("Installé").small().color(SALLE));
+                                    } else if self.download.as_ref().is_some_and(|d| d.file == info.file) {
+                                        if ui.small_button("Annuler").clicked() {
+                                            self.download.as_ref().unwrap().progress.cancel.store(true, Ordering::Relaxed);
+                                        }
+                                    } else if ui
+                                        .add_enabled(self.download.is_none(), egui::Button::new("Télécharger").small())
+                                        .clicked()
+                                    {
+                                        self.start_download(info.file);
+                                    }
+                                });
+                            });
+                        }
+                        if let Some(dl) = self.download.as_ref().filter(|d| models::llm_info(&d.file).is_some()) {
+                            download_bar(ui, dl);
+                        }
+                    } else {
+                        ui.horizontal(|ui| {
+                            ui.label("Adresse");
+                            ui.text_edit_singleline(&mut self.cfg.ollama_url);
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Modèle");
+                            ui.text_edit_singleline(&mut self.cfg.ollama_model);
+                        });
+                    }
                 });
             });
         if changed {
@@ -792,7 +950,7 @@ impl TourDeTableApp {
 impl eframe::App for TourDeTableApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.pump();
-        if self.recorder.is_some() || self.finishing || self.download.is_some() || self.summary_job.is_some() {
+        if self.recorder.is_some() || self.finishing || self.download.is_some() || self.summary_job.is_some() || self.import_job.is_some() {
             ctx.request_repaint_after(Duration::from_millis(80));
         }
     }
@@ -802,7 +960,12 @@ impl eframe::App for TourDeTableApp {
         let (hovering, dropped) = ctx.input(|i| (!i.raw.hovered_files.is_empty(), i.raw.dropped_files.clone()));
         for f in dropped {
             let path = f.path().to_path_buf();
-            if !path.as_os_str().is_empty() {
+            if path.as_os_str().is_empty() {
+                continue;
+            }
+            if audio::import::is_audio(&path) {
+                self.import_audio(&path);
+            } else {
                 self.attach_agenda(&path);
             }
         }
@@ -841,7 +1004,7 @@ impl eframe::App for TourDeTableApp {
             painter.text(
                 screen.center(),
                 egui::Align2::CENTER_CENTER,
-                "Déposez l'ordre du jour (Word, PDF, texte)",
+                "Déposez un ordre du jour ou un enregistrement",
                 egui::FontId::proportional(26.0),
                 Color32::WHITE,
             );

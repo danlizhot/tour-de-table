@@ -1,0 +1,16 @@
+[package]
+name = "tourdetable-redaction"
+description = "Rédaction locale des comptes rendus de Tour de table (llama.cpp)"
+license = "MIT"
+version = "0.1.1"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+# Sans OpenMP : sous Windows, il exigerait vcomp140.dll (runtime Visual C++).
+llama-cpp-2 = { version = "0.1.160", default-features = false }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+
+[features]
+metal = ["llama-cpp-2/metal"]

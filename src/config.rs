@@ -18,6 +18,15 @@ pub enum CaptureMode {
     Mixe,
 }
 
+/// Qui rédige les comptes rendus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LlmBackend {
+    /// Modèle de langue intégré (llama.cpp), téléchargé une fois : rien à installer.
+    Integre,
+    /// Serveur Ollama (option avancée, pour qui l'utilise déjà).
+    Ollama,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -40,6 +49,9 @@ pub struct Config {
     /// une correction `mauvais => bon`.
     pub glossary: String,
     pub save_audio: bool,
+    pub llm_backend: LlmBackend,
+    /// Fichier GGUF du modèle de rédaction intégré, dans le dossier des modèles.
+    pub llm_model: String,
     pub ollama_url: String,
     pub ollama_model: String,
 }
@@ -61,6 +73,8 @@ impl Default for Config {
             vad_sensitivity: 0.5,
             glossary: String::new(),
             save_audio: true,
+            llm_backend: LlmBackend::Integre,
+            llm_model: crate::models::LLM_RECOMMENDED.to_string(),
             ollama_url: "http://localhost:11434".into(),
             ollama_model: "llama3.2".into(),
         }
@@ -145,5 +159,19 @@ impl Config {
 
     pub fn model_path(&self) -> PathBuf {
         models_dir().join(&self.model)
+    }
+
+    /// Moteur de rédaction des comptes rendus selon les paramètres.
+    pub fn moteur(&self) -> crate::summary::Moteur {
+        match self.llm_backend {
+            LlmBackend::Integre => crate::summary::Moteur::Integre {
+                modele: models_dir().join(&self.llm_model),
+                fils: self.threads,
+            },
+            LlmBackend::Ollama => crate::summary::Moteur::Ollama {
+                url: self.ollama_url.clone(),
+                modele: self.ollama_model.clone(),
+            },
+        }
     }
 }

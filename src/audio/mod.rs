@@ -6,6 +6,7 @@
 //!   de PulseAudio/PipeWire (`parec`).
 
 pub mod dsp;
+pub mod import;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
