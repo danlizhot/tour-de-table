@@ -16,8 +16,7 @@ de votre ordre du jour. Tout reste sur votre ordinateur.
 ## Description (≤ 10 000 caractères)
 
 Tour de table écoute vos rencontres de travail et en produit la transcription, puis le compte
-rendu, en français québécois. Il a été conçu au Témiscamingue pour les rencontres entre
-organismes et partenaires.
+rendu, en français québécois. Il est pensé pour les rencontres entre organismes et partenaires.
 
 **Toute la rencontre, d'un seul coup**
 Tour de table capte en même temps le micro de la salle et le son des participants à distance
