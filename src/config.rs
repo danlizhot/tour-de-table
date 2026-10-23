@@ -50,6 +50,9 @@ pub struct Config {
     pub glossary: String,
     pub save_audio: bool,
     pub llm_backend: LlmBackend,
+    /// Rédiger le compte rendu dès la fin de la transcription quand un ordre du
+    /// jour est joint (rencontre en direct ou enregistrement importé).
+    pub auto_compte_rendu: bool,
     /// Fichier GGUF du modèle de rédaction intégré, dans le dossier des modèles.
     pub llm_model: String,
     pub ollama_url: String,
@@ -74,6 +77,7 @@ impl Default for Config {
             glossary: String::new(),
             save_audio: true,
             llm_backend: LlmBackend::Integre,
+            auto_compte_rendu: true,
             llm_model: crate::models::LLM_RECOMMENDED.to_string(),
             ollama_url: "http://localhost:11434".into(),
             ollama_model: "llama3.2".into(),

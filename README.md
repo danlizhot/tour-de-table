@@ -139,6 +139,11 @@ fichier dans la fenêtre. Formats : MP4 (enregistrements Teams), M4A (Zoom, tél
 FLAC, OGG. Le fichier devient une rencontre comme les autres : ordre du jour, transcription et
 compte rendu. Décodage entièrement intégré (Symphonia), sans logiciel à installer.
 
+**Compte rendu automatique** : si un ordre du jour est joint (déposé avant l'import ou avant de
+démarrer la rencontre), le compte rendu est rédigé dès la fin de la transcription. On peut donc
+déposer l'ordre du jour, importer l'enregistrement et revenir plus tard : tout est prêt. L'option
+se désactive dans Paramètres → Rédaction des comptes rendus.
+
 Ligne de commande, pour transcrire un enregistrement existant :
 
 ```

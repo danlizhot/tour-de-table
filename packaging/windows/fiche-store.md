@@ -75,6 +75,7 @@ transcription · compte rendu · réunion · procès-verbal · québécois · or
 Version 0.1.1
 * Rédaction des comptes rendus intégrée : plus besoin d'installer Ollama.
 * Import d'enregistrements existants : MP4 (Teams), M4A (Zoom, téléphones), MP3, WAV, FLAC, OGG.
+* Compte rendu rédigé automatiquement à la fin de la transcription quand un ordre du jour est joint.
 * Démarrage plus robuste (machines virtuelles, bureau à distance) et journal de diagnostic.
 
 ## Configuration requise

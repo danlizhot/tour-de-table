@@ -202,9 +202,29 @@ impl TourDeTableApp {
             if let Err(e) = m.save().and_then(|_| m.export_all().map(|_| ())) {
                 self.notify(format!("Sauvegarde : {e:#}"), true);
             }
+            let with_agenda = m.agenda.is_some();
             self.meetings.insert(0, m);
             self.view = View::Past(0);
+            if with_agenda && self.cfg.auto_compte_rendu {
+                self.auto_compte_rendu(0);
+            }
         }
+    }
+
+    /// Lance la rédaction automatique, si le modèle est prêt et que rien d'autre ne rédige.
+    fn auto_compte_rendu(&mut self, idx: usize) {
+        if self.summary_job.is_some() {
+            return;
+        }
+        if self.cfg.llm_backend == LlmBackend::Integre && !models::installed(&self.cfg.llm_model) {
+            self.notify(
+                "Transcription terminée. Pour la rédaction automatique du compte rendu, installez d'abord le modèle de rédaction (bouton ci-dessous).",
+                false,
+            );
+            return;
+        }
+        self.notify("Transcription terminée : rédaction du compte rendu à partir de l'ordre du jour…", false);
+        self.summarize(idx);
     }
 
     /// Importe un enregistrement existant (Teams, Zoom, téléphone…) : il devient
@@ -892,6 +912,10 @@ impl TourDeTableApp {
                     ui.heading("Rédaction des comptes rendus");
                     ui.radio_value(&mut self.cfg.llm_backend, LlmBackend::Integre, "Modèle intégré (recommandé : rien à installer)");
                     ui.radio_value(&mut self.cfg.llm_backend, LlmBackend::Ollama, "Ollama (avancé, si vous l'utilisez déjà)");
+                    ui.checkbox(
+                        &mut self.cfg.auto_compte_rendu,
+                        "Rédiger le compte rendu automatiquement à la fin de la transcription (si un ordre du jour est joint)",
+                    );
                     ui.add_space(4.0);
                     if self.cfg.llm_backend == LlmBackend::Integre {
                         for info in models::LLM_CATALOG {

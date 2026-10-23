@@ -3980,7 +3980,7 @@ checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
 
 [[package]]
 name = "tourdetable"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4007,7 +4007,7 @@ dependencies = [
 
 [[package]]
 name = "tourdetable-redaction"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "llama-cpp-2",
