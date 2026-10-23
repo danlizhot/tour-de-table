@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Paquet MSIX pour le Microsoft Store. L'identité vient du Partner Center
+     (Gestion du produit → Identité du produit). La version est remplacée par
+     celle de Cargo.toml au moment de la compilation (x.y.z.0 : le Store exige 0
+     comme dernier chiffre). -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <Identity
+    Name="DanielLizotte.Tourdetable"
+    Publisher="CN=EDE12BA8-4C62-4B6C-BCA0-C4A53527144E"
+    Version="0.0.0.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Tour de table</DisplayName>
+    <PublisherDisplayName>Daniel Lizotte</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Tout le monde parle, rien ne se perd. Transcription locale de rencontres en français québécois.</Description>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="fr-CA" />
+  </Resources>
+
+  <Applications>
+    <Application Id="TourDeTable" Executable="TourDeTable.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Tour de table"
+        Description="Tout le monde parle, rien ne se perd."
+        BackgroundColor="#003DA5"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" ShortName="Tour de table">
+          <uap:ShowNameOnTiles>
+            <uap:ShowOn Tile="square150x150Logo" />
+            <uap:ShowOn Tile="wide310x150Logo" />
+          </uap:ShowNameOnTiles>
+        </uap:DefaultTile>
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#003DA5" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- Application de bureau complète : nécessaire pour la capture « loopback »
+         WASAPI du son de Teams, Zoom, etc. -->
+    <rescap:Capability Name="runFullTrust" />
+    <!-- Fait apparaître Tour de table dans Paramètres → Confidentialité → Microphone. -->
+    <DeviceCapability Name="microphone" />
+  </Capabilities>
+</Package>

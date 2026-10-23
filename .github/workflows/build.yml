@@ -11,6 +11,12 @@ env:
   # Binaire portable : pas d'optimisation « -march=native » de la machine de CI.
   GGML_NATIVE: "OFF"
 
+# Une nouvelle poussée annule la compilation précédente de la même branche
+# (les minutes macOS comptent 10× sur un dépôt privé).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     strategy:
@@ -60,6 +66,24 @@ jobs:
           Copy-Item target/release/tourdetable.exe dist/TourDeTable.exe
           Copy-Item README.md dist/
           Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}.zip
+
+      # Paquet pour le Microsoft Store. Il n'est pas signé : le Store le signe à la
+      # publication. (Pour l'installer à la main, il faudrait le signer soi-même.)
+      - name: Paquet MSIX (Microsoft Store)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value + ".0"
+          New-Item -ItemType Directory -Force msix/Assets | Out-Null
+          Copy-Item target/release/tourdetable.exe msix/TourDeTable.exe
+          Copy-Item packaging/windows/Assets/* msix/Assets/
+          (Get-Content packaging/windows/AppxManifest.xml -Raw) -replace 'Version="0\.0\.0\.0"', "Version=`"$version`"" |
+            Set-Content msix/AppxManifest.xml -Encoding utf8
+          $makeappx = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makeappx.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          Write-Host "makeappx : $($makeappx.FullName) · version $version"
+          & $makeappx.FullName pack /d msix /p ${{ matrix.artifact }}.msix /o
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Emballage macOS
         if: runner.os == 'macOS'

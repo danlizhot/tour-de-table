@@ -180,7 +180,14 @@ Pour un exécutable à distribuer, ajoutez `GGML_NATIVE=OFF` (sinon il est optim
 processeur de la machine qui compile). Le flux GitHub Actions `.github/workflows/build.yml`
 produit Windows (`.zip`), macOS (`.app`) et Linux (`.tar.gz`) à chaque étiquette `v*`.
 
-Pour régénérer les icônes à partir de `assets/logo.svg` : `cargo run --example gen_icons`.
+Pour régénérer les icônes et les tuiles du Store à partir de `assets/logo.svg` : `cargo run --example gen_icons`.
+
+### Microsoft Store
+
+La compilation Windows produit aussi `tourdetable-windows-x64.msix`, le paquet pour le
+Microsoft Store (manifeste : `packaging/windows/AppxManifest.xml`, identité du Partner Center).
+Il n'est pas signé : le Store le signe à la publication. Les textes de la fiche du Store sont dans
+`packaging/windows/fiche-store.md`, et la politique de confidentialité dans `CONFIDENTIALITE.md`.
 
 ## Architecture
 
