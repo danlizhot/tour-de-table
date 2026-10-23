@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512">
-  <title>Noter</title>
+  <title>Tour de table</title>
   <defs>
     <linearGradient id="fond" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#1A5BD6"/>
@@ -8,18 +8,25 @@
   </defs>
   <!-- Fond bleu Québec -->
   <rect width="100" height="100" rx="22" fill="url(#fond)"/>
-  <!-- Bulle de parole dont la pointe est une plume -->
-  <rect x="18" y="20" width="64" height="46" rx="16" fill="#fff"/>
-  <path d="M30 62 H46 L26 84 Z" fill="#fff"/>
-  <path d="M36 66 L29 77" stroke="#003DA5" stroke-width="2" stroke-linecap="round"/>
-  <circle cx="36.3" cy="65.6" r="1.6" fill="#003DA5"/>
-  <!-- Onde sonore -->
+  <!-- Les participants, tout autour -->
+  <g fill="#fff">
+    <circle cx="63.39" cy="17.66" r="6.2"/>
+    <circle cx="82.34" cy="36.61" r="6.2"/>
+    <circle cx="82.34" cy="63.39" r="6.2"/>
+    <circle cx="63.39" cy="82.34" r="6.2"/>
+    <circle cx="36.61" cy="82.34" r="6.2"/>
+    <circle cx="17.66" cy="63.39" r="6.2"/>
+    <circle cx="17.66" cy="36.61" r="6.2"/>
+    <circle cx="36.61" cy="17.66" r="6.2"/>
+  </g>
+  <!-- La table ronde -->
+  <circle cx="50" cy="50" r="23" fill="#fff"/>
+  <!-- La conversation : une onde sonore au milieu de la table -->
   <g fill="#003DA5">
-    <rect x="28.9" y="38" width="4.2" height="10" rx="2.1"/>
-    <rect x="36.5" y="32" width="4.2" height="22" rx="2.1"/>
-    <rect x="44.1" y="28" width="4.2" height="30" rx="2.1"/>
-    <rect x="51.7" y="34" width="4.2" height="18" rx="2.1"/>
-    <rect x="59.3" y="30" width="4.2" height="26" rx="2.1"/>
-    <rect x="66.9" y="37" width="4.2" height="12" rx="2.1"/>
+    <rect x="35.10" y="45.0" width="4.2" height="10" rx="2.1"/>
+    <rect x="41.50" y="41.0" width="4.2" height="18" rx="2.1"/>
+    <rect x="47.90" y="37.0" width="4.2" height="26" rx="2.1"/>
+    <rect x="54.30" y="41.0" width="4.2" height="18" rx="2.1"/>
+    <rect x="60.70" y="45.0" width="4.2" height="10" rx="2.1"/>
   </g>
 </svg>

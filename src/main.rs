@@ -1,4 +1,5 @@
-//! Noter — transcription locale de rencontres en français québécois.
+//! Tour de table — transcription locale de rencontres en français québécois.
+//! « Tout le monde parle, rien ne se perd. »
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod agenda;
@@ -16,11 +17,12 @@ mod summary;
 fn main() -> eframe::Result {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,whisper_rs=warn")).init();
     whisper_rs::install_logging_hooks();
+    config::migrate_from_noter();
 
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).is_some_and(|a| a == "--transcrire") {
         let Some(wav) = args.get(2) else {
-            eprintln!("Usage : noter --transcrire enregistrement.wav [modele.bin]");
+            eprintln!("Usage : tourdetable --transcrire enregistrement.wav [modele.bin]");
             std::process::exit(2);
         };
         if let Err(e) = cli::transcribe_file(wav, args.get(3).map(String::as_str)) {
@@ -31,7 +33,7 @@ fn main() -> eframe::Result {
     }
     if args.get(1).is_some_and(|a| a == "--compte-rendu") {
         let (Some(agenda), Some(source)) = (args.get(2), args.get(3)) else {
-            eprintln!("Usage : noter --compte-rendu ordre-du-jour.docx (transcription.txt | enregistrement.wav)");
+            eprintln!("Usage : tourdetable --compte-rendu ordre-du-jour.docx (transcription.txt | enregistrement.wav)");
             std::process::exit(2);
         };
         if let Err(e) = cli::compte_rendu(agenda, source) {
@@ -43,16 +45,16 @@ fn main() -> eframe::Result {
 
     let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon-256.png")).ok();
     let mut viewport = eframe::egui::ViewportBuilder::default()
-        .with_title("Noter")
-        .with_app_id("ca.noter.Noter")
+        .with_title("Tour de table")
+        .with_app_id("ca.tourdetable.TourDeTable")
         .with_inner_size([1100.0, 720.0])
         .with_min_inner_size([760.0, 480.0]);
     if let Some(icon) = icon {
         viewport = viewport.with_icon(icon);
     }
     eframe::run_native(
-        "Noter",
+        "Tour de table",
         eframe::NativeOptions { viewport, ..Default::default() },
-        Box::new(|cc| Ok(Box::new(app::NoterApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(app::TourDeTableApp::new(cc)))),
     )
 }

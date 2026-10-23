@@ -1,9 +1,0 @@
-#!/usr/bin/env xdg-open
-[Desktop Entry]
-Type=Application
-Name=Noter
-Comment=Transcription de rencontres en français québécois
-Exec=noter
-Icon=noter
-Categories=Office;AudioVideo;
-StartupWMClass=ca.noter.Noter

@@ -1,5 +1,5 @@
 [package]
-name = "noter"
+name = "tourdetable"
 description = "Transcription locale de rencontres en français québécois"
 license = "MIT"
 version = "0.1.0"
@@ -44,6 +44,6 @@ panic = "abort"
 strip = true
 
 [package.metadata.winresource]
-ProductName = "Noter"
-FileDescription = "Noter — transcription de rencontres en français québécois"
+ProductName = "Tour de table"
+FileDescription = "Tour de table — transcription de rencontres en français québécois"
 LegalCopyright = "MIT"

@@ -1,0 +1,9 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Type=Application
+Name=Tour de table
+Comment=Tout le monde parle, rien ne se perd. Transcription de rencontres en français québécois
+Exec=tourdetable
+Icon=tourdetable
+Categories=Office;AudioVideo;
+StartupWMClass=ca.tourdetable.TourDeTable

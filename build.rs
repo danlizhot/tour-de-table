@@ -3,7 +3,7 @@ fn main() {
     #[cfg(windows)]
     {
         let mut res = winresource::WindowsResource::new();
-        res.set_icon("assets/noter.ico");
+        res.set_icon("assets/tourdetable.ico");
         res.compile().expect("ressources Windows");
     }
 }

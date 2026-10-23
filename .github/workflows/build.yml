@@ -18,13 +18,13 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            artifact: noter-windows-x64
+            artifact: tourdetable-windows-x64
             features: ""
           - os: macos-14
-            artifact: noter-macos-arm64
+            artifact: tourdetable-macos-arm64
             features: "--features metal"
           - os: ubuntu-24.04
-            artifact: noter-linux-x64
+            artifact: tourdetable-linux-x64
             features: ""
     runs-on: ${{ matrix.os }}
     steps:
@@ -57,31 +57,31 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item target/release/noter.exe dist/Noter.exe
+          Copy-Item target/release/tourdetable.exe dist/TourDeTable.exe
           Copy-Item README.md dist/
           Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}.zip
 
       - name: Emballage macOS
         if: runner.os == 'macOS'
         run: |
-          APP=dist/Noter.app/Contents
-          mkdir -p $APP/MacOS $APP/Resources
-          cp target/release/noter $APP/MacOS/noter
-          cp packaging/macos/Info.plist $APP/
-          mkdir noter.iconset
+          APP="dist/Tour de table.app/Contents"
+          mkdir -p "$APP/MacOS" "$APP/Resources"
+          cp target/release/tourdetable "$APP/MacOS/tourdetable"
+          cp packaging/macos/Info.plist "$APP/"
+          mkdir tourdetable.iconset
           for s in 16 32 128 256 512; do
-            sips -z $s $s assets/icon-1024.png --out noter.iconset/icon_${s}x${s}.png
-            sips -z $((s*2)) $((s*2)) assets/icon-1024.png --out noter.iconset/icon_${s}x${s}@2x.png
+            sips -z $s $s assets/icon-1024.png --out tourdetable.iconset/icon_${s}x${s}.png
+            sips -z $((s*2)) $((s*2)) assets/icon-1024.png --out tourdetable.iconset/icon_${s}x${s}@2x.png
           done
-          iconutil -c icns noter.iconset -o $APP/Resources/noter.icns
-          codesign --force --deep --sign - dist/Noter.app
-          (cd dist && zip -qry ../${{ matrix.artifact }}.zip Noter.app)
+          iconutil -c icns tourdetable.iconset -o "$APP/Resources/tourdetable.icns"
+          codesign --force --deep --sign - "dist/Tour de table.app"
+          (cd dist && zip -qry ../${{ matrix.artifact }}.zip "Tour de table.app")
 
       - name: Emballage Linux
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist
-          cp target/release/noter packaging/linux/noter.desktop assets/icon-256.png README.md dist/
+          cp target/release/tourdetable packaging/linux/tourdetable.desktop assets/icon-256.png README.md dist/
           tar -czf ${{ matrix.artifact }}.tar.gz -C dist .
 
       - uses: actions/upload-artifact@v4
@@ -101,4 +101,4 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          files: noter-*
+          files: tourdetable-*

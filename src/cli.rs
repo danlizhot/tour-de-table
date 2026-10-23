@@ -1,6 +1,6 @@
 //! Mode ligne de commande :
-//! * `noter --transcrire enregistrement.wav [modele.bin]`
-//! * `noter --compte-rendu ordre-du-jour.docx (transcription.txt | enregistrement.wav)`
+//! * `tourdetable --transcrire enregistrement.wav [modele.bin]`
+//! * `tourdetable --compte-rendu ordre-du-jour.docx (transcription.txt | enregistrement.wav)`
 //!
 //! Même chaîne que l'application, sans interface.
 

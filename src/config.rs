@@ -1,4 +1,4 @@
-//! Paramètres persistants de Noter (fichier JSON dans le dossier de config de l'OS).
+//! Paramètres persistants de Tour de table (fichier JSON dans le dossier de config de l'OS).
 
 use std::path::PathBuf;
 
@@ -68,7 +68,7 @@ impl Default for Config {
 }
 
 fn dirs() -> ProjectDirs {
-    ProjectDirs::from("ca", "Noter", "Noter").expect("dossier personnel introuvable")
+    ProjectDirs::from("ca", "TourDeTable", "TourDeTable").expect("dossier personnel introuvable")
 }
 
 pub fn data_dir() -> PathBuf {
@@ -84,7 +84,40 @@ pub fn meetings_dir() -> PathBuf {
 }
 
 fn config_path() -> PathBuf {
-    dirs().config_dir().join("noter.json")
+    dirs().config_dir().join("tourdetable.json")
+}
+
+/// L'application s'appelait « Noter » : au premier lancement sous le nouveau
+/// nom, on déplace ses données (modèles, rencontres) et sa configuration
+/// plutôt que de tout retélécharger.
+pub fn migrate_from_noter() {
+    let Some(old) = ProjectDirs::from("ca", "Noter", "Noter") else { return };
+    let new = dirs();
+    let moves = [
+        (old.data_dir().to_path_buf(), new.data_dir().to_path_buf()),
+        (old.config_dir().join("noter.json"), config_path()),
+        // macOS : données et configuration partagent un dossier, l'ancien
+        // fichier a donc suivi les données au déplacement précédent.
+        (new.data_dir().join("noter.json"), config_path()),
+    ];
+    for (from, to) in moves {
+        if !from.exists() || to.exists() {
+            continue;
+        }
+        if let Some(parent) = to.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        match std::fs::rename(&from, &to) {
+            Ok(()) => log::info!("Données de Noter déplacées : {} → {}", from.display(), to.display()),
+            Err(e) => log::warn!("Migration de {} : {e}", from.display()),
+        }
+    }
+    // Retire les anciens dossiers devenus vides (remove_dir échoue s'ils ne le sont pas).
+    for dir in old.config_dir().ancestors().take(3) {
+        if std::fs::remove_dir(dir).is_err() {
+            break;
+        }
+    }
 }
 
 impl Config {

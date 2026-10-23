@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender};
 use eframe::egui::{
-    self, Align, Color32, CornerRadius, Layout, Pos2, RichText, Sense, Shape, Stroke, Ui, Vec2,
+    self, Align, Color32, CornerRadius, Layout, Pos2, RichText, Sense, Ui, Vec2,
 };
 
 use crate::audio::{self, DeviceInfo, Source, dsp::Utterance};
@@ -50,7 +50,7 @@ struct Download {
     done: Receiver<Result<(), String>>,
 }
 
-pub struct NoterApp {
+pub struct TourDeTableApp {
     cfg: Config,
     engine: Engine,
     model: ModelState,
@@ -75,7 +75,7 @@ pub struct NoterApp {
     draft_agenda: Option<Agenda>,
 }
 
-impl NoterApp {
+impl TourDeTableApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         style(&cc.egui_ctx);
         let ctx = cc.egui_ctx.clone();
@@ -411,8 +411,8 @@ impl NoterApp {
             let (rect, _) = ui.allocate_exact_size(Vec2::splat(34.0), Sense::hover());
             draw_logo(ui.painter(), rect);
             ui.vertical(|ui| {
-                ui.label(RichText::new("Noter").size(20.0).strong());
-                ui.label(RichText::new("Transcription de rencontres en français québécois").small().weak());
+                ui.label(RichText::new("Tour de table").size(20.0).strong());
+                ui.label(RichText::new("Tout le monde parle, rien ne se perd.").small().weak());
             });
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui.button("Paramètres").clicked() {
@@ -561,7 +561,7 @@ impl NoterApp {
             let (rect, _) = ui.allocate_exact_size(Vec2::splat(96.0), Sense::hover());
             draw_logo(ui.painter(), rect);
             ui.add_space(12.0);
-            ui.heading("Bienvenue dans Noter");
+            ui.heading("Bienvenue dans Tour de table");
             ui.label("Pour commencer, installez un modèle de reconnaissance vocale (une seule fois).");
             ui.add_space(12.0);
             let info = &models::CATALOG[0];
@@ -667,7 +667,7 @@ impl NoterApp {
             Some("delete") => {
                 let m = self.meetings.remove(idx);
                 match storage::delete(&m) {
-                    Ok(()) => self.notify("Rencontre déplacée dans la corbeille de Noter.", false),
+                    Ok(()) => self.notify("Rencontre déplacée dans la corbeille de Tour de table.", false),
                     Err(e) => self.notify(format!("{e:#}"), true),
                 }
                 self.view = View::Live;
@@ -789,7 +789,7 @@ impl NoterApp {
     }
 }
 
-impl eframe::App for NoterApp {
+impl eframe::App for TourDeTableApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.pump();
         if self.recorder.is_some() || self.finishing || self.download.is_some() || self.summary_job.is_some() {
@@ -849,7 +849,7 @@ impl eframe::App for NoterApp {
     }
 }
 
-impl Drop for NoterApp {
+impl Drop for TourDeTableApp {
     fn drop(&mut self) {
         // Fermeture pendant une rencontre : on garde ce qui a été transcrit.
         if let Some(rec) = self.recorder.take() {
@@ -1007,23 +1007,23 @@ fn truncate(s: &str, n: usize) -> String {
     if s.chars().count() <= n { s.to_string() } else { format!("{}…", s.chars().take(n).collect::<String>()) }
 }
 
-/// Logo vectoriel de Noter : bulle de parole dont la pointe est une plume,
-/// traversée d'une onde sonore, sur fond bleu Québec.
+/// Logo vectoriel de Tour de table (même dessin que `assets/logo.svg`) :
+/// une table ronde vue de haut, huit participants autour et une onde sonore
+/// au centre, sur fond bleu Québec.
 pub fn draw_logo(p: &egui::Painter, rect: egui::Rect) {
     let s = rect.width() / 100.0;
     let at = |x: f32, y: f32| Pos2::new(rect.left() + x * s, rect.top() + y * s);
     p.rect_filled(rect, CornerRadius::same((22.0 * s) as u8), BLEU);
-    // Bulle
-    let bubble = egui::Rect::from_min_max(at(18.0, 20.0), at(82.0, 66.0));
-    p.rect_filled(bubble, CornerRadius::same((16.0 * s) as u8), Color32::WHITE);
-    // Pointe en plume (bas gauche)
-    p.add(Shape::convex_polygon(vec![at(30.0, 62.0), at(46.0, 62.0), at(26.0, 84.0)], Color32::WHITE, Stroke::NONE));
-    p.line_segment([at(36.0, 66.0), at(29.0, 77.0)], Stroke::new(2.0 * s, BLEU));
-    // Onde sonore
-    let bars = [10.0, 22.0, 30.0, 18.0, 26.0, 12.0];
-    for (i, h) in bars.iter().enumerate() {
-        let x = 31.0 + i as f32 * 7.6;
-        let r = egui::Rect::from_center_size(at(x, 43.0), Vec2::new(4.2 * s, h * s));
+    // Participants
+    for i in 0..8 {
+        let a = (-90.0f32 + 22.5 + 45.0 * i as f32).to_radians();
+        p.circle_filled(at(50.0 + 35.0 * a.cos(), 50.0 + 35.0 * a.sin()), 6.2 * s, Color32::WHITE);
+    }
+    // Table
+    p.circle_filled(at(50.0, 50.0), 23.0 * s, Color32::WHITE);
+    // Conversation
+    for (i, h) in [10.0, 18.0, 26.0, 18.0, 10.0].iter().enumerate() {
+        let r = egui::Rect::from_center_size(at(50.0 + (i as f32 - 2.0) * 6.4, 50.0), Vec2::new(4.2 * s, h * s));
         p.rect_filled(r, CornerRadius::same((2.1 * s) as u8), BLEU);
     }
 }

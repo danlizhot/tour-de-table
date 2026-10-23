@@ -1,10 +1,12 @@
-<p align="center"><img src="assets/icon-256.png" width="128" alt="Logo de Noter"></p>
+<p align="center"><img src="assets/icon-256.png" width="128" alt="Logo de Tour de table"></p>
 
-# Noter
+# Tour de table
+
+> *Tout le monde parle, rien ne se perd.*
 
 **Transcription de rencontres en français québécois, 100 % locale.**
 
-Noter capte en même temps le **micro de la salle** et le **son des participants à distance**
+Tour de table capte en même temps le **micro de la salle** et le **son des participants à distance**
 (Teams, Zoom, Meet, Webex… tout ce qui sort de l'ordinateur), puis transcrit en français québécois
 avec Whisper, directement sur votre machine. Aucun son ni texte ne quitte l'ordinateur.
 
@@ -12,7 +14,7 @@ avec Whisper, directement sur votre machine. Aucun son ni texte ne quitte l'ordi
 
 Inspiré de [Meetily](https://github.com/Zackriya-Solutions/meetily), réécrit entièrement en Rust :
 
-| | Meetily | Noter |
+| | Meetily | Tour de table |
 |---|---|---|
 | Pile | Tauri + Next.js + serveur Python FastAPI | **Un seul exécutable Rust** |
 | Interface | WebView (navigateur embarqué) | egui natif (rendu GPU) |
@@ -45,7 +47,7 @@ Inspiré de [Meetily](https://github.com/Zackriya-Solutions/meetily), réécrit 
 * Le contexte audio de l'encodeur est ajusté à la durée de chaque énoncé (au moins 15 s), au lieu
   des 30 s fixes de Whisper.
 * **Regroupement adaptatif** : si la transcription prend du retard, les énoncés en attente sont
-  fusionnés en une seule passe d'encodeur (jusqu'à 28 s), et Noter rattrape tout seul son retard.
+  fusionnés en une seule passe d'encodeur (jusqu'à 28 s), et Tour de table rattrape tout seul son retard.
 * Le nombre de fils de calcul est réglé automatiquement : tous les cœurs moins deux, au plus 8.
 
 ### Comparatif mesuré
@@ -67,7 +69,7 @@ Avec un GPU (`--features metal`, `vulkan` ou `cuda`), Turbo va plusieurs fois pl
 
 ## Spécialisation québécoise
 
-* **Invite québécoise** : Whisper imite le texte qui précède. Noter lui fournit un contexte rédigé
+* **Invite québécoise** : Whisper imite le texte qui précède. Tour de table lui fournit un contexte rédigé
   en québécois (« on commence-tu? », « tsé », « pantoute », « courriel », « dîner »…), suivi de la
   fin de la transcription en cours pour garder les noms cohérents d'un énoncé à l'autre.
 * **Typographie OQLF** : « 14h30 » devient « 14 h 30 », « $10 » devient « 10 $ », pas d'espace
@@ -95,12 +97,12 @@ saisir à la main.
   jour, un tableau des suivis (action, responsable, échéance) et la prochaine rencontre. Un point
   non abordé est indiqué comme tel, et le modèle a pour consigne de ne rien inventer.
 * Le texte est rédigé en **français québécois standard** (terminologie et typographie de l'OQLF),
-  puis la typographie est vérifiée par Noter (« 14 h 30 », « 2 500 $ »).
+  puis la typographie est vérifiée par Tour de table (« 14 h 30 », « 2 500 $ »).
 * **Garde-fou sur les chiffres** : tout montant ou nombre du compte rendu absent de la
   transcription et de l'ordre du jour est signalé dans un encadré « À vérifier ». Exemple réel
   avec `qwen2.5:7b` : « budget dépassé de 200 $ », alors que 2 300 $ avaient été dépensés sur
   2 500 $. Le compte rendu reste un **brouillon à relire** avant diffusion.
-* Sans ordre du jour, Noter produit un résumé structuré.
+* Sans ordre du jour, Tour de table produit un résumé structuré.
 * **Longues rencontres** : au-delà d'environ 24 000 caractères (~45 min), la transcription est
   d'abord condensée par tranches, puis le compte rendu est rédigé à partir de ces notes. Les petits
   modèles locaux gardent ainsi le fil, et la mémoire reste maîtrisée.
@@ -133,12 +135,12 @@ avant : les deux modèles ne calculent jamais en même temps (Whisper reste char
 * **Sources mixées** : à choisir si le son des participants à distance sort des haut-parleurs
   de la salle. Sinon, le micro les capterait aussi et ils seraient transcrits deux fois.
 
-La capture loopback de Windows ne livre rien quand aucun son ne joue. Noter réaligne donc chaque
+La capture loopback de Windows ne livre rien quand aucun son ne joue. Tour de table réaligne donc chaque
 source sur l'horloge pour garder des horodatages justes.
 
 ## Utilisation
 
-1. Lancez Noter, puis cliquez sur **Télécharger Large v3 Turbo**. C'est la seule connexion
+1. Lancez Tour de table, puis cliquez sur **Télécharger Large v3 Turbo**. C'est la seule connexion
    Internet, et elle ne se fait qu'une fois (Hugging Face, dépôt officiel de whisper.cpp).
 2. Choisissez le micro et la sortie audio, puis cliquez sur **Démarrer**.
 3. La transcription s'affiche au fil de la rencontre et elle est sauvegardée après chaque phrase.
@@ -149,17 +151,18 @@ source sur l'horloge pour garder des horodatages justes.
 Ligne de commande, pour transcrire un enregistrement existant :
 
 ```
-noter --transcrire enregistrement.wav [modele.bin]
-noter --compte-rendu ordre-du-jour.docx enregistrement.wav   # ou transcription.txt
+tourdetable --transcrire enregistrement.wav [modele.bin]
+tourdetable --compte-rendu ordre-du-jour.docx enregistrement.wav   # ou transcription.txt
 ```
 
-Emplacement des données :
+Emplacement des données (l'application s'appelait auparavant « Noter » : ses données sont
+déplacées automatiquement au premier lancement) :
 
 | Système | Dossier |
 |---|---|
-| Windows | `%APPDATA%\Noter\Noter\data\` |
-| macOS | `~/Library/Application Support/ca.Noter.Noter/` |
-| Linux | `~/.local/share/noter/` |
+| Windows | `%APPDATA%\TourDeTable\TourDeTable\data\` |
+| macOS | `~/Library/Application Support/ca.TourDeTable.TourDeTable/` |
+| Linux | `~/.local/share/tourdetable/` |
 
 ## Compilation
 
@@ -202,8 +205,9 @@ interface. Aucun travail lourd ne se fait dans le fil de l'interface.
 
 ## Le logo
 
-Une bulle de parole dont la pointe est une **plume**, traversée d'une **onde sonore**, sur le
-**bleu du drapeau du Québec** : la parole devient des notes. Source vectorielle : `assets/logo.svg`.
+Une **table ronde** vue de haut, huit **participants** autour et, au centre, une **onde sonore** :
+la conversation qui fait le tour de la table. Le tout sur le **bleu du drapeau du Québec**.
+Source vectorielle : `assets/logo.svg`.
 
 ## Licence
 

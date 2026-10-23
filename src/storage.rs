@@ -174,7 +174,7 @@ pub fn delete(m: &Meeting) -> Result<()> {
     let dir = m.dir();
     let trash = crate::config::data_dir().join("corbeille");
     std::fs::create_dir_all(&trash)?;
-    std::fs::rename(&dir, trash.join(&m.id)).context("Déplacement vers la corbeille de Noter")
+    std::fs::rename(&dir, trash.join(&m.id)).context("Déplacement vers la corbeille de Tour de table")
 }
 
 pub fn clock(ms: u64) -> String {

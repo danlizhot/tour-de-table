@@ -35,6 +35,6 @@ fn main() {
     for img in &images {
         ico.write_all(img).unwrap();
     }
-    std::fs::write("assets/noter.ico", ico).unwrap();
+    std::fs::write("assets/tourdetable.ico", ico).unwrap();
     println!("Icônes générées dans assets/");
 }
