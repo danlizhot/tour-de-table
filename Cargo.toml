@@ -11,7 +11,10 @@ chrono = { version = "0.4.45", features = ["serde"] }
 cpal = "0.18.2"
 crossbeam-channel = "0.5.17"
 directories = "6.0.0"
-eframe = { version = "0.37.0", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+eframe = { version = "0.37.0", default-features = false, features = ["default_fonts", "glow", "wgpu_no_default_features", "wayland", "x11"] }
+# Moteur d'affichage de secours : Direct3D 12 (dont WARP, le rendu logiciel de Windows
+# pour les machines virtuelles sans carte graphique) et Metal. Seuls ces backends sont compilés.
+wgpu = { version = "30", default-features = false, features = ["std", "wgsl", "dx12", "metal"] }
 env_logger = "0.11.11"
 hound = "3.5.1"
 log = "0.4.34"
@@ -22,6 +25,7 @@ serde_json = "1.0.154"
 ureq = { version = "3.5.0", features = ["json"] }
 whisper-rs = { version = "0.16.0", features = ["log_backend"] }
 zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }
+egui-wgpu = { version = "0.37", default-features = false }
 
 [dev-dependencies]
 resvg = "0.48.1"
@@ -40,7 +44,9 @@ cuda = ["whisper-rs/cuda"]
 opt-level = 3
 lto = "fat"
 codegen-units = 1
-panic = "abort"
+# « unwind » plutôt qu'« abort » : un plantage pendant l'essai d'un moteur d'affichage
+# est intercepté pour passer au suivant (voir main.rs).
+panic = "unwind"
 strip = true
 
 [package.metadata.winresource]

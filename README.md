@@ -164,6 +164,17 @@ déplacées automatiquement au premier lancement) :
 | macOS | `~/Library/Application Support/ca.TourDeTable.TourDeTable/` |
 | Linux | `~/.local/share/tourdetable/` |
 
+## Dépannage
+
+* **Journal** : chaque lancement écrit `journal.txt` dans le dossier de données (voir plus haut),
+  et le lancement précédent est conservé dans `journal-precedent.txt`. Joignez-le à toute
+  demande d'aide.
+* **L'application ne s'ouvre pas** (machine virtuelle, bureau à distance, pilote graphique
+  absent) : Tour de table essaie d'abord Direct3D 12 sous Windows, y compris son rendu logiciel
+  WARP, qui fonctionne sans carte graphique, puis OpenGL. Si les deux échouent, une boîte de
+  dialogue affiche la raison. Pour imposer un moteur, définissez la variable d'environnement
+  `TOURDETABLE_AFFICHAGE` à `wgpu` ou à `glow`.
+
 ## Compilation
 
 Prérequis : Rust (stable), CMake, Clang/LLVM. Sous Linux, ajoutez `libasound2-dev`.
