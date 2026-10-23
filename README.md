@@ -22,7 +22,7 @@ Inspiré de [Meetily](https://github.com/Zackriya-Solutions/meetily), réécrit 
 | RAM au repos | WebView + Python | **~90 Mo** |
 | Langue | Générique | **Français québécois** (invite, typographie OQLF, lexique) |
 
-## Pourquoi Rust plutôt que Go?
+## Pourquoi Rust?
 
 * whisper.cpp est en C/C++ : Rust s'y lie sans surcoût (pas de cgo, pas de ramasse-miettes
   qui interrompt le fil audio en temps réel).
@@ -49,23 +49,6 @@ Inspiré de [Meetily](https://github.com/Zackriya-Solutions/meetily), réécrit 
 * **Regroupement adaptatif** : si la transcription prend du retard, les énoncés en attente sont
   fusionnés en une seule passe d'encodeur (jusqu'à 28 s), et Tour de table rattrape tout seul son retard.
 * Le nombre de fils de calcul est réglé automatiquement : tous les cœurs moins deux, au plus 8.
-
-### Comparatif mesuré
-
-Portable Intel i9-9880H de 2019, sans GPU, 8 fils. Extraits libres de Wikimedia Commons : 83 s de
-lecture de Wikipédia et deux expressions québécoises.
-
-| | Small q5 | **Large v3 Turbo q5** |
-|---|---|---|
-| Vitesse | 3,7× temps réel | **1,3× temps réel** |
-| RAM max | 0,72 Go | 1,15 Go |
-| « Avoir le cul bordé de nouilles » | « Avouez-en le cul bord des noy. » | « Avoir le cul bord des nouilles. » |
-| « Avoir du guts » | « Avouez-en du gout. » | « **Avoir du guts.** » |
-| « …contreforts de l'Himalaya au Népal » | « …de Guimalaïa au Nipal » | « …**de l'Himalaya au Népal** » |
-| « …dans un environnement d'accès ardu » | « …un novelleronnement… » | « …un **environnement**… » |
-
-Large v3 Turbo est donc le bon choix par défaut. Small ne convient qu'aux machines très modestes.
-Avec un GPU (`--features metal`, `vulkan` ou `cuda`), Turbo va plusieurs fois plus vite.
 
 ## Spécialisation québécoise
 
