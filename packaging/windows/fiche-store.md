@@ -30,7 +30,8 @@ les noms de vos organismes, de vos partenaires et de vos projets.
 
 **De l'ordre du jour au compte rendu**
 Déposez l'ordre du jour (Word, PDF ou texte), avant ou après la rencontre. Tour de table rédige
-le compte rendu point par point : discussion, décisions, suivis avec responsables et échéances.
+le compte rendu point par point : discussion, décisions, suivis avec responsables et échéances. Joint d'avance, l'ordre du jour donne le compte rendu automatiquement, dès la fin de la
+transcription.
 Les chiffres qui n'apparaissent pas dans la transcription sont signalés pour vérification.
 
 **Privé par conception**
