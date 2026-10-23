@@ -100,8 +100,8 @@ fois, d'un clic (bouton « Installer le modèle de rédaction », ou Paramètres
 | 8 Go | **Qwen3 4B Instruct** (défaut) | 2,5 Go | ~3,2 Go |
 | 16 Go | **Qwen2.5 7B Instruct** | 4,7 Go | ~5,2 Go (mesuré : 5,1 Go) |
 
-Mesuré avec Qwen2.5 7B sur le portable de test, sans GPU : environ 4 minutes pour le compte rendu
-d'une rencontre courte. La transcription doit être terminée avant : les deux modèles ne calculent
+Sans carte graphique, comptez quelques minutes pour le compte rendu d'une rencontre courte. La
+transcription doit être terminée avant : les deux modèles ne calculent
 jamais en même temps (Whisper reste chargé, environ 1,1 Go, mais au repos).
 
 Ceux qui utilisent déjà [Ollama](https://ollama.com) peuvent le choisir dans les Paramètres
