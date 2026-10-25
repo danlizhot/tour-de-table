@@ -2,8 +2,7 @@
 //!
 //! Par défaut, le modèle est intégré : le programme auxiliaire
 //! `tourdetable-redaction` (llama.cpp) le fait tourner sur l'ordinateur, sans
-//! rien à installer. Ollama reste possible en option avancée. Dans les deux
-//! cas, rien ne quitte la machine.
+//! rien à installer. Rien ne quitte la machine.
 //!
 //! Avec un ordre du jour, le compte rendu suit ses points dans l'ordre ;
 //! sans ordre du jour, on produit un résumé structuré.
@@ -12,27 +11,21 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use serde_json::json;
 
-/// Qui rédige.
+/// Qui rédige : le modèle intégré, avec ses fils de calcul.
 #[derive(Clone, Debug)]
-pub enum Moteur {
-    Integre { modele: PathBuf, fils: usize },
-    Ollama { url: String, modele: String },
+pub struct Moteur {
+    pub modele: PathBuf,
+    pub fils: usize,
 }
 
 impl Moteur {
     pub fn nom(&self) -> String {
-        match self {
-            Moteur::Integre { modele, .. } => crate::models::llm_info(
-                &modele.file_name().unwrap_or_default().to_string_lossy(),
-            )
-            .map_or_else(|| modele.display().to_string(), |m| m.label.to_string()),
-            Moteur::Ollama { modele, .. } => format!("Ollama · {modele}"),
-        }
+        crate::models::llm_info(&self.modele.file_name().unwrap_or_default().to_string_lossy())
+            .map_or_else(|| self.modele.display().to_string(), |m| m.label.to_string())
     }
 }
 
@@ -220,10 +213,7 @@ fn condense(r: &Request) -> Result<String> {
 }
 
 fn generate(r: &Request, prompt: &str) -> Result<String> {
-    let texte = match r.moteur {
-        Moteur::Integre { modele, fils } => generate_integre(modele, *fils, prompt, r.progress)?,
-        Moteur::Ollama { url, modele } => generate_ollama(url, modele, prompt)?,
-    };
+    let texte = generate_integre(&r.moteur.modele, r.moteur.fils, prompt, r.progress)?;
     Ok(tidy_answer(&crate::quebec::normalize_document(texte.trim())))
 }
 
@@ -240,7 +230,7 @@ fn helper() -> Result<PathBuf> {
 
 fn generate_integre(modele: &std::path::Path, fils: usize, prompt: &str, progress: Option<&AtomicUsize>) -> Result<String> {
     if !modele.exists() {
-        bail!("Le modèle de rédaction n'est pas installé : téléchargez-le dans les Paramètres");
+        bail!("Le modèle de rédaction n'est pas installé : installez-le depuis la fiche de la rencontre");
     }
     // Contexte de travail : invite (≈ 3 caractères par jeton en français) + réponse.
     // Plafonné à 12 k jetons pour rester raisonnable sur un poste de 8 Go.
@@ -288,34 +278,6 @@ fn generate_integre(modele: &std::path::Path, fils: usize, prompt: &str, progres
         (None, Some(e)) => bail!("Rédaction : {e}"),
         (None, None) => bail!("Le programme de rédaction s'est arrêté ({status}) : mémoire insuffisante?"),
     }
-}
-
-fn generate_ollama(base_url: &str, model: &str, prompt: &str) -> Result<String> {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(1800)))
-        .build()
-        .into();
-    let url = format!("{}/api/generate", base_url.trim_end_matches('/'));
-    // Ollama tronque silencieusement à 2048-4096 jetons par défaut : on dimensionne
-    // le contexte (≈ 3 caractères par jeton en français) + la place de la réponse.
-    let num_ctx = (prompt.chars().count() / 3 + 3072).clamp(8192, 16384);
-    let resp = agent
-        .post(&url)
-        .send_json(json!({
-            "model": model,
-            "prompt": prompt,
-            "stream": false,
-            "options": { "temperature": 0.2, "num_ctx": num_ctx }
-        }))
-        ;
-    let mut resp = match resp {
-        Err(ureq::Error::StatusCode(404)) => {
-            anyhow::bail!("Le modèle « {model} » n'est pas installé dans Ollama : lancez « ollama pull {model} »")
-        }
-        other => other.with_context(|| format!("Ollama injoignable à {base_url} : est-il démarré?"))?,
-    };
-    let body: serde_json::Value = resp.body_mut().with_config().limit(32 << 20).read_json()?;
-    body["response"].as_str().map(str::to_string).context("Réponse Ollama inattendue")
 }
 
 /// Les petits modèles ajoutent parfois « Aucun » après un contenu réel

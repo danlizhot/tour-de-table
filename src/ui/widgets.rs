@@ -135,7 +135,7 @@ pub(super) fn record_button(ui: &mut Ui, recording: bool, enabled: bool) -> egui
         ui.painter().circle_filled(c, 7.0, Color32::WHITE);
     }
     if !enabled {
-        resp.on_disabled_hover_text("Installez ou chargez d'abord un modèle (Paramètres).")
+        resp.on_disabled_hover_text("Installez d'abord le modèle de reconnaissance vocale (écran d'accueil).")
     } else {
         resp
     }
@@ -152,9 +152,8 @@ pub(super) fn download_bar(ui: &mut Ui, dl: &Download) {
 }
 
 pub(super) fn short_model(file: &str) -> String {
-    models::CATALOG
-        .iter()
-        .find(|m| m.file == file)
+    Some(&models::WHISPER)
+        .filter(|m| m.file == file)
         .map_or_else(|| file.trim_start_matches("ggml-").trim_end_matches(".bin").to_string(), |m| m.label.to_string())
 }
 

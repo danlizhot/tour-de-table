@@ -2,29 +2,28 @@
 
 use eframe::egui::{self, Color32, RichText, Sense, Ui, Vec2};
 
-use super::widgets::{BLEU, DISTANCE, SALLE, device_combo, download_bar, draw_logo, meter, record_button, transcript};
+use super::widgets::{BLEU, DISTANCE, SALLE, download_bar, draw_logo, meter, record_button, transcript};
 use super::{ModelState, TourDeTableApp, View};
 use crate::audio::{self, Source};
-use crate::config::CaptureMode;
+use crate::config;
 use crate::models;
 use crate::recorder::{Options, Recorder};
 use crate::storage::{Meeting, clock};
 
 impl TourDeTableApp {
     pub(super) fn start_recording(&mut self) {
-        let meeting = Meeting::new(&self.cfg.model);
-        let wav_dir = self.cfg.save_audio.then(|| meeting.dir());
-        if let Some(d) = &wav_dir {
-            let _ = std::fs::create_dir_all(d);
-        }
+        let meeting = Meeting::new(models::RECOMMENDED);
+        // L'audio est toujours conservé : il sert au découpage par point de l'ordre du jour.
+        let wav_dir = meeting.dir();
+        let _ = std::fs::create_dir_all(&wav_dir);
         let opts = Options {
             capture_mic: self.cfg.capture_mic,
             capture_system: self.cfg.capture_system,
             mic_device: self.cfg.mic_device.clone(),
             system_device: self.cfg.system_device.clone(),
             mode: self.cfg.mode,
-            sensitivity: self.cfg.vad_sensitivity,
-            wav_dir,
+            sensitivity: config::VAD_SENSITIVITY,
+            wav_dir: Some(wav_dir),
         };
         match Recorder::start(opts, self.utt_tx.clone()) {
             Ok(rec) => {
@@ -71,7 +70,7 @@ impl TourDeTableApp {
             let with_agenda = m.agenda.is_some();
             self.meetings.insert(0, m);
             self.view = View::Past(0);
-            if with_agenda && self.cfg.auto_compte_rendu {
+            if with_agenda {
                 self.auto_compte_rendu(0);
             }
         }
@@ -85,11 +84,11 @@ impl TourDeTableApp {
             return;
         }
         if !matches!(self.model, ModelState::Ready(_)) {
-            self.notify("Installez ou chargez d'abord un modèle de reconnaissance (Paramètres).", true);
+            self.notify("Installez d'abord le modèle de reconnaissance vocale (bouton « Télécharger » de l'écran d'accueil).", true);
             return;
         }
         let name = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let mut meeting = Meeting::new(&self.cfg.model);
+        let mut meeting = Meeting::new(models::RECOMMENDED);
         meeting.title = name.clone();
         // Date de l'enregistrement plutôt que celle de l'import, si connue.
         if let Ok(modified) = path.metadata().and_then(|m| m.modified()) {
@@ -102,12 +101,12 @@ impl TourDeTableApp {
         self.push_settings();
 
         let (tx, rx) = crossbeam_channel::bounded(1);
-        let (path, sensitivity) = (path.to_path_buf(), self.cfg.vad_sensitivity);
+        let path = path.to_path_buf();
         std::thread::spawn(move || {
             let result = audio::import::decode(&path).map(|samples| {
                 let duration = samples.len() as u64 / audio::SAMPLE_RATE as u64;
                 let mut utterances = Vec::new();
-                let mut seg = audio::dsp::Segmenter::new(Source::Mixte, sensitivity);
+                let mut seg = audio::dsp::Segmenter::new(Source::Mixte, config::VAD_SENSITIVITY);
                 seg.push(&samples, &mut utterances);
                 seg.flush(&mut utterances);
                 (utterances, duration)
@@ -159,28 +158,11 @@ impl TourDeTableApp {
                 ui.spinner();
                 ui.label(format!("Fin de la transcription… ({} restants)", self.in_flight));
             } else {
+                // Le choix des périphériques et du mode est dans les Paramètres.
                 ui.vertical(|ui| {
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut self.cfg.capture_mic, "Micro de la salle");
-                        device_combo(ui, "mic", &mut self.cfg.mic_device, &self.mics, "Micro par défaut");
-                    });
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut self.cfg.capture_system, "Son de l'ordinateur (Teams, Zoom…)");
-                        device_combo(ui, "sys", &mut self.cfg.system_device, &self.system_sources, "Sortie par défaut");
-                    });
+                    ui.checkbox(&mut self.cfg.capture_mic, "Micro de la salle");
+                    ui.checkbox(&mut self.cfg.capture_system, "Son de l'ordinateur (Teams, Zoom…)");
                 });
-                ui.add_space(10.0);
-                egui::ComboBox::from_id_salt("mode")
-                    .selected_text(match self.cfg.mode {
-                        CaptureMode::Separe => "Sources séparées",
-                        CaptureMode::Mixe => "Sources mixées",
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.cfg.mode, CaptureMode::Separe, "Sources séparées")
-                            .on_hover_text("Distingue « Salle » et « À distance ». Idéal avec un casque ou un haut-parleur de conférence.");
-                        ui.selectable_value(&mut self.cfg.mode, CaptureMode::Mixe, "Sources mixées")
-                            .on_hover_text("À choisir si le son des participants à distance sort des haut-parleurs de la salle (évite les doublons).");
-                    });
             }
         });
         ui.add_space(6.0);
@@ -228,7 +210,7 @@ impl TourDeTableApp {
             ui.heading("Bienvenue dans Tour de table");
             ui.label("Pour commencer, installez un modèle de reconnaissance vocale (une seule fois).");
             ui.add_space(12.0);
-            let info = &models::CATALOG[0];
+            let info = &models::WHISPER;
             if let Some(dl) = &self.download {
                 download_bar(ui, dl);
             } else if ui
@@ -237,11 +219,8 @@ impl TourDeTableApp {
                 ).fill(BLEU).min_size(Vec2::new(280.0, 36.0)))
                 .clicked()
             {
-                self.cfg.model = info.file.to_string();
                 self.start_download(info.file);
             }
-            ui.add_space(6.0);
-            ui.label(RichText::new("Autres modèles : Paramètres").small().weak());
         });
     }
 }

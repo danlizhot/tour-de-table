@@ -7,7 +7,7 @@ use eframe::egui::{self, Align, Layout, RichText, Ui};
 
 use super::widgets::{download_bar, markdown, short_model, transcript};
 use super::{TourDeTableApp, View};
-use crate::config::LlmBackend;
+use crate::config;
 use crate::models;
 use crate::storage::{self, clock};
 
@@ -17,7 +17,7 @@ impl TourDeTableApp {
         if self.summary_job.is_some() {
             return;
         }
-        if self.cfg.llm_backend == LlmBackend::Integre && !models::installed(&self.cfg.llm_model) {
+        if !models::installed(models::LLM_RECOMMENDED) {
             self.notify(
                 "Transcription terminée. Pour la rédaction automatique du compte rendu, installez d'abord le modèle de rédaction (bouton ci-dessous).",
                 false,
@@ -31,7 +31,7 @@ impl TourDeTableApp {
     pub(super) fn summarize(&mut self, idx: usize) {
         let m = &self.meetings[idx];
         let (tx, rx) = crossbeam_channel::bounded(1);
-        let moteur = self.cfg.moteur();
+        let moteur = config::moteur();
         let progress = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let progress_thread = progress.clone();
         let title = m.title.clone();
@@ -101,9 +101,7 @@ impl TourDeTableApp {
             .filter(|(id, ..)| *id == self.meetings[idx].id)
             .map(|(_, _, p, t0)| (p.load(Ordering::Relaxed), t0.elapsed().as_secs()));
         // Modèle de rédaction intégré pas encore téléchargé : on propose de l'installer.
-        let llm_missing = (self.cfg.llm_backend == LlmBackend::Integre && !models::installed(&self.cfg.llm_model))
-            .then(|| models::llm_info(&self.cfg.llm_model))
-            .flatten();
+        let llm_missing = (!models::installed(models::LLM_RECOMMENDED)).then(|| models::llm_info(models::LLM_RECOMMENDED)).flatten();
         let has_agenda = self.meetings[idx].agenda.is_some();
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -144,7 +142,7 @@ impl TourDeTableApp {
                     };
                     if ui
                         .small_button(label)
-                        .on_hover_text(format!("{hover}\nModèle local : {}", self.cfg.moteur().nom()))
+                        .on_hover_text(format!("{hover}\nModèle local : {}", config::moteur().nom()))
                         .clicked()
                     {
                         action = Some("summary");
@@ -179,8 +177,7 @@ impl TourDeTableApp {
             },
             Some("summary") => self.summarize(idx),
             Some("install-llm") => {
-                let file = self.cfg.llm_model.clone();
-                self.start_download(&file);
+                self.start_download(models::LLM_RECOMMENDED);
             }
             _ => {}
         }

@@ -32,23 +32,22 @@ Inspiré de [Meetily](https://github.com/Zackriya-Solutions/meetily), réécrit 
 
 ## Mémoire : conçu pour 8 Go, optimisé pour 16 Go
 
-| Modèle | Téléchargement | RAM en transcription | Pour qui |
-|---|---|---|---|
-| **Large v3 Turbo q5** (défaut) | 574 Mo | ~1,2 Go (mesuré : 0,9 à 1,15 Go) | 8 Go et plus : le meilleur rapport précision/vitesse |
-| Large v3 q5 | 1,1 Go | ~3 Go | 16 Go : précision maximale, ~3× plus lent |
-| Medium q5 | 539 Mo | ~1,7 Go | Portables sans GPU |
-| Small q5 | 190 Mo | ~0,8 Go (mesuré : 0,55 à 0,77 Go) | Machines modestes |
+Tour de table n'offre **aucun choix de modèle** : il utilise toujours **Whisper Large v3 Turbo q5**
+(574 Mo à télécharger, ~1,2 Go de RAM en transcription, mesuré : 0,9 à 1,15 Go), le meilleur
+rapport précision/vitesse sur l'accent québécois, et qui convient dès 8 Go. Rien à régler pour
+déployer l'application dans une organisation.
 
-* Modèles **quantifiés en 5 bits** : environ 3× moins de mémoire, avec une perte de précision minime.
-* Un seul modèle est chargé à la fois et il reste en mémoire entre les rencontres (démarrage instantané).
-* Le résumé (optionnel) se fait **après** la rencontre. Le modèle de langue n'est donc jamais en
-  concurrence avec Whisper pour la RAM. Avec 8 Go, prenez `llama3.2:3b` (~2 Go) ; avec 16 Go,
-  `qwen2.5:7b` ou `mistral` (~5 Go).
+* Modèle **quantifié en 5 bits** : environ 3× moins de mémoire, avec une perte de précision minime.
+* Il reste en mémoire entre les rencontres (démarrage instantané).
+* Le compte rendu se fait **après** la rencontre. Le modèle de langue n'est donc jamais en
+  concurrence avec Whisper pour la RAM.
 * Le contexte audio de l'encodeur est ajusté à la durée de chaque énoncé (au moins 15 s), au lieu
   des 30 s fixes de Whisper.
 * **Regroupement adaptatif** : si la transcription prend du retard, les énoncés en attente sont
   fusionnés en une seule passe d'encodeur (jusqu'à 28 s), et Tour de table rattrape tout seul son retard.
-* Le nombre de fils de calcul est réglé automatiquement : tous les cœurs moins deux, au plus 8.
+* Réglages automatiques : fils de calcul (tous les cœurs moins deux, au plus 8), faisceau de
+  recherche de 5, accélération GPU si l'exécutable est compilé avec un moteur GPU, sensibilité de
+  la détection de voix fixe.
 
 ## Spécialisation québécoise
 
@@ -61,9 +60,6 @@ Inspiré de [Meetily](https://github.com/Zackriya-Solutions/meetily), réécrit 
   reconnaissance. On peut aussi y mettre des corrections, p. ex. `hydro québec => Hydro-Québec`.
 * **Filtre d'hallucinations** : Whisper invente parfois « Sous-titrage Société Radio-Canada » ou
   « Merci d'avoir regardé » sur du silence. Ces phrases sont retirées.
-* **Modèles affinés** : vous pouvez déposer n'importe quel modèle ggml multilingue (p. ex. un Whisper
-  affiné sur du français québécois et converti avec `convert-h5-to-ggml.py` de whisper.cpp) dans le
-  dossier des modèles. Il apparaît alors dans les Paramètres.
 
 ## Ordre du jour et compte rendu
 
@@ -83,7 +79,7 @@ saisir à la main.
   puis la typographie est vérifiée par Tour de table (« 14 h 30 », « 2 500 $ »).
 * **Garde-fou sur les chiffres** : tout montant ou nombre du compte rendu absent de la
   transcription et de l'ordre du jour est signalé dans un encadré « À vérifier ». Exemple réel
-  avec `qwen2.5:7b` : « budget dépassé de 200 $ », alors que 2 300 $ avaient été dépensés sur
+  avec Qwen2.5 7B : « budget dépassé de 200 $ », alors que 2 300 $ avaient été dépensés sur
   2 500 $. Le compte rendu reste un **brouillon à relire** avant diffusion.
 * Sans ordre du jour, Tour de table produit un résumé structuré.
 * **Longues rencontres** : au-delà d'environ 24 000 caractères (~45 min), la transcription est
@@ -92,20 +88,14 @@ saisir à la main.
 * Exporté dans `compte-rendu.md`, et inclus dans `transcription.md`.
 
 **Modèle de langue intégré : rien à installer.** Le programme auxiliaire `tourdetable-redaction`,
-livré avec l'application, fait tourner llama.cpp sur l'ordinateur. Le modèle se télécharge une
-fois, d'un clic (bouton « Installer le modèle de rédaction », ou Paramètres) :
-
-| RAM | Modèle (licence Apache 2.0) | Téléchargement | RAM pendant la rédaction |
-|---|---|---|---|
-| 8 Go | **Qwen3 4B Instruct** (défaut) | 2,5 Go | ~3,2 Go |
-| 16 Go | **Qwen2.5 7B Instruct** | 4,7 Go | ~5,2 Go (mesuré : 5,1 Go) |
+livré avec l'application, fait tourner llama.cpp sur l'ordinateur. Le modèle, **Qwen3 4B
+Instruct** (licence Apache 2.0, 2,5 Go à télécharger, ~3,2 Go de RAM pendant la rédaction), se
+télécharge une fois, d'un clic (bouton « Installer le modèle de rédaction » dans la fiche de la
+rencontre). Aucun choix à faire.
 
 Sans carte graphique, comptez quelques minutes pour le compte rendu d'une rencontre courte. La
 transcription doit être terminée avant : les deux modèles ne calculent
 jamais en même temps (Whisper reste chargé, environ 1,1 Go, mais au repos).
-
-Ceux qui utilisent déjà [Ollama](https://ollama.com) peuvent le choisir dans les Paramètres
-(« Ollama, avancé ») ; son contexte est alors dimensionné automatiquement (8 k à 16 k jetons).
 
 ## Sources audio
 
@@ -115,11 +105,12 @@ Ceux qui utilisent déjà [Ollama](https://ollama.com) peuvent le choisir dans l
 | **macOS 14.6+** | CoreAudio | « Process tap » CoreAudio (autorisation demandée au 1er usage) |
 | **Linux** | ALSA / PulseAudio | Source `.monitor` de PulseAudio ou PipeWire (`parec`) |
 
-**Deux modes :**
-* **Sources séparées** (défaut) : chaque segment est étiqueté **Salle** ou **À distance**.
+**Deux modes**, choisis dans les Paramètres par une seule question : « Les participants à distance
+sortent-ils dans les haut-parleurs de la salle? »
+* **Non : sources séparées** (défaut) : chaque segment est étiqueté **Salle** ou **À distance**.
   Idéal avec un casque, ou un haut-parleur de conférence qui annule l'écho.
-* **Sources mixées** : à choisir si le son des participants à distance sort des haut-parleurs
-  de la salle. Sinon, le micro les capterait aussi et ils seraient transcrits deux fois.
+* **Oui : sources mixées**. Le micro capte aussi les participants à distance : les deux sources
+  sont réunies, sinon ils seraient transcrits deux fois.
 
 La capture loopback de Windows ne livre rien quand aucun son ne joue. Tour de table réaligne donc chaque
 source sur l'horloge pour garder des horodatages justes.
@@ -128,7 +119,8 @@ source sur l'horloge pour garder des horodatages justes.
 
 1. Lancez Tour de table, puis cliquez sur **Télécharger Large v3 Turbo**. C'est la seule connexion
    Internet, et elle ne se fait qu'une fois (Hugging Face, dépôt officiel de whisper.cpp).
-2. Choisissez le micro et la sortie audio, puis cliquez sur **Démarrer**.
+2. Au besoin, choisissez le micro et la sortie audio dans **Paramètres** (« Par défaut » convient
+   le plus souvent), puis cliquez sur **Démarrer**.
 3. La transcription s'affiche au fil de la rencontre et elle est sauvegardée après chaque phrase.
    Vous ne perdez donc rien en cas de panne.
 4. À l'arrêt : **Rédiger le compte rendu** (modèle de langue local, installé d'un clic la
@@ -141,13 +133,16 @@ compte rendu. Décodage entièrement intégré (Symphonia), sans logiciel à ins
 
 **Compte rendu automatique** : si un ordre du jour est joint (déposé avant l'import ou avant de
 démarrer la rencontre), le compte rendu est rédigé dès la fin de la transcription. On peut donc
-déposer l'ordre du jour, importer l'enregistrement et revenir plus tard : tout est prêt. L'option
-se désactive dans Paramètres → Rédaction des comptes rendus.
+déposer l'ordre du jour, importer l'enregistrement et revenir plus tard : tout est prêt.
+
+**Paramètres** : seulement le micro et la sortie audio, la question sur les haut-parleurs de la
+salle et le lexique. Tout le reste (modèles, performance, détection de voix, conservation de
+l'audio, compte rendu automatique) est décidé par l'application.
 
 Ligne de commande, pour transcrire un enregistrement existant :
 
 ```
-tourdetable --transcrire enregistrement.m4a [modele.bin]          # MP4, M4A, MP3, WAV, FLAC, OGG
+tourdetable --transcrire enregistrement.m4a                       # MP4, M4A, MP3, WAV, FLAC, OGG
 tourdetable --compte-rendu ordre-du-jour.docx enregistrement.mp4   # ou transcription.txt
 ```
 
@@ -216,9 +211,9 @@ src/
   stt.rs         fil Whisper (modèle gardé en mémoire)
   quebec.rs      invite, typographie, lexique, filtre d'hallucinations
   storage.rs     rencontres (JSON) et exports MD/TXT/SRT
-  models.rs      catalogue et téléchargement des modèles
+  models.rs      modèles (Whisper, rédaction) et leur téléchargement
   agenda.rs      lecture de l'ordre du jour (Word, PDF, texte)
-  summary.rs     compte rendu : modèle intégré ou Ollama (découpage des longues rencontres)
+  summary.rs     compte rendu par le modèle intégré (découpage des longues rencontres)
   audio/import.rs  import d'enregistrements (MP4, M4A, MP3, WAV, FLAC, OGG)
 redaction/       programme auxiliaire de rédaction (llama.cpp), séparé à cause de ggml
   cli.rs         commandes --transcrire et --compte-rendu

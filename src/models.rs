@@ -13,42 +13,11 @@ pub struct ModelInfo {
     pub file: &'static str,
     pub label: &'static str,
     pub size_mb: u32,
-    /// Mémoire vive approximative pendant la transcription (modèle + état).
-    pub ram_mb: u32,
-    pub note: &'static str,
 }
 
-/// Tous multilingues : les modèles « .en » ne savent pas le français.
-pub const CATALOG: &[ModelInfo] = &[
-    ModelInfo {
-        file: RECOMMENDED,
-        label: "Large v3 Turbo (q5)",
-        size_mb: 574,
-        ram_mb: 1200,
-        note: "Recommandé (8 Go et +) : très bon sur l'accent québécois, rapide",
-    },
-    ModelInfo {
-        file: "ggml-large-v3-q5_0.bin",
-        label: "Large v3 (q5)",
-        size_mb: 1080,
-        ram_mb: 3000,
-        note: "Précision maximale, ~3× plus lent ; 16 Go conseillés",
-    },
-    ModelInfo {
-        file: "ggml-medium-q5_0.bin",
-        label: "Medium (q5)",
-        size_mb: 539,
-        ram_mb: 1700,
-        note: "Bon compromis pour portables sans GPU",
-    },
-    ModelInfo {
-        file: "ggml-small-q5_1.bin",
-        label: "Small (q5)",
-        size_mb: 190,
-        ram_mb: 800,
-        note: "Machines modestes ; moins précis sur le joual",
-    },
-];
+/// Le seul modèle Whisper : multilingue (les modèles « .en » ne savent pas le
+/// français), quantifié en 5 bits, ~1,2 Go de RAM en transcription, convient dès 8 Go.
+pub const WHISPER: ModelInfo = ModelInfo { file: RECOMMENDED, label: "Large v3 Turbo (q5)", size_mb: 574 };
 
 /// Modèles de langue pour rédiger les comptes rendus (format GGUF, llama.cpp).
 /// Licence Apache 2.0 tous les deux : utilisables sans restriction par un organisme.
@@ -59,6 +28,8 @@ pub struct LlmInfo {
     pub label: &'static str,
     pub url: &'static str,
     pub size_mb: u32,
+    /// Mémoire vive pendant la rédaction ; servira au choix automatique selon la RAM.
+    #[allow(dead_code)]
     pub ram_mb: u32,
     pub note: &'static str,
 }
@@ -99,20 +70,6 @@ pub fn path(file: &str) -> PathBuf {
 
 pub fn installed(file: &str) -> bool {
     path(file).metadata().is_ok_and(|m| m.len() > 1_000_000)
-}
-
-/// Modèles présents sur le disque, y compris ceux ajoutés à la main
-/// (p. ex. un modèle affiné sur le français québécois converti en ggml).
-pub fn local_models() -> Vec<String> {
-    let mut v: Vec<String> = std::fs::read_dir(crate::config::models_dir())
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|e| e.file_name().into_string().ok())
-        .filter(|n| n.ends_with(".bin") && installed(n))
-        .collect();
-    v.sort();
-    v
 }
 
 #[derive(Default)]

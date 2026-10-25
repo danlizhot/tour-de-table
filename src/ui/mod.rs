@@ -13,7 +13,7 @@ use crossbeam_channel::{Receiver, Sender};
 use eframe::egui::{self, Align, Color32, CornerRadius, Layout, RichText, Sense, Ui, Vec2};
 
 use crate::audio::{self, DeviceInfo, dsp::Utterance};
-use crate::config::Config;
+use crate::config::{self, Config};
 use crate::models::{self, Progress};
 use crate::quebec::Glossary;
 use crate::recorder::Recorder;
@@ -102,8 +102,8 @@ impl TourDeTableApp {
 
     pub(super) fn push_settings(&self) {
         let _ = self.engine.tx.send(Request::Configure(Settings {
-            threads: self.cfg.threads,
-            beam_size: self.cfg.beam_size,
+            threads: config::threads(),
+            beam_size: config::BEAM_SIZE,
             glossary: Glossary::parse(&self.cfg.glossary),
             agenda_hint: self
                 .live
@@ -115,9 +115,9 @@ impl TourDeTableApp {
     }
 
     pub(super) fn load_model(&mut self) {
-        if models::installed(&self.cfg.model) {
+        if models::installed(models::RECOMMENDED) {
             self.model = ModelState::Loading;
-            let _ = self.engine.tx.send(Request::Load { path: self.cfg.model_path(), use_gpu: self.cfg.use_gpu });
+            let _ = self.engine.tx.send(Request::Load { path: config::model_path(), use_gpu: config::USE_GPU });
         } else {
             self.model = ModelState::Missing;
         }
@@ -202,7 +202,7 @@ impl TourDeTableApp {
                 match res {
                     Ok(()) => {
                         self.notify(format!("Modèle {file} installé."), false);
-                        if self.cfg.model == file {
+                        if file == models::RECOMMENDED {
                             self.load_model();
                         }
                     }

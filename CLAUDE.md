@@ -32,7 +32,7 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   `widgets.rs` (couleurs, composants, logo). Garder chaque fichier sous ~700 lignes.
 * `storage.rs` : une rencontre = un dossier avec `rencontre.json`, sauvegardé après chaque
   segment (écriture atomique `.tmp` + `rename`).
-* `summary.rs` : compte rendu par le programme auxiliaire (défaut) ou Ollama (avancé).
+* `summary.rs` : compte rendu par le programme auxiliaire.
 * `quebec.rs` : invite québécoise, typographie OQLF, lexique, filtre d'hallucinations.
 
 ### Crate auxiliaire `tourdetable-redaction` (`redaction/`)
@@ -68,8 +68,8 @@ Le code n'a jamais été passé par `rustfmt` (lignes d'environ 130 colonnes, sa
   journal, interface, messages de commit.
 * **Typographie OQLF** dans l'interface et les textes : « 14 h 30 », « 2 500 $ », pas d'espace
   avant ? ! ;, espace avant le deux-points, guillemets « » avec espaces.
-* **Aucune donnée ne quitte l'ordinateur.** Seules connexions permises : téléchargement d'un
-  modèle sur clic explicite (Hugging Face) et Ollama si l'utilisateur le choisit. Pas de
+* **Aucune donnée ne quitte l'ordinateur.** Seule connexion permise : téléchargement d'un
+  modèle sur clic explicite (Hugging Face). Pas de
   télémétrie. Toute nouvelle connexion exige de mettre à jour `CONFIDENTIALITE.md` (et la page
   publiée, voir README).
 * **Compatibilité ascendante de `rencontre.json`** (et de la configuration) : tout nouveau champ

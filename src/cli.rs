@@ -10,7 +10,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::audio::dsp::Segmenter;
 use crate::audio::{SAMPLE_RATE, Source};
-use crate::config::Config;
+use crate::config::{self, Config};
 use crate::quebec::Glossary;
 use crate::storage::Meeting;
 use crate::stt::{Engine, Reply, Request, Settings};
@@ -21,26 +21,26 @@ pub fn transcribe_file(wav: &str, model: Option<&str>) -> Result<()> {
 
 fn transcribe(wav: &str, model: Option<&str>) -> Result<Meeting> {
     let cfg = Config::load();
-    let model_path = model.map(std::path::PathBuf::from).unwrap_or_else(|| cfg.model_path());
+    let model_path = model.map(std::path::PathBuf::from).unwrap_or_else(config::model_path);
 
     let audio = crate::audio::import::decode(std::path::Path::new(wav))?;
     let duration = audio.len() as f32 / SAMPLE_RATE as f32;
 
     let mut utterances = Vec::new();
-    let mut seg = Segmenter::new(Source::Salle, cfg.vad_sensitivity);
+    let mut seg = Segmenter::new(Source::Salle, config::VAD_SENSITIVITY);
     seg.push(&audio, &mut utterances);
     seg.flush(&mut utterances);
     eprintln!("{duration:.1} s d'audio, {} énoncés détectés", utterances.len());
 
     let engine = Engine::spawn(|| {});
     engine.tx.send(Request::Configure(Settings {
-        threads: cfg.threads,
-        beam_size: cfg.beam_size,
+        threads: config::threads(),
+        beam_size: config::BEAM_SIZE,
         glossary: Glossary::parse(&cfg.glossary),
         agenda_hint: String::new(),
     }))?;
     let t = Instant::now();
-    engine.tx.send(Request::Load { path: model_path.clone(), use_gpu: cfg.use_gpu })?;
+    engine.tx.send(Request::Load { path: model_path.clone(), use_gpu: config::USE_GPU })?;
     match engine.rx.recv()? {
         Reply::Loaded(Ok(name)) => eprintln!("Modèle {name} chargé en {:.1} s", t.elapsed().as_secs_f32()),
         Reply::Loaded(Err(e)) => bail!(e),
@@ -81,7 +81,6 @@ fn transcribe(wav: &str, model: Option<&str>) -> Result<Meeting> {
 }
 
 pub fn compte_rendu(agenda_path: &str, source: &str) -> Result<()> {
-    let cfg = Config::load();
     let agenda = crate::agenda::read(std::path::Path::new(agenda_path))?;
     eprintln!("Ordre du jour lu ({} caractères) :\n{agenda}\n", agenda.chars().count());
 
@@ -102,7 +101,7 @@ pub fn compte_rendu(agenda_path: &str, source: &str) -> Result<()> {
             l.trim_end_matches(|c: char| c == '–' || c == '-' || c == ':' || c.is_whitespace()).to_string()
         })
         .unwrap_or_else(|| std::path::Path::new(source).file_stem().unwrap_or_default().to_string_lossy().into_owned());
-    let moteur = cfg.moteur();
+    let moteur = config::moteur();
     let req = crate::summary::Request {
         moteur: &moteur,
         progress: None,
