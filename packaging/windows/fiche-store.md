@@ -49,7 +49,7 @@ la rédaction des comptes rendus.
 
 Rien d'autre à installer : au premier usage, Tour de table télécharge une seule fois son modèle de
 reconnaissance vocale (574 Mo) et, si vous rédigez des comptes rendus, son modèle de rédaction
-(2,5 Go, ou 4,7 Go pour la version la plus précise).
+(2,7 Go).
 
 ## Fonctionnalités (jusqu'à 20, ≤ 200 caractères chacune)
 

@@ -64,9 +64,11 @@ impl Palier {
 }
 
 /// Modèle de langue du compte rendu (GGUF Q4_K_M, llama.cpp), le même sur tous les postes.
-/// Licence Apache 2.0 : utilisable sans restriction par un organisme. Mesuré sur une rencontre
-/// de 2 h (processeur seul), Ministral 3 8B prenait 1,3 fois plus de temps ; Qwen3 30B-A3B,
-/// plus rapide sur 32 Go, demandait 18,6 Go à télécharger et ~20 Go de mémoire.
+/// Licence Apache 2.0 : utilisable sans restriction par un organisme. Qwen3.5 4B (architecture
+/// hybride, attention linéaire « Gated DeltaNet ») lit les longues transcriptions vite : sur une
+/// vraie rencontre de 27 min (processeur seul), 13 min de compte rendu contre 29 pour Qwen3 4B
+/// Instruct 2507. Il réfléchit par défaut : le programme de rédaction le fait répondre
+/// directement. Ministral 3 8B était plus lent encore ; Qwen3 30B-A3B demandait 18,6 Go.
 pub struct LlmInfo {
     pub file: &'static str,
     pub label: &'static str,
@@ -80,12 +82,12 @@ pub struct LlmInfo {
 
 pub const LLM_CATALOG: &[LlmInfo] = &[
     LlmInfo {
-        file: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
-        label: "Qwen3 4B Instruct",
-        url: "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
-        octets: 2_497_281_120,
-        sha256: "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
-        ram_mb: 3700,
+        file: "Qwen3.5-4B-Q4_K_M.gguf",
+        label: "Qwen3.5 4B",
+        url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf",
+        octets: 2_740_937_888,
+        sha256: "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        ram_mb: 3300,
     },
 ];
 
@@ -252,7 +254,7 @@ mod tests {
         // Poste de 32 Go et plus.
         assert_eq!(Palier::selon_ram(31 * GIO), Palier::Seize);
         assert_eq!(Palier::selon_ram(128 * GIO), Palier::Seize);
-        assert_eq!(modele_redaction().file, "Qwen3-4B-Instruct-2507-Q4_K_M.gguf");
+        assert_eq!(modele_redaction().file, "Qwen3.5-4B-Q4_K_M.gguf");
     }
 
     #[test]
