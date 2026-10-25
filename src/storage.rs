@@ -324,7 +324,7 @@ pub fn list() -> Vec<Meeting> {
 
 fn list_dans(racine: &Path) -> Vec<Meeting> {
     let mut v: Vec<Meeting> = std::fs::read_dir(racine).into_iter().flatten().flatten().filter_map(|e| charger(&e.path())).collect();
-    v.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+    v.sort_by_key(|m| std::cmp::Reverse(m.started_at));
     v
 }
 

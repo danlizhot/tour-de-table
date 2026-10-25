@@ -34,6 +34,11 @@ enum View {
     Past(usize),
 }
 
+/// Rédaction en cours : (rencontre, résultat, jetons rédigés, début).
+type TacheCompteRendu = (String, Receiver<Result<String, String>>, Arc<std::sync::atomic::AtomicUsize>, std::time::Instant);
+/// Décodage d'un fichier audio : nom affiché, résultat (énoncés et durée).
+type TacheImport = (String, Receiver<Result<(Vec<Utterance>, u64), String>>);
+
 struct Download {
     file: String,
     progress: Arc<Progress>,
@@ -60,12 +65,12 @@ pub struct TourDeTableApp {
     show_settings: bool,
     download: Option<Download>,
     /// Rédaction en cours : (rencontre, résultat, jetons rédigés, début).
-    summary_job: Option<(String, Receiver<Result<String, String>>, Arc<std::sync::atomic::AtomicUsize>, std::time::Instant)>,
+    summary_job: Option<TacheCompteRendu>,
     notices: Vec<(String, bool)>,
     /// Ordre du jour déposé avant de démarrer : rattaché à la prochaine rencontre.
     draft_agenda: Option<Agenda>,
     /// Fichier audio en cours de décodage (nom affiché, résultat : énoncés et durée).
-    import_job: Option<(String, Receiver<Result<(Vec<Utterance>, u64), String>>)>,
+    import_job: Option<TacheImport>,
     /// Éditeur des points de l'ordre du jour ouvert (« Modifier les points »).
     edit_points: bool,
     /// Exportation de l'audio en cours : fichiers écrits et avertissements.
@@ -186,27 +191,27 @@ impl TourDeTableApp {
                 Err(e) => self.notify(format!("Exportation de l'audio : {e}"), true),
             }
         }
-        if let Some((name, rx)) = &self.import_job {
-            if let Ok(result) = rx.try_recv() {
-                let name = name.clone();
-                self.import_job = None;
-                match result {
-                    Ok((utterances, duration)) => {
-                        log::info!("Import « {name} » : {duration} s, {} énoncés", utterances.len());
-                        if let Some(m) = self.live.as_mut() {
-                            m.duration_s = duration;
-                        }
-                        for u in utterances {
-                            let _ = self.utt_tx.send(u);
-                        }
-                        self.finishing = true;
+        if let Some((name, rx)) = &self.import_job
+            && let Ok(result) = rx.try_recv()
+        {
+            let name = name.clone();
+            self.import_job = None;
+            match result {
+                Ok((utterances, duration)) => {
+                    log::info!("Import « {name} » : {duration} s, {} énoncés", utterances.len());
+                    if let Some(m) = self.live.as_mut() {
+                        m.duration_s = duration;
                     }
-                    Err(e) => {
-                        if let Some(m) = self.live.take() {
-                            let _ = std::fs::remove_dir_all(m.dir());
-                        }
-                        self.notify(format!("Import de « {name} » : {e}"), true);
+                    for u in utterances {
+                        let _ = self.utt_tx.send(u);
                     }
+                    self.finishing = true;
+                }
+                Err(e) => {
+                    if let Some(m) = self.live.take() {
+                        let _ = std::fs::remove_dir_all(m.dir());
+                    }
+                    self.notify(format!("Import de « {name} » : {e}"), true);
                 }
             }
         }
@@ -246,35 +251,35 @@ impl TourDeTableApp {
             self.finalize();
         }
 
-        if let Some(dl) = &self.download {
-            if let Ok(res) = dl.done.try_recv() {
-                let file = dl.file.clone();
-                self.download = None;
-                match res {
-                    Ok(()) => {
-                        self.notify(format!("Modèle {file} installé."), false);
-                        if file == models::RECOMMENDED {
-                            self.load_model();
-                        }
+        if let Some(dl) = &self.download
+            && let Ok(res) = dl.done.try_recv()
+        {
+            let file = dl.file.clone();
+            self.download = None;
+            match res {
+                Ok(()) => {
+                    self.notify(format!("Modèle {file} installé."), false);
+                    if file == models::RECOMMENDED {
+                        self.load_model();
                     }
-                    Err(e) => self.notify(format!("Téléchargement : {e}"), true),
                 }
+                Err(e) => self.notify(format!("Téléchargement : {e}"), true),
             }
         }
 
-        if let Some((id, rx, _, _)) = &self.summary_job {
-            if let Ok(res) = rx.try_recv() {
-                let id = id.clone();
-                self.summary_job = None;
-                match res {
-                    Ok(text) => {
-                        if let Some(m) = self.meetings.iter_mut().find(|m| m.id == id) {
-                            m.summary = Some(text);
-                            let _ = m.save().and_then(|_| m.export_all().map(|_| ()));
-                        }
+        if let Some((id, rx, _, _)) = &self.summary_job
+            && let Ok(res) = rx.try_recv()
+        {
+            let id = id.clone();
+            self.summary_job = None;
+            match res {
+                Ok(text) => {
+                    if let Some(m) = self.meetings.iter_mut().find(|m| m.id == id) {
+                        m.summary = Some(text);
+                        let _ = m.save().and_then(|_| m.export_all().map(|_| ()));
                     }
-                    Err(e) => self.notify(e, true),
                 }
+                Err(e) => self.notify(e, true),
             }
         }
     }
@@ -442,10 +447,10 @@ impl Drop for TourDeTableApp {
                 m.fermer_periode(crate::recorder::position_ms(&echantillons));
             }
         }
-        if let Some(m) = &self.live {
-            if !m.segments.is_empty() {
-                let _ = m.save().and_then(|_| m.export_all().map(|_| ()));
-            }
+        if let Some(m) = &self.live
+            && !m.segments.is_empty()
+        {
+            let _ = m.save().and_then(|_| m.export_all().map(|_| ()));
         }
         self.cfg.save();
     }

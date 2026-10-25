@@ -165,7 +165,7 @@ fn unverified_numbers(doc: &str, sources: &str) -> Vec<String> {
     let mut suspects: Vec<String> = Vec::new();
     for line in doc.lines() {
         // Les numéros de points (« ### 3. ») viennent de l'ordre du jour reformaté.
-        let body = line.trim_start_matches(|c: char| c == '#' || c == ' ');
+        let body = line.trim_start_matches(['#', ' ']);
         for n in numbers(body) {
             if !known.contains(&n) && !suspects.contains(&n) && n.parse::<u32>().map_or(true, |v| v > 31) {
                 suspects.push(n);
@@ -184,12 +184,11 @@ fn condense(r: &Request) -> Result<String> {
     while start < chars.len() {
         let mut end = (start + CHUNK_CHARS).min(chars.len());
         // Coupe à la fin d'un paragraphe pour ne pas trancher une phrase.
-        if end < chars.len() {
-            if let Some(nl) = chars[start..end].iter().rposition(|&c| c == '\n') {
-                if nl > CHUNK_CHARS / 2 {
-                    end = start + nl;
-                }
-            }
+        if end < chars.len()
+            && let Some(nl) = chars[start..end].iter().rposition(|&c| c == '\n')
+            && nl > CHUNK_CHARS / 2
+        {
+            end = start + nl;
         }
         let chunk: String = chars[start..end].iter().collect();
         let mut prompt = String::from(

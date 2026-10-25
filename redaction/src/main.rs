@@ -136,8 +136,7 @@ fn rediger(r: &Requete) -> Result<String> {
     ]);
 
     let mut sortie: Vec<u8> = Vec::new();
-    let mut pos = jetons.len();
-    for n in 0..max_jetons {
+    for (n, pos) in (0..max_jetons).zip(jetons.len()..) {
         let jeton = echantillonneur.sample(&ctx, lot.n_tokens() - 1);
         echantillonneur.accept(jeton);
         if vocab.is_eog(jeton) {
@@ -147,7 +146,6 @@ fn rediger(r: &Requete) -> Result<String> {
         lot.clear();
         lot.add(jeton, pos as i32, &[0], true)?;
         ctx.decode(&mut lot).context("Génération")?;
-        pos += 1;
         if n % 16 == 0 {
             emettre(json!({ "progres": n }));
         }

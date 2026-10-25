@@ -182,10 +182,10 @@ impl TourDeTableApp {
                     {
                         action = Some("summary");
                     }
-                    if let Some(sum) = &self.meetings[idx].summary {
-                        if ui.small_button("Copier").clicked() {
-                            ui.ctx().copy_text(sum.clone());
-                        }
+                    if let Some(sum) = &self.meetings[idx].summary
+                        && ui.small_button("Copier").clicked()
+                    {
+                        ui.ctx().copy_text(sum.clone());
                     }
                 }
             });
