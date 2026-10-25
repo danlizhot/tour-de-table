@@ -29,6 +29,8 @@ enum ModelState {
     Loading,
     Ready(String),
     Failed(String),
+    /// Déchargé pendant la rédaction (palier 8 Go) ; rechargé à la fin ou dès qu'on enregistre.
+    EnPause,
 }
 
 enum View {
@@ -37,7 +39,7 @@ enum View {
 }
 
 /// Rédaction en cours : (rencontre, résultat, jetons rédigés, début).
-type TacheCompteRendu = (String, Receiver<Result<String, String>>, Arc<std::sync::atomic::AtomicUsize>, std::time::Instant);
+type TacheCompteRendu = (String, Receiver<Result<String, String>>, Arc<crate::summary::Avancement>, std::time::Instant);
 /// Import d'un fichier audio : nom affiché, résultat (durée, une fois tous les blocs envoyés à
 /// la transcription) et avancement.
 type TacheImport = (String, Receiver<Result<u64, String>>, Arc<audio::import::Avancement>);
@@ -246,7 +248,8 @@ impl TourDeTableApp {
         }
         while let Ok(u) = self.utt_rx.try_recv() {
             let context = self.live.as_ref().map(|m| m.recent_text()).unwrap_or_default();
-            if matches!(self.model, ModelState::Ready(_)) {
+            // En chargement : la requête `Load` précède, le fil Whisper les traite dans l'ordre.
+            if matches!(self.model, ModelState::Ready(_) | ModelState::Loading) {
                 self.in_flight += 1;
                 let _ = self.engine.tx.send(Request::Transcribe { utterance: u, context });
             }
@@ -314,6 +317,37 @@ impl TourDeTableApp {
             }
         }
         self.pump_nettoyage();
+        self.recharger_whisper();
+    }
+
+    /// Palier 8 Go : Whisper est déchargé avant de lancer le programme de rédaction, pour que
+    /// les deux modèles ne se partagent pas la mémoire.
+    pub(super) fn liberer_whisper(&mut self) {
+        if models::palier() == models::Palier::Huit
+            && matches!(self.model, ModelState::Ready(_))
+            && self.recorder.is_none()
+            && !self.finishing
+            && self.import_job.is_none()
+        {
+            log::info!("Palier 8 Go : Whisper déchargé pendant la rédaction");
+            let _ = self.engine.tx.send(Request::Unload);
+            self.model = ModelState::EnPause;
+        }
+    }
+
+    /// Whisper en pause et plus aucune rédaction : il est rechargé.
+    fn recharger_whisper(&mut self) {
+        if matches!(self.model, ModelState::EnPause) && self.summary_job.is_none() && !self.nettoyage_en_cours() {
+            self.load_model();
+        }
+    }
+
+    /// Enregistrement ou import qui démarre : Whisper doit être chargé (ou en chargement).
+    pub(super) fn whisper_disponible(&mut self) -> bool {
+        if matches!(self.model, ModelState::EnPause) {
+            self.load_model();
+        }
+        matches!(self.model, ModelState::Ready(_) | ModelState::Loading)
     }
 
     /// Énoncés de l'import en cours revenus de Whisper : le fil de l'import envoie le bloc suivant.
@@ -356,6 +390,7 @@ impl TourDeTableApp {
                     ModelState::Loading => ("Chargement du modèle…".to_string(), Color32::from_rgb(0xD9, 0x77, 0x06)),
                     ModelState::Ready(n) => (format!("Modèle : {}", short_model(n)), SALLE),
                     ModelState::Failed(_) => ("Modèle en erreur".to_string(), ROUGE),
+                    ModelState::EnPause => ("Modèle en pause pendant la rédaction".to_string(), Color32::from_rgb(0xD9, 0x77, 0x06)),
                 };
                 let chip = ui.label(RichText::new(txt).color(color).small());
                 if let ModelState::Failed(e) = &self.model {

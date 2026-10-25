@@ -35,8 +35,9 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   champ `dossier`) avec `rencontre.json`, sauvegardé après chaque
   segment (écriture atomique `.tmp` + `rename`).
 * `summary.rs` : compte rendu par le programme auxiliaire.
-* `nettoyage.rs` : nettoyage de la transcription (règles de `data/nettoyage.txt`, puis modèle
-  par le programme auxiliaire, avec garde-fous). Enchaînement : transcription → nettoyage →
+* `nettoyage.rs` : nettoyage de la transcription, par règles seulement (`data/nettoyage.txt`) ;
+  une passe par le modèle a été retirée, trop lente sur processeur seul (plus que le temps
+  réel avec un 8B). Enchaînement : transcription → nettoyage →
   compte rendu. `Meeting::segments` (brut) n'est jamais modifié ; résultat dans
   `Meeting::nettoyage`. File d'attente et exclusion avec l'enregistrement dans `ui/nettoyage.rs`.
 * `quebec.rs` : invite québécoise, typographie OQLF, lexique, filtre d'hallucinations.
@@ -45,8 +46,14 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
 
 whisper.cpp et llama.cpp embarquent chacun leur propre copie de **ggml** : réunis dans un même
 exécutable, leurs symboles entrent en conflit. La rédaction tourne donc dans un exécutable
-séparé, livré à côté de `tourdetable`, qui reçoit une requête JSON sur stdin et répond par
-des lignes JSON sur stdout (`{"progres": n}`, puis `{"texte": …}` ou `{"erreur": …}`).
+séparé, livré à côté de `tourdetable`, qui reçoit une requête JSON par ligne sur stdin et répond
+à chacune par des lignes JSON sur stdout (`{"progres": n}`, puis `{"texte": …}` ou
+`{"erreur": …}`). Le modèle reste chargé entre les requêtes : `summary::Session` garde le
+programme ouvert pour toute une série (nettoyage, compte rendu par point).
+
+Modèle de rédaction : un par palier de mémoire vive (`models::palier`, 8 / 16 / 32 Go), jamais
+choisi par l'utilisateur. Au palier 8 Go, Whisper est déchargé (`stt::Request::Unload`) pendant
+la rédaction.
 
 **Ne JAMAIS ajouter `llama-cpp-2` (ni rien qui lie llama.cpp/ggml) aux dépendances du crate
 principal.** Toute fonction qui a besoin d'un modèle de langue passe par ce programme.

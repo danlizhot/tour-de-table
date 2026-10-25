@@ -88,9 +88,9 @@ pub fn model_path() -> PathBuf {
     models_dir().join(crate::models::RECOMMENDED)
 }
 
-/// Moteur de rédaction des comptes rendus.
+/// Moteur de rédaction (nettoyage et compte rendu) : le modèle du palier de mémoire vive.
 pub fn moteur() -> crate::summary::Moteur {
-    crate::summary::Moteur { modele: models_dir().join(crate::models::LLM_RECOMMENDED), fils: threads() }
+    crate::summary::Moteur { modele: models_dir().join(crate::models::modele_redaction().file), fils: threads() }
 }
 
 fn dirs() -> ProjectDirs {
@@ -195,8 +195,9 @@ impl Config {
         if self.ancien_moteur.take().is_some_and(|b| b == "Ollama") {
             notes.push("Rédaction par Ollama retirée : modèle intégré utilisé".to_string());
         }
-        if let Some(m) = self.ancien_modele_redaction.take().filter(|m| m != crate::models::LLM_RECOMMENDED) {
-            notes.push(format!("Modèle de rédaction « {m} » remplacé par {}", crate::models::LLM_RECOMMENDED));
+        let redaction = crate::models::modele_redaction().file;
+        if let Some(m) = self.ancien_modele_redaction.take().filter(|m| m != redaction) {
+            notes.push(format!("Modèle de rédaction « {m} » remplacé par {redaction} (choisi selon la mémoire vive)"));
         }
         notes
     }
@@ -272,7 +273,7 @@ mod tests {
         let json = format!(
             r#"{{"model": "{}", "llm_backend": "Integre", "llm_model": "{}"}}"#,
             crate::models::RECOMMENDED,
-            crate::models::LLM_RECOMMENDED
+            crate::models::modele_redaction().file
         );
         let mut cfg: Config = serde_json::from_str(&json).unwrap();
         assert!(cfg.oublier_anciens_choix().is_empty());
@@ -295,7 +296,7 @@ mod tests {
         assert_eq!(USE_GPU, cfg!(any(feature = "metal", feature = "vulkan", feature = "cuda")));
         assert!(model_path().ends_with(crate::models::RECOMMENDED));
         let moteur = moteur();
-        assert!(moteur.modele.ends_with(crate::models::LLM_RECOMMENDED));
+        assert!(moteur.modele.ends_with(crate::models::modele_redaction().file));
         assert_eq!(moteur.fils, threads());
     }
 }

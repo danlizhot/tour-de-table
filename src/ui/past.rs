@@ -18,7 +18,7 @@ impl TourDeTableApp {
         if self.summary_job.is_some() {
             return;
         }
-        if !models::installed(models::LLM_RECOMMENDED) {
+        if !models::installed(models::modele_redaction().file) {
             self.notify(
                 "Transcription terminée et nettoyée. Pour la rédaction automatique du compte rendu, installez d'abord le modèle de rédaction (bouton ci-dessous).",
                 false,
@@ -26,15 +26,19 @@ impl TourDeTableApp {
             return;
         }
         self.notify("Transcription nettoyée : rédaction du compte rendu à partir de l'ordre du jour…", false);
-        self.summarize(idx);
+        self.summarize(idx, true);
     }
 
-    pub(super) fn summarize(&mut self, idx: usize) {
+    /// Rédige le compte rendu dans un fil ; `reprendre` réutilise les résumés de points déjà
+    /// enregistrés (resume.md) d'un compte rendu interrompu.
+    pub(super) fn summarize(&mut self, idx: usize, reprendre: bool) {
+        self.liberer_whisper();
         let m = &self.meetings[idx];
         let (tx, rx) = crossbeam_channel::bounded(1);
         let moteur = config::moteur();
-        let progress = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let progress_thread = progress.clone();
+        let avancement = Arc::new(crate::summary::Avancement::default());
+        let avancement_fil = avancement.clone();
+        let (points, hors_point) = crate::summary::points_de(m);
         let title = m.title.clone();
         let date = m.started_at.format("%Y-%m-%d à %H h %M").to_string();
         let duration = clock(m.duration_s * 1000);
@@ -43,16 +47,19 @@ impl TourDeTableApp {
         std::thread::spawn(move || {
             let req = crate::summary::Request {
                 moteur: &moteur,
-                progress: Some(&progress_thread),
+                avancement: Some(&avancement_fil),
                 title: &title,
                 date: &date,
                 duration: &duration,
                 agenda: agenda.as_deref(),
                 transcript: &transcript,
+                points,
+                hors_point,
+                reprendre,
             };
             let _ = tx.send(crate::summary::compte_rendu(&req).map_err(|e| format!("{e:#}")));
         });
-        self.summary_job = Some((m.id.clone(), rx, progress, std::time::Instant::now()));
+        self.summary_job = Some((m.id.clone(), rx, avancement, std::time::Instant::now()));
     }
 
     /// Reconstitue l'audio de la rencontre (ou d'un point) dans un fichier choisi, dans un fil.
@@ -144,21 +151,29 @@ impl TourDeTableApp {
             .summary_job
             .as_ref()
             .filter(|(id, ..)| *id == self.meetings[idx].id)
-            .map(|(_, _, p, t0)| (p.load(Ordering::Relaxed), t0.elapsed().as_secs()));
+            .map(|(_, _, a, t0)| {
+                let (point, points) = (a.point.load(Ordering::Relaxed), a.points.load(Ordering::Relaxed));
+                let etape = match (point, points) {
+                    (_, 0) => String::new(),
+                    (p, n) if p > n => "Compte rendu — assemblage · ".to_string(),
+                    (p, n) => format!("Compte rendu — point {p} sur {n} · "),
+                };
+                (etape, a.jetons.load(Ordering::Relaxed), t0.elapsed().as_secs())
+            });
         // Modèle de rédaction intégré pas encore téléchargé : on propose de l'installer.
-        let llm_missing = (!models::installed(models::LLM_RECOMMENDED)).then(|| models::llm_info(models::LLM_RECOMMENDED)).flatten();
+        let llm_missing = (!models::installed(models::modele_redaction().file)).then(models::modele_redaction);
         let has_agenda = self.meetings[idx].agenda.is_some();
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 ui.label(RichText::new(if has_agenda { "Compte rendu" } else { "Résumé" }).strong());
-                if let Some((jetons, secs)) = busy {
+                if let Some((etape, jetons, secs)) = busy {
                     ui.spinner();
                     let etat = if jetons == 0 {
-                        format!("Lecture de la transcription par le modèle local… {}", clock(secs * 1000))
+                        format!("{etape}Lecture de la transcription par le modèle local… {}", clock(secs * 1000))
                     } else {
                         // ≈ 0,75 mot par jeton en français
-                        format!("Rédaction en cours : environ {} mots · {}", jetons * 3 / 4, clock(secs * 1000))
+                        format!("{etape}Rédaction : environ {} mots · {}", jetons * 3 / 4, clock(secs * 1000))
                     };
                     ui.label(RichText::new(etat).weak());
                 } else if let Some(info) = llm_missing {
@@ -167,9 +182,9 @@ impl TourDeTableApp {
                     } else if ui
                         .add_enabled(self.download.is_none(), egui::Button::new(format!(
                             "Installer le modèle de rédaction ({:.1} Go, une seule fois)",
-                            info.size_mb as f32 / 1000.0
+                            info.octets as f32 / 1e9
                         )).small())
-                        .on_hover_text(format!("{} · {}", info.label, info.note))
+                        .on_hover_text(format!("{} · choisi pour un poste de {} de mémoire", info.label, models::palier().nom()))
                         .clicked()
                     {
                         action = Some("install-llm");
@@ -229,10 +244,14 @@ impl TourDeTableApp {
                 Ok(dir) => storage::reveal(&dir),
                 Err(e) => self.notify(format!("Export : {e:#}"), true),
             },
-            Some("summary") => self.summarize(idx),
+            // « Régénérer » rédige tout à nouveau ; sinon, les points déjà résumés sont repris.
+            Some("summary") => {
+                let reprendre = self.meetings[idx].summary.is_none();
+                self.summarize(idx, reprendre);
+            }
             Some("decouper") => self.ouvrir_verification(self.meetings[idx].clone(), false),
             Some("install-llm") => {
-                self.start_download(models::LLM_RECOMMENDED);
+                self.start_download(models::modele_redaction().file);
             }
             _ => {}
         }

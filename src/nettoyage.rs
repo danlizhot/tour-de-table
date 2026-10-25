@@ -5,18 +5,18 @@
 //! synchronisée). Le travail se fait point par point, dans l'ordre chronologique, et reprend au
 //! point suivant après une interruption.
 //!
-//! * Passe 1, par règles, sans modèle de langue : phrases coupées entre deux énoncés recollées,
-//!   boucles de Whisper réduites, hésitations retirées (`data/nettoyage.txt`), puis lexique et
-//!   typographie OQLF de `quebec`.
-//! * Passe 2, par le modèle de langue local (`tourdetable-redaction`) : morceaux d'environ
-//!   4 minutes, phrases numérotées. Une sortie suspecte est rejetée et la passe 1 est gardée.
+//! Tout se fait par règles, sans modèle de langue (quelques secondes pour une rencontre de 2 h) :
+//! phrases coupées entre deux énoncés recollées, boucles de Whisper réduites, hésitations,
+//! expressions de remplissage et simples interjections retirées (`data/nettoyage.txt`), puis
+//! lexique et typographie OQLF de `quebec`. Les québécismes porteurs de sens (« tsé »,
+//! « pantoute », « correct »…) ne sont jamais retirés. Le modèle de langue sert seulement au
+//! compte rendu : une passe de correction par le modèle a été mesurée à plus que le temps réel
+//! sur un poste sans carte graphique.
 
 use std::collections::HashSet;
-use std::io::Write as _;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 
-use anyhow::Result;
 use crossbeam_channel::Receiver;
 use serde::{Deserialize, Serialize};
 
@@ -25,8 +25,6 @@ use crate::quebec::{self, Glossary};
 use crate::storage::Meeting;
 use crate::stt::Segment;
 
-/// Journal des morceaux acceptés ou rejetés, dans le dossier de la rencontre.
-pub const JOURNAL: &str = "nettoyage.log";
 /// Écart maximal entre les deux énoncés d'une phrase coupée.
 const ECART_RECOLLE_MS: u64 = 1500;
 /// Plus long chevauchement cherché entre deux énoncés recollés, en mots.
@@ -35,12 +33,8 @@ const CHEVAUCHEMENT_MAX: usize = 8;
 const BOUCLE_MAX: usize = 30;
 /// À partir de combien de répétitions d'affilée une suite est une boucle.
 const REPETITIONS_BOUCLE: usize = 3;
-/// Morceau envoyé au modèle : environ 4 minutes de parole, et jamais trop de texte.
-const MORCEAU_MS: u64 = 240_000;
-const MORCEAU_CARACTERES: usize = 4500;
-/// Longueur acceptée de la sortie du modèle, par rapport à son entrée.
-const RATIO_MIN: f32 = 0.70;
-const RATIO_MAX: f32 = 1.10;
+/// Plus courte phrase faite seulement d'interjections (« Ok. », « Oui, merci. ») retirée, en mots.
+const INTERJECTION_MAX: usize = 5;
 
 /// Transcription nettoyée d'une rencontre (`Meeting::nettoyage`).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -54,7 +48,8 @@ pub struct Nettoyage {
     /// Nombre de segments bruts au départ : si la transcription a changé, on recommence.
     #[serde(default)]
     pub segments: usize,
-    /// Modèle de rédaction absent : seule la passe 1 a été appliquée (au moins en partie).
+    /// Ancienne passe de correction par le modèle, retirée : toujours faux. Gardé pour lire les
+    /// rencontres déjà nettoyées.
     #[serde(default)]
     pub sans_modele: bool,
     /// Arrêté par l'utilisateur : pas de reprise automatique au démarrage.
@@ -88,6 +83,11 @@ const DONNEES: &str = include_str!("../data/nettoyage.txt");
 struct Listes {
     hesitations: HashSet<String>,
     debuts: Vec<Vec<String>>,
+    /// Les plus longues d'abord (« je veux dire » avant un éventuel « je »).
+    entre_virgules: Vec<Vec<String>>,
+    interjections: HashSet<String>,
+    /// En minuscules, cherchés tels quels dans la phrase.
+    indices_decision: Vec<String>,
     doubles_permis: HashSet<String>,
 }
 
@@ -108,10 +108,14 @@ fn lire_listes(texte: &str) -> Listes {
         match section {
             "hesitation" => l.hesitations.extend(cles),
             "debut" if !cles.is_empty() => l.debuts.push(cles),
+            "entre-virgules" if !cles.is_empty() => l.entre_virgules.push(cles),
+            "interjection" => l.interjections.extend(cles),
+            "indice-decision" => l.indices_decision.push(apostrophes(&ligne.to_lowercase())),
             "double-permis" => l.doubles_permis.extend(cles),
             _ => {}
         }
     }
+    l.entre_virgules.sort_by_key(|e| std::cmp::Reverse(e.len()));
     l
 }
 
@@ -150,7 +154,15 @@ impl Mot {
 
 /// Mot comparable : minuscules, sans la ponctuation collée au début ou à la fin.
 fn cle(mot: &str) -> String {
-    mot.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase()
+    apostrophes(&mot.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
+}
+
+fn apostrophes(s: &str) -> String {
+    s.replace(['’', '‘', 'ʼ'], "'")
+}
+
+fn commence_en_majuscule(mot: &str) -> bool {
+    mot.chars().next().is_some_and(char::is_uppercase)
 }
 
 /// Ponctuation collée à la fin d'un mot (« budget?» → « ?» »).
@@ -224,7 +236,10 @@ pub fn passe1(segments: &[(usize, &Segment)], point: Option<usize>, glossaire: &
         reduire_boucles(&mut c.mots);
         reduire_doubles(&mut c.mots);
         for mut p in decouper_phrases(c.mots) {
-            if retirer_hesitations(&mut p) {
+            // Simple interjection (« Ok. ») : retirée, sauf en réponse à une question ou à une
+            // proposition, où elle peut valoir un vote.
+            let reponse = retenues.last().is_some_and(|(_, prec)| appelle_reponse(prec));
+            if retirer_remplissage(&mut p) && (reponse || !est_interjection(&p)) {
                 p[0].segments.append(&mut orphelins);
                 retenues.push((c.source, p));
             } else {
@@ -239,7 +254,7 @@ pub fn passe1(segments: &[(usize, &Segment)], point: Option<usize>, glossaire: &
 
     let mut phrases = Vec::new();
     for (source, mots) in retenues {
-        let brut = mots.iter().map(|m| m.texte.as_str()).collect::<Vec<_>>().join(" ");
+        let brut = finaliser(&mots.iter().map(|m| m.texte.as_str()).collect::<Vec<_>>().join(" "));
         let texte = quebec::normalize(&glossaire.apply(&brut));
         if quebec::is_hallucination(&texte) {
             continue;
@@ -323,13 +338,15 @@ fn decouper_phrases(mots: Vec<Mot>) -> Vec<Vec<Mot>> {
     phrases
 }
 
-/// Retire les hésitations isolées et, en début de phrase, « bon ben ». Faux si rien ne reste.
-fn retirer_hesitations(p: &mut Vec<Mot>) -> bool {
+/// Retire les hésitations isolées, « bon ben » en début de phrase et les expressions de
+/// remplissage isolées entre virgules. Un mot à majuscule en milieu de phrase est gardé : c'est
+/// sans doute un nom (« avec Ben hier »). Faux si rien ne reste.
+fn retirer_remplissage(p: &mut Vec<Mot>) -> bool {
     let l = listes();
     let mut debut_retire = false;
     let mut i = 0;
     while i < p.len() {
-        if !l.hesitations.contains(&p[i].cle) {
+        if !l.hesitations.contains(&p[i].cle) || i > 0 && commence_en_majuscule(&p[i].texte) {
             i += 1;
             continue;
         }
@@ -343,19 +360,91 @@ fn retirer_hesitations(p: &mut Vec<Mot>) -> bool {
                     return false;
                 }
             }
-        } else {
+        } else if finit_phrase(&retire.texte) {
             p[i - 1].absorber(&[retire]);
+        } else {
+            // « que, euh, le » → « que le » : la virgule d'ouverture part aussi.
+            let prec = &mut p[i - 1];
+            if ponctuation(&retire.texte).ends_with(',') && prec.texte.ends_with(',') {
+                prec.texte.pop();
+            }
+            prec.segments.extend(retire.segments);
         }
     }
-    while let Some(expr) = l.debuts.iter().find(|e| p.len() > e.len() && p.iter().zip(e.iter()).all(|(m, c)| m.cle == *c)) {
+    let debut = |e: &Vec<String>, p: &[Mot]| {
+        p.len() > e.len() && p.iter().zip(e).enumerate().all(|(k, (m, c))| m.cle == *c && (k == 0 || !commence_en_majuscule(&m.texte)))
+    };
+    while let Some(expr) = l.debuts.iter().find(|e| debut(e, p)) {
         let retires: Vec<Mot> = p.drain(..expr.len()).collect();
         p[0].segments.extend(retires.iter().flat_map(|m| m.segments.iter().copied()));
         debut_retire = true;
+    }
+    let mut i = 0;
+    while i < p.len() {
+        let apres_virgule = i == 0 || ponctuation(&p[i - 1].texte).ends_with(',');
+        let trouve = l
+            .entre_virgules
+            .iter()
+            .find(|e| {
+                let fin = i + e.len();
+                apres_virgule
+                    && fin <= p.len()
+                    && !(i == 0 && fin == p.len())
+                    && p[i..fin].iter().zip(e.iter()).all(|(m, c)| m.cle == *c)
+                    && (ponctuation(&p[fin - 1].texte).ends_with(',') || i > 0 && fin == p.len())
+            })
+            .map(Vec::len);
+        let Some(n) = trouve else {
+            i += 1;
+            continue;
+        };
+        let retires: Vec<Mot> = p.drain(i..i + n).collect();
+        if i == 0 {
+            p[0].segments.extend(retires.iter().flat_map(|m| m.segments.iter().copied()));
+            debut_retire = true;
+        } else {
+            // « que, genre, le » → « que le » : la virgule d'ouverture part aussi ; « fini, genre. »
+            // → « fini. » : le point passe au mot précédent.
+            let prec = &mut p[i - 1];
+            if prec.texte.ends_with(',') {
+                prec.texte.pop();
+            }
+            let fin = retires.last().filter(|m| finit_phrase(&m.texte)).cloned();
+            prec.segments.extend(retires.iter().flat_map(|m| m.segments.iter().copied()));
+            if let Some(m) = fin {
+                prec.absorber(&[m]);
+            }
+        }
     }
     if debut_retire {
         majuscule_initiale(&mut p[0].texte);
     }
     true
+}
+
+/// Phrase faite seulement d'interjections (« Ok. », « Oui, merci. », « Tout à fait. »).
+fn est_interjection(p: &[Mot]) -> bool {
+    let mots: Vec<&str> = p.iter().map(|m| m.cle.as_str()).filter(|c| !c.is_empty()).collect();
+    !mots.is_empty() && mots.len() <= INTERJECTION_MAX && mots.iter().all(|m| listes().interjections.contains(*m))
+}
+
+/// Question ou proposition : la réponse qui suit compte (« Oui. » après « On vote? »).
+fn appelle_reponse(p: &[Mot]) -> bool {
+    let texte = apostrophes(&p.iter().map(|m| m.texte.as_str()).collect::<Vec<_>>().join(" ").to_lowercase());
+    texte.trim_end().ends_with('?') || listes().indices_decision.iter().any(|i| texte.contains(i.as_str()))
+}
+
+/// Remet la ponctuation en ordre après les retraits et met la majuscule initiale.
+fn finaliser(texte: &str) -> String {
+    let mut t = texte.to_string();
+    for (a, b) in [(" ,", ","), (",,", ","), (", .", "."), (",.", "."), (", ?", "?"), (",?", "?"), (", !", "!"), (",!", "!"), (" .", "."), ("  ", " ")] {
+        while t.contains(a) {
+            t = t.replace(a, b);
+        }
+    }
+    let mut t = t.trim_start_matches([',', ';', ' ', '-', '–']).trim_end_matches([',', ' ', ';']).to_string();
+    majuscule_initiale(&mut t);
+    t
 }
 
 /// Même phrase répétée `REPETITIONS_BOUCLE` fois ou plus d'affilée (boucle plus longue que
@@ -373,156 +462,6 @@ fn reduire_phrases_repetees(phrases: &mut Vec<(Source, Vec<Mot>)>) {
         }
         i += 1;
     }
-}
-
-// ───────────────────────── Passe 2 : modèle de langue ─────────────────────────
-
-/// Appel au modèle : invite → réponse. Simulé dans les tests.
-pub type Redacteur<'a> = dyn FnMut(&str) -> Result<String> + 'a;
-
-/// Ce que le modèle doit respecter : termes du lexique et titres des points.
-pub struct Contexte<'a> {
-    pub termes: &'a [String],
-    pub titres: &'a [String],
-}
-
-const CONSIGNE: &str = "Tu corriges la transcription automatique d'une réunion en français québécois. \
-Chaque ligne est une phrase numérotée.\n\
-Pour chaque phrase : corrige la ponctuation, les accords et les mots manifestement mal reconnus ; \
-retire les répétitions et les faux départs.\n\
-Ne résume pas. N'ajoute rien et ne retire rien de significatif. Garde tels quels les noms propres, \
-les chiffres, les montants, les dates, les sigles et les expressions québécoises (« tsé », « pantoute », \
-« correct », « pis », « tantôt »…).\n\
-Réponds uniquement avec les phrases corrigées : une par ligne, avec le même numéro et dans le même ordre, \
-sans commentaire.";
-
-/// Découpe les phrases en morceaux d'environ 4 minutes de parole.
-fn morceaux(phrases: &[Phrase]) -> Vec<std::ops::Range<usize>> {
-    let mut out = Vec::new();
-    let mut debut = 0;
-    let mut caracteres = 0;
-    for (i, p) in phrases.iter().enumerate() {
-        let trop_long = p.fin_ms.saturating_sub(phrases[debut].debut_ms) > MORCEAU_MS;
-        if i > debut && (trop_long || caracteres + p.texte.len() > MORCEAU_CARACTERES) {
-            out.push(debut..i);
-            debut = i;
-            caracteres = 0;
-        }
-        caracteres += p.texte.len();
-    }
-    if debut < phrases.len() {
-        out.push(debut..phrases.len());
-    }
-    out
-}
-
-fn invite(phrases: &[Phrase], ctx: &Contexte) -> String {
-    let mut s = String::from(CONSIGNE);
-    if !ctx.termes.is_empty() {
-        s.push_str("\nTermes à écrire exactement ainsi : ");
-        s.push_str(&ctx.termes.join(", "));
-        s.push('.');
-    }
-    if !ctx.titres.is_empty() {
-        s.push_str("\nPoints de l'ordre du jour : ");
-        s.push_str(&ctx.titres.join(" ; "));
-        s.push('.');
-    }
-    s.push_str("\n\n=== PHRASES ===\n");
-    for (i, p) in phrases.iter().enumerate() {
-        s.push_str(&format!("{}. {}\n", i + 1, p.texte));
-    }
-    s
-}
-
-/// Garde-fous : la sortie du modèle pour `entree`, phrase par phrase, ou la raison du rejet.
-fn verifier(entree: &[Phrase], sortie: &str) -> Result<Vec<String>, String> {
-    let mut textes: Vec<Option<String>> = vec![None; entree.len()];
-    let mut en_trop = Vec::new();
-    let mut courant = None;
-    for ligne in sortie.lines().map(str::trim).filter(|l| !l.is_empty()) {
-        let chiffres = ligne.len() - ligne.trim_start_matches(|c: char| c.is_ascii_digit()).len();
-        let reste = ligne[chiffres..].trim_start();
-        let numero = (chiffres > 0 && reste.starts_with(['.', ')'])).then(|| ligne[..chiffres].parse::<usize>().ok()).flatten();
-        let Some(n) = numero else {
-            // Ligne coupée par le modèle : suite de la phrase précédente (texte avant le
-            // premier numéro, comme « Voici le texte corrigé : », ignoré).
-            if let Some(t) = courant.and_then(|k: usize| textes[k].as_mut()) {
-                t.push(' ');
-                t.push_str(ligne);
-            }
-            continue;
-        };
-        let texte = reste[1..].trim().to_string();
-        match textes.get_mut(n.wrapping_sub(1)) {
-            Some(slot @ None) => {
-                *slot = Some(texte);
-                courant = Some(n - 1);
-            }
-            Some(Some(_)) => return Err(format!("phrase {n} en double")),
-            None => en_trop.push(n.to_string()),
-        }
-    }
-    if !en_trop.is_empty() {
-        return Err(format!("numéros en trop : {}", en_trop.join(", ")));
-    }
-    let manquants: Vec<String> = textes.iter().enumerate().filter(|(_, t)| t.is_none()).map(|(i, _)| (i + 1).to_string()).collect();
-    if !manquants.is_empty() {
-        return Err(format!("numéros manquants : {}", manquants.join(", ")));
-    }
-    let textes: Vec<String> = textes.into_iter().flatten().collect();
-
-    let longueur = |v: &mut dyn Iterator<Item = &str>| v.map(|t| t.chars().count()).sum::<usize>().max(1) as f32;
-    let ratio = longueur(&mut textes.iter().map(String::as_str)) / longueur(&mut entree.iter().map(|p| p.texte.as_str()));
-    if ratio < RATIO_MIN {
-        return Err(format!("sortie trop courte ({:.0} % de l'entrée)", ratio * 100.0));
-    }
-    if ratio > RATIO_MAX {
-        return Err(format!("sortie trop longue ({:.0} % de l'entrée)", ratio * 100.0));
-    }
-    let avant: Vec<&str> = entree.iter().map(|p| p.texte.as_str()).collect();
-    let apres: HashSet<String> = crate::summary::numbers(&textes.join(" ")).into_iter().collect();
-    let mut perdus: Vec<String> = crate::summary::numbers(&avant.join(" ")).into_iter().filter(|n| !apres.contains(n)).collect();
-    perdus.dedup();
-    if !perdus.is_empty() {
-        return Err(format!("nombres disparus : {}", perdus.join(", ")));
-    }
-    Ok(textes)
-}
-
-/// Passe 2 sur les phrases d'un groupe, morceau par morceau. Faux si annulée en cours de route.
-fn passe2(phrases: &mut Vec<Phrase>, ctx: &Contexte, glossaire: &Glossary, rediger: &mut Redacteur, etiquette: &str, journal: &mut dyn FnMut(&str), annuler: &AtomicBool) -> bool {
-    let mut sortie = Vec::with_capacity(phrases.len());
-    let total = morceaux(phrases).len();
-    for (k, r) in morceaux(phrases).into_iter().enumerate() {
-        if annuler.load(Ordering::Relaxed) {
-            return false;
-        }
-        let entree = &phrases[r.clone()];
-        let nom = format!("{etiquette}, morceau {} sur {total} (phrases {} à {})", k + 1, r.start + 1, r.end);
-        let verdict = rediger(&invite(entree, ctx)).map_err(|e| format!("{e:#}")).and_then(|t| verifier(entree, &t));
-        match verdict {
-            Ok(textes) => {
-                journal(&format!("{nom} : accepté"));
-                for (p, t) in entree.iter().zip(textes) {
-                    let texte = quebec::normalize(&glossaire.apply(&t));
-                    // Phrase vidée par le modèle (faux départ) : retirée.
-                    if !quebec::is_hallucination(&texte) {
-                        sortie.push(Phrase { texte, ..p.clone() });
-                    }
-                }
-            }
-            Err(raison) => {
-                if annuler.load(Ordering::Relaxed) {
-                    return false;
-                }
-                journal(&format!("{nom} : rejeté, passe 1 gardée — {raison}"));
-                sortie.extend_from_slice(entree);
-            }
-        }
-    }
-    *phrases = sortie;
-    true
 }
 
 // ───────────────────────── Déroulement ─────────────────────────
@@ -550,40 +489,22 @@ pub struct Avancement {
 }
 
 /// Nettoie `m` à partir de `depart` (reprise), groupe par groupe ; `apres_groupe` reçoit l'état
-/// après chaque groupe terminé. Sans `rediger` (modèle absent), seule la passe 1 est appliquée.
-pub fn executer(
-    m: &Meeting,
-    depart: Option<Nettoyage>,
-    glossaire: &Glossary,
-    mut rediger: Option<&mut Redacteur>,
-    avancement: &Avancement,
-    journal: &mut dyn FnMut(&str),
-    apres_groupe: &mut dyn FnMut(&Nettoyage),
-) -> Nettoyage {
+/// après chaque groupe terminé.
+pub fn executer(m: &Meeting, depart: Option<Nettoyage>, glossaire: &Glossary, avancement: &Avancement, apres_groupe: &mut dyn FnMut(&Nettoyage)) -> Nettoyage {
     let groupes = groupes(m);
     let mut n = match depart {
         Some(n) if n.segments == m.segments.len() && n.groupes == groupes.len() => n,
         _ => Nettoyage { groupes: groupes.len(), segments: m.segments.len(), ..Default::default() },
     };
     n.suspendu = false;
-    n.sans_modele |= rediger.is_none();
     avancement.groupes.store(groupes.len(), Ordering::Relaxed);
-    let titres: Vec<String> = m.agenda.iter().flat_map(|a| a.points.iter().map(|p| p.titre.clone())).collect();
-    let ctx = Contexte { termes: glossaire.termes(), titres: &titres };
     for (k, (point, indices)) in groupes.iter().enumerate().skip(n.groupes_faits) {
         if avancement.annuler.load(Ordering::Relaxed) {
             break;
         }
         avancement.groupe.store(k + 1, Ordering::Relaxed);
         let segs: Vec<(usize, &Segment)> = indices.iter().map(|&i| (i, &m.segments[i])).collect();
-        let mut phrases = passe1(&segs, *point, glossaire);
-        if let Some(r) = rediger.as_deref_mut() {
-            let etiquette = m.intertitre(*point);
-            if !passe2(&mut phrases, &ctx, glossaire, r, &etiquette, journal, &avancement.annuler) {
-                break;
-            }
-        }
-        n.phrases.extend(phrases);
+        n.phrases.extend(passe1(&segs, *point, glossaire));
         n.groupes_faits = k + 1;
         apres_groupe(&n);
     }
@@ -598,37 +519,12 @@ pub enum Etape {
     Fin(Nettoyage),
 }
 
-/// Nettoie `m` avec le modèle de rédaction s'il est installé (passe 1 seulement sinon), en
-/// journalisant dans `nettoyage.log`. Reprend à partir de `m.nettoyage`.
-pub fn executer_avec_modele(m: &Meeting, glossaire: &Glossary, avancement: &Avancement, apres_groupe: &mut dyn FnMut(&Nettoyage)) -> Nettoyage {
-    let moteur = crate::config::moteur();
-    let chemin = m.dir().join(JOURNAL);
-    let mut journal = |ligne: &str| {
-        let ecrit = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&chemin)
-            .and_then(|mut f| writeln!(f, "{} {ligne}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S")));
-        if let Err(e) = ecrit {
-            log::warn!("{} : {e}", chemin.display());
-        }
-    };
-    let mut appel = |invite: &str| crate::summary::generate_integre(&moteur.modele, moteur.fils, invite, None, Some(&avancement.annuler));
-    let rediger: Option<&mut Redacteur> = if moteur.modele.exists() {
-        Some(&mut appel)
-    } else {
-        journal(&format!("Modèle de rédaction absent ({}) : passe 1 seulement", moteur.modele.display()));
-        None
-    };
-    executer(m, m.nettoyage.clone(), glossaire, rediger, avancement, &mut journal, apres_groupe)
-}
-
-/// Nettoie `m` dans un fil (voir `executer_avec_modele`).
+/// Nettoie `m` dans un fil, en reprenant à partir de `m.nettoyage`.
 pub fn lancer(m: Meeting, glossaire: String, avancement: Arc<Avancement>) -> Receiver<Etape> {
     let (tx, rx) = crossbeam_channel::unbounded();
     std::thread::spawn(move || {
         let glossaire = Glossary::parse(&glossaire);
-        let fin = executer_avec_modele(&m, &glossaire, &avancement, &mut |n| {
+        let fin = executer(&m, m.nettoyage.clone(), &glossaire, &avancement, &mut |n| {
             let _ = tx.send(Etape::Groupe(n.clone()));
         });
         let _ = tx.send(Etape::Fin(fin));
@@ -672,7 +568,8 @@ mod tests {
         let p = nettoyer(&s);
         assert_eq!(
             textes(&p),
-            ["On va regarder le budget pour l'an prochain.", "C'est correct?", "Il reste", "deux points.", "Puis", "on m'entend-tu?", "Oui", "Parfait."]
+            // « Oui » répond à une question : gardé ; « Parfait. » seul est une simple interjection.
+            ["On va regarder le budget pour l'an prochain.", "C'est correct?", "Il reste", "Deux points.", "Puis", "On m'entend-tu?", "Oui"]
         );
         assert_eq!((p[0].segments.clone(), p[0].debut_ms, p[0].fin_ms), (vec![0, 1], 0, 8000));
         assert_eq!(p[1].segments, vec![1]);
@@ -682,7 +579,7 @@ mod tests {
     #[test]
     fn boucles_de_whisper() {
         let s = [
-            seg(0, 1000, Source::Salle, "Merci. Merci. Merci. Merci."),
+            seg(0, 1000, Source::Salle, "On commence. On commence. On commence. On commence."),
             seg(2000, 9000, Source::Salle, "On va voir on va voir on va voir ça demain."),
             // Deux fois seulement : gardé tel quel.
             seg(10_000, 11_000, Source::Salle, "C'est beau, c'est beau."),
@@ -693,7 +590,7 @@ mod tests {
         let p = nettoyer(&s);
         assert_eq!(
             textes(&p),
-            ["Merci.", "On va voir ça demain.", "C'est beau, c'est beau.", "La subvention de Desjardins couvre le local et le traiteur pour la soirée."]
+            ["On commence.", "On va voir ça demain.", "C'est beau, c'est beau.", "La subvention de Desjardins couvre le local et le traiteur pour la soirée."]
         );
         // Les segments d'une boucle retirée restent rattachés à la phrase gardée.
         assert_eq!(p[3].segments, vec![3, 4, 5]);
@@ -719,19 +616,75 @@ mod tests {
             seg(4000, 5000, Source::Salle, "Bon ben."),
         ];
         let p = nettoyer(&s);
-        assert_eq!(textes(&p), ["On commence-tu?", "Le budget est, correct.", "Nous nous sommes entendus.", "Bon ben."]);
+        assert_eq!(textes(&p), ["On commence-tu?", "Le budget est correct.", "Nous nous sommes entendus.", "Bon ben."]);
         // « Euh... » seul : son segment passe à la phrase suivante.
         assert_eq!(p[2].segments, vec![2, 3]);
+    }
+
+    #[test]
+    fn remplissage_entre_virgules() {
+        let s = [
+            seg(0, 1000, Source::Salle, "Je pense que, genre, le budget est correct."),
+            seg(1000, 2000, Source::Salle, "Ce genre de dossier fait partie, en fait, du mandat."),
+            seg(2000, 3000, Source::Salle, "En fait, on a fini, genre."),
+            seg(3000, 4000, Source::Salle, "Comme je disais, c'est réglé."),
+            seg(4000, 5000, Source::Salle, "Genre."),
+        ];
+        assert_eq!(
+            textes(&nettoyer(&s)),
+            ["Je pense que le budget est correct.", "Ce genre de dossier fait partie du mandat.", "On a fini.", "Comme je disais, c'est réglé.", "Genre."]
+        );
+    }
+
+    #[test]
+    fn interjections_et_votes() {
+        let s = [
+            seg(0, 1000, Source::Salle, "On commence par le point 1."),
+            seg(1000, 2000, Source::Distance, "Ok."),
+            seg(2000, 3000, Source::Salle, "Je propose d'adopter le budget."),
+            seg(3000, 4000, Source::Distance, "Oui."),
+            seg(4000, 5000, Source::Salle, "D'accord, merci."),
+            seg(5000, 6000, Source::Salle, "Tu t'en occupes, Julie?"),
+            seg(6000, 7000, Source::Distance, "Correct."),
+            seg(7000, 8000, Source::Salle, "On passe au point suivant."),
+            seg(8000, 9000, Source::Salle, "Non."),
+        ];
+        let p = nettoyer(&s);
+        // Le vote et la réponse à la question restent ; « correct » et « non » ne sont jamais des interjections.
+        assert_eq!(
+            textes(&p),
+            ["On commence par le point 1.", "Je propose d'adopter le budget.", "Oui.", "Tu t'en occupes, Julie?", "Correct.", "On passe au point suivant.", "Non."]
+        );
+        // Les segments des interjections retirées restent rattachés à une phrase voisine.
+        assert_eq!(p[1].segments, vec![1, 2]);
+        assert_eq!(p[3].segments, vec![4, 5]);
+    }
+
+    #[test]
+    fn prenom_ben_et_ponctuation() {
+        let s = [
+            seg(0, 1000, Source::Salle, "Bon ben, j'en ai parlé avec Ben hier."),
+            seg(1000, 2000, Source::Salle, "Bon, Ben a appelé la caisse."),
+            seg(2000, 3000, Source::Salle, "On a reçu, euh, la lettre , hum."),
+        ];
+        assert_eq!(textes(&nettoyer(&s)), ["J'en ai parlé avec Ben hier.", "Bon, Ben a appelé la caisse.", "On a reçu la lettre."]);
     }
 
     #[test]
     fn quebecismes_gardes() {
         let s = [seg(0, 5000, Source::Salle, "Tsé, c'est correct pantoute, pis on va checker ça tantôt.")];
         assert_eq!(textes(&nettoyer(&s)), ["Tsé, c'est correct pantoute, pis on va checker ça tantôt."]);
-        // Aucune hésitation de la liste n'est un mot de l'invite québécoise.
+        // Aucun mot retiré par les listes n'est un mot de l'invite québécoise.
         let invite: HashSet<String> = quebec::BASE_PROMPT.split_whitespace().map(cle).collect();
-        for h in &listes().hesitations {
-            assert!(!invite.contains(h), "« {h} » est dans quebec::BASE_PROMPT");
+        let l = listes();
+        let expressions = l.hesitations.iter().map(|h| vec![h.clone()]).chain(l.entre_virgules.iter().cloned());
+        let prompt: Vec<String> = quebec::BASE_PROMPT.split_whitespace().map(cle).collect();
+        for e in expressions {
+            let dans = if e.len() == 1 { invite.contains(&e[0]) } else { prompt.windows(e.len()).any(|w| w == e) };
+            assert!(!dans, "« {} » est dans quebec::BASE_PROMPT", e.join(" "));
+        }
+        for q in ["tsé", "pantoute", "correct", "pis", "tantôt"] {
+            assert!(!l.interjections.contains(q) && !l.hesitations.contains(q), "{q}");
         }
     }
 
@@ -751,96 +704,11 @@ mod tests {
     fn passe1_deterministe() {
         let s = [
             seg(0, 1000, Source::Salle, "Euh on on on va commencer"),
-            seg(1200, 3000, Source::Salle, "commencer la rencontre. Merci. Merci. Merci."),
+            seg(1200, 3000, Source::Salle, "commencer la rencontre. Bienvenue. Bienvenue. Bienvenue."),
         ];
         let a = nettoyer(&s);
         assert_eq!(a, nettoyer(&s));
-        assert_eq!(textes(&a), ["On va commencer la rencontre.", "Merci."]);
-    }
-
-    // ── Passe 2 ──
-
-    fn phrases(textes: &[&str]) -> Vec<Phrase> {
-        textes
-            .iter()
-            .enumerate()
-            .map(|(i, t)| Phrase { point: None, debut_ms: i as u64 * 1000, fin_ms: i as u64 * 1000 + 900, source: Source::Salle, texte: t.to_string(), segments: vec![i] })
-            .collect()
-    }
-
-    const ENTREE: [&str; 3] = ["on a reçu 2 500 $ du ministère", "c'est correct pantoute", "la prochaine rencontre est le 19 novembre"];
-
-    #[test]
-    fn garde_fous_acceptent_une_correction() {
-        let e = phrases(&ENTREE);
-        let sortie = "Voici les phrases :\n1. On a reçu 2 500 $ du ministère.\n2) C'est correct pantoute.\n3. La prochaine rencontre est\nle 19 novembre.";
-        assert_eq!(
-            verifier(&e, sortie).unwrap(),
-            ["On a reçu 2 500 $ du ministère.", "C'est correct pantoute.", "La prochaine rencontre est le 19 novembre."]
-        );
-    }
-
-    #[test]
-    fn garde_fous_rejettent() {
-        let e = phrases(&ENTREE);
-        let cas = [
-            ("1. On a reçu de l'argent.\n2. Correct.\n3. Rencontre le 19.", "trop courte"),
-            (
-                "1. On a reçu 2 500 $ du ministère de l'Éducation pour le projet.\n2. C'est tout à fait correct pantoute.\n3. La prochaine rencontre est le 19 novembre.",
-                "trop longue",
-            ),
-            ("1. On a reçu 2 500 $ du ministère.\n3. La prochaine rencontre est le 19 novembre, c'est correct.", "manquants : 2"),
-            ("1. On a reçu 2 500 $ du ministère.\n2. C'est correct pantoute.\n3. La prochaine rencontre est le 19 novembre.\n4. Merci.", "en trop : 4"),
-            ("1. On a reçu 2 500 $ du ministère.\n1. On a reçu 2 500 $.\n2. C'est correct pantoute.\n3. Le 19 novembre.", "1 en double"),
-            ("1. On a reçu 2 400 $ du ministère.\n2. C'est correct pantoute.\n3. La prochaine rencontre est le 19 novembre.", "disparus : 2500"),
-        ];
-        for (sortie, raison) in cas {
-            let r = verifier(&e, sortie).unwrap_err();
-            assert!(r.contains(raison), "« {r} » ne contient pas « {raison} »");
-        }
-    }
-
-    #[test]
-    fn passe2_garde_la_passe1_quand_la_sortie_est_rejetee() {
-        let mut p = phrases(&ENTREE);
-        let mut reponses = vec![
-            Ok("1. On a reçu 2 500 $ du ministère.\n2. C'est correct pantoute.\n3. La prochaine rencontre est le 19 novembre.".to_string()),
-        ]
-        .into_iter();
-        let mut rediger = |_: &str| reponses.next().unwrap_or_else(|| Ok(String::new()));
-        let mut lignes = Vec::new();
-        let ctx = Contexte { termes: &[], titres: &[] };
-        let fini = passe2(&mut p, &ctx, &Glossary::parse(""), &mut rediger, "Hors point", &mut |l| lignes.push(l.to_string()), &AtomicBool::new(false));
-        assert!(fini);
-        assert_eq!(p[1].texte, "C'est correct pantoute.");
-        assert_eq!(lignes, ["Hors point, morceau 1 sur 1 (phrases 1 à 3) : accepté"]);
-
-        // Sortie rejetée, puis erreur du modèle : la passe 1 reste.
-        let mut p = phrases(&ENTREE);
-        let mut lignes = Vec::new();
-        let mut rediger = |_: &str| Ok("1. Résumé : argent reçu.".to_string());
-        passe2(&mut p, &ctx, &Glossary::parse(""), &mut rediger, "Hors point", &mut |l| lignes.push(l.to_string()), &AtomicBool::new(false));
-        assert_eq!(p, phrases(&ENTREE));
-        assert!(lignes[0].contains("rejeté, passe 1 gardée — numéros manquants : 2, 3"), "{lignes:?}");
-        let mut rediger = |_: &str| -> Result<String> { anyhow::bail!("mémoire insuffisante") };
-        let mut lignes = Vec::new();
-        passe2(&mut p, &ctx, &Glossary::parse(""), &mut rediger, "Hors point", &mut |l| lignes.push(l.to_string()), &AtomicBool::new(false));
-        assert_eq!(p, phrases(&ENTREE));
-        assert!(lignes[0].ends_with("mémoire insuffisante"));
-    }
-
-    #[test]
-    fn invite_et_morceaux() {
-        let mut p = phrases(&ENTREE);
-        let ctx = Contexte { termes: &["Hydro-Québec".to_string()], titres: &["Ouverture".to_string(), "Budget".to_string()] };
-        let i = invite(&p, &ctx);
-        assert!(i.contains("Termes à écrire exactement ainsi : Hydro-Québec."));
-        assert!(i.contains("Points de l'ordre du jour : Ouverture ; Budget."));
-        assert!(i.ends_with("1. on a reçu 2 500 $ du ministère\n2. c'est correct pantoute\n3. la prochaine rencontre est le 19 novembre\n"));
-        assert_eq!(morceaux(&p), vec![0..3]);
-        p[2].debut_ms = 300_000;
-        p[2].fin_ms = 301_000;
-        assert_eq!(morceaux(&p), vec![0..2, 2..3]);
+        assert_eq!(textes(&a), ["On va commencer la rencontre.", "Bienvenue."]);
     }
 
     // ── Déroulement ──
@@ -864,8 +732,8 @@ mod tests {
         let brut = serde_json::to_string(&m.segments).unwrap();
         let av = Avancement::default();
         let mut etats = Vec::new();
-        let n = executer(&m, None, &Glossary::parse(""), None, &av, &mut |_| {}, &mut |n| etats.push(n.groupes_faits));
-        assert!(n.termine() && n.sans_modele);
+        let n = executer(&m, None, &Glossary::parse(""), &av, &mut |n| etats.push(n.groupes_faits));
+        assert!(n.termine() && !n.sans_modele);
         assert_eq!(etats, [1, 2, 3]);
         assert_eq!(serde_json::to_string(&m.segments).unwrap(), brut, "la transcription brute n'est jamais modifiée");
         let points: Vec<_> = n.phrases.iter().map(|p| (p.point, p.texte.as_str(), p.segments.clone())).collect();
@@ -879,22 +747,20 @@ mod tests {
         );
 
         // Interrompu après le premier groupe : la reprise ne refait que la suite.
-        let partiel = Nettoyage { phrases: n.phrases[..1].to_vec(), groupes_faits: 1, groupes: 3, segments: 4, suspendu: true, ..Default::default() };
-        let mut appels = 0;
-        let mut rediger = |invite: &str| {
-            appels += 1;
-            assert!(!invite.contains("Bonjour"));
-            let lignes: Vec<String> = invite.split("=== PHRASES ===\n").nth(1).unwrap().lines().map(str::to_string).collect();
-            Ok(lignes.join("\n"))
-        };
-        let reprise = executer(&m, Some(partiel), &Glossary::parse(""), Some(&mut rediger), &av, &mut |_| {}, &mut |_| {});
-        assert_eq!(appels, 2);
-        assert!(reprise.termine() && !reprise.suspendu && !reprise.sans_modele);
-        assert_eq!(reprise.phrases, n.phrases);
+        // Phrase du premier groupe modifiée : la reprise la garde telle quelle.
+        let mut deja = n.phrases[..1].to_vec();
+        deja[0].texte = "Déjà nettoyé.".into();
+        let partiel = Nettoyage { phrases: deja, groupes_faits: 1, groupes: 3, segments: 4, suspendu: true, ..Default::default() };
+        let mut etats = Vec::new();
+        let reprise = executer(&m, Some(partiel), &Glossary::parse(""), &av, &mut |n| etats.push(n.groupes_faits));
+        assert_eq!(etats, [2, 3]);
+        assert!(reprise.termine() && !reprise.suspendu);
+        assert_eq!(reprise.phrases[0].texte, "Déjà nettoyé.");
+        assert_eq!(reprise.phrases[1..], n.phrases[1..]);
 
         // Transcription modifiée depuis : on recommence au début.
         let perime = Nettoyage { groupes_faits: 1, groupes: 3, segments: 2, ..Default::default() };
-        assert_eq!(executer(&m, Some(perime), &Glossary::parse(""), None, &av, &mut |_| {}, &mut |_| {}).phrases, n.phrases);
+        assert_eq!(executer(&m, Some(perime), &Glossary::parse(""), &av, &mut |_| {}).phrases, n.phrases);
     }
 
     #[test]
@@ -902,7 +768,7 @@ mod tests {
         let m = rencontre();
         let av = Avancement::default();
         av.annuler.store(true, Ordering::Relaxed);
-        let n = executer(&m, None, &Glossary::parse(""), None, &av, &mut |_| {}, &mut |_| {});
+        let n = executer(&m, None, &Glossary::parse(""), &av, &mut |_| {});
         assert!(!n.termine());
         assert_eq!(n.groupes_faits, 0);
     }

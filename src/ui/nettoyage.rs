@@ -76,8 +76,9 @@ impl TourDeTableApp {
             let (id, puis_compte_rendu) = self.nettoyages_en_attente.remove(0);
             let Some(m) = self.meetings.iter().find(|m| m.id == id).filter(|m| !m.segments.is_empty()) else { continue };
             log::info!("Nettoyage de « {} »", m.title);
+            let m = m.clone();
             let avancement = Arc::new(Avancement::default());
-            let rx = nettoyage::lancer(m.clone(), self.cfg.glossary.clone(), avancement.clone());
+            let rx = nettoyage::lancer(m, self.cfg.glossary.clone(), avancement.clone());
             self.nettoyage_job = Some(TacheNettoyage { id, rx, avancement, puis_compte_rendu, par_utilisateur: false });
             return;
         }
@@ -143,7 +144,7 @@ impl TourDeTableApp {
     }
 
     /// Au-dessus de la transcription : version affichée (« Brute / Nettoyée »), avancement,
-    /// relance, et bandeau quand le modèle de rédaction manquait.
+    /// relance, et bandeau quand le nettoyage n'est pas fini.
     pub(super) fn barre_nettoyage(&mut self, ui: &mut Ui, idx: usize) {
         let m = &self.meetings[idx];
         let id = m.id.clone();
@@ -153,7 +154,7 @@ impl TourDeTableApp {
             .filter(|t| t.id == id)
             .map(|t| (t.avancement.groupe.load(Ordering::Relaxed), t.avancement.groupes.load(Ordering::Relaxed)));
         let en_attente = self.nettoyages_en_attente.iter().any(|(i, _)| *i == id);
-        let etat = m.nettoyage.as_ref().map(|n| (n.termine(), n.sans_modele, n.groupes_faits, n.groupes));
+        let etat = m.nettoyage.as_ref().map(|n| (n.termine(), n.groupes_faits, n.groupes));
         let par_point = !m.periodes.is_empty();
         let puis_compte_rendu = m.agenda.is_some() && m.summary.is_none();
         let mut action = None;
@@ -183,7 +184,7 @@ impl TourDeTableApp {
                 };
                 if ui
                     .add_enabled(self.recorder.is_none() && !self.finishing, egui::Button::new(libelle).small())
-                    .on_hover_text("Recolle les phrases coupées, retire les répétitions et les hésitations, puis corrige avec le modèle local")
+                    .on_hover_text("Recolle les phrases coupées, retire les répétitions, les hésitations et les simples interjections")
                     .clicked()
                 {
                     action = Some(Action::Lancer { depuis_zero });
@@ -191,12 +192,7 @@ impl TourDeTableApp {
             }
         });
         let bandeau = match etat {
-            Some((_, true, ..)) => Some(
-                "Le modèle de rédaction est absent : seules les corrections automatiques (phrases recollées, répétitions \
-                 et hésitations) ont été appliquées. Installez-le, puis cliquez sur « Relancer le nettoyage »."
-                    .to_string(),
-            ),
-            Some((false, _, faits, total)) if avancement.is_none() && !en_attente => {
+            Some((false, faits, total)) if avancement.is_none() && !en_attente => {
                 Some(format!("Nettoyage partiel ({faits} parties sur {total}) : le compte rendu lit la transcription brute."))
             }
             _ => None,

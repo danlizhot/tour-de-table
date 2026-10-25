@@ -16,6 +16,9 @@ use crate::storage::{Meeting, clock};
 impl TourDeTableApp {
     pub(super) fn start_recording(&mut self) {
         self.suspendre_nettoyage();
+        if !self.whisper_disponible() {
+            return;
+        }
         let meeting = Meeting::new(models::RECOMMENDED);
         // L'audio est toujours conservé, en blocs rangés par point de l'ordre du jour.
         let dossier = meeting.dir();
@@ -111,7 +114,7 @@ impl TourDeTableApp {
             self.notify("Validez d'abord le découpage par point affiché avant d'importer un autre fichier.", true);
             return;
         }
-        if !matches!(self.model, ModelState::Ready(_)) {
+        if !self.whisper_disponible() {
             self.notify("Installez d'abord le modèle de reconnaissance vocale (bouton « Télécharger » de l'écran d'accueil).", true);
             return;
         }
@@ -180,7 +183,7 @@ impl TourDeTableApp {
         ui.add_space(6.0);
         let recording = self.recorder.is_some();
         ui.horizontal(|ui| {
-            let can_start = matches!(self.model, ModelState::Ready(_)) && !self.finishing;
+            let can_start = matches!(self.model, ModelState::Ready(_) | ModelState::EnPause) && !self.finishing;
             let resp = record_button(ui, recording, recording || can_start);
             if resp.clicked() {
                 if recording {

@@ -64,21 +64,22 @@ déployer l'application dans une organisation.
 ## Nettoyage de la transcription
 
 Dès l'arrêt de l'enregistrement (pour un import : dès la validation du découpage par point), la
-transcription est nettoyée, point par point (« Nettoyage — point 3 sur 8 »). Jamais pendant un
+transcription est nettoyée en quelques secondes, point par point (« Nettoyage — point 3 sur 8 »). Jamais pendant un
 enregistrement ou une transcription : une rencontre qui démarre interrompt le nettoyage, qui
 reprend ensuite là où il en était (même après une fermeture de l'application).
 
 * **La transcription brute n'est jamais modifiée.** La fiche de la rencontre propose les deux
   versions (« Brute / Nettoyée ») et un bouton « Relancer le nettoyage ».
-* **Règles d'abord**, sans modèle de langue : phrases coupées entre deux énoncés recollées,
-  boucles de Whisper (même phrase répétée trois fois ou plus) réduites, hésitations retirées
-  (« euh », « hum », « bon ben » en début de phrase, « le le »), puis lexique et typographie.
-  Les québécismes porteurs de sens (« tsé », « pantoute », « correct ») sont gardés.
-* **Puis le modèle de rédaction local**, par morceaux d'environ 4 minutes : ponctuation,
-  accords, mots mal reconnus, faux départs, sans rien résumer ni ajouter. Une correction trop
-  courte ou trop longue, qui perd une phrase ou un chiffre, est rejetée : les règles seules
-  s'appliquent à ce morceau (détail dans `nettoyage.log`). Sans modèle installé, seules les
-  règles sont appliquées et la fiche l'indique.
+* **Par règles, sans modèle de langue** : phrases coupées entre deux énoncés recollées, boucles
+  de Whisper (même phrase répétée trois fois ou plus) réduites, hésitations retirées (« euh »,
+  « hum », « bon ben » en début de phrase, « le le »), expressions de remplissage isolées entre
+  virgules (« , genre, », « en fait, ») et simples interjections (« Ok. »), sauf quand elles
+  répondent à une question ou à une proposition (un « Oui. » après « Je propose… » est un vote).
+  Puis lexique et typographie. Les québécismes porteurs de sens (« tsé », « pantoute »,
+  « correct ») sont gardés, comme un prénom (« avec Ben hier »). Les listes sont dans
+  `data/nettoyage.txt`.
+* Le modèle de langue sert seulement au compte rendu : une correction de chaque phrase par le
+  modèle prenait plus que la durée de la rencontre sur un ordinateur sans carte graphique.
 * Le compte rendu part de la version nettoyée. Exports : `transcription-nettoyee.md`, et un
   `transcription.md` dans le dossier de chaque point.
 
@@ -110,20 +111,30 @@ saisir à la main.
   avec Qwen2.5 7B : « budget dépassé de 200 $ », alors que 2 300 $ avaient été dépensés sur
   2 500 $. Le compte rendu reste un **brouillon à relire** avant diffusion.
 * Sans ordre du jour, Tour de table produit un résumé structuré.
-* **Longues rencontres** : au-delà d'environ 24 000 caractères (~45 min), la transcription est
-  d'abord condensée par tranches, puis le compte rendu est rédigé à partir de ces notes. Les petits
-  modèles locaux gardent ainsi le fil, et la mémoire reste maîtrisée.
+* **Compte rendu par point** : quand la rencontre est découpée par point, chaque point est rédigé
+  à part, avec seulement sa transcription (« Compte rendu — point 3 sur 8 »), puis un dernier
+  appel ajoute les sujets hors ordre du jour et la prochaine rencontre. Le tableau des suivis
+  réunit ceux de tous les points. Chaque résumé est enregistré dans `resume.md` du dossier du
+  point : un compte rendu interrompu reprend sans tout recommencer. Un point trop long (plus
+  d'environ 24 000 caractères) est d'abord condensé par tranches.
+* **Rencontres sans découpage par point** (anciennes, ou sans ordre du jour) : la transcription
+  est rédigée d'un coup, condensée d'abord par tranches au-delà d'environ 45 min.
 * Exporté dans `compte-rendu.md`, et inclus dans `transcription.md`.
 
 **Modèle de langue intégré : rien à installer.** Le programme auxiliaire `tourdetable-redaction`,
-livré avec l'application, fait tourner llama.cpp sur l'ordinateur. Le modèle, **Qwen3 4B
-Instruct** (licence Apache 2.0, 2,5 Go à télécharger, ~3,2 Go de RAM pendant la rédaction), se
-télécharge une fois, d'un clic (bouton « Installer le modèle de rédaction » dans la fiche de la
-rencontre). Aucun choix à faire.
+livré avec l'application, fait tourner llama.cpp sur l'ordinateur, avec un seul chargement du
+modèle pour tout le nettoyage ou tout le compte rendu. Le modèle est choisi selon la mémoire vive
+de l'ordinateur, à chaque lancement (licence Apache 2.0 pour les trois) :
 
-Sans carte graphique, comptez quelques minutes pour le compte rendu d'une rencontre courte. La
-transcription doit être terminée avant : les deux modèles ne calculent
-jamais en même temps (Whisper reste chargé, environ 1,1 Go, mais au repos).
+| Mémoire | Modèle | Téléchargement | RAM pendant la rédaction |
+|---|---|---|---|
+| 8 Go et moins | Qwen3 4B Instruct 2507 | 2,5 Go | ~3,7 Go |
+| 16 Go | Ministral 3 8B Instruct 2512 | 5,2 Go | ~6,5 Go |
+| 32 Go et plus | Qwen3 30B-A3B Instruct 2507 | 18,6 Go | ~20 Go |
+
+Chaque téléchargement reprend là où il s'était arrêté, et sa taille et son SHA-256 sont vérifiés.
+La transcription doit être terminée avant la rédaction : les deux modèles ne calculent jamais en
+même temps. Avec 8 Go, Whisper est même déchargé pendant la rédaction et rechargé ensuite.
 
 ## Sources audio
 
@@ -254,7 +265,7 @@ src/
   audio/blocs.rs audio en blocs de 2 min par point : index, reconstitution, réparation
   stt.rs         fil Whisper (modèle gardé en mémoire)
   quebec.rs      invite, typographie, lexique, filtre d'hallucinations
-  nettoyage.rs   nettoyage de la transcription (règles, puis modèle intégré avec garde-fous)
+  nettoyage.rs   nettoyage de la transcription, par règles (data/nettoyage.txt)
   storage.rs     rencontres (JSON) et exports MD/TXT/SRT
   models.rs      modèles (Whisper, rédaction) et leur téléchargement
   agenda.rs      lecture de l'ordre du jour (Word, PDF, texte)

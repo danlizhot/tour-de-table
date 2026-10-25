@@ -5,11 +5,12 @@
 //! llama.cpp embarquent chacun leur propre copie de ggml : réunis dans un même
 //! exécutable, leurs symboles entreraient en conflit.
 //!
-//! Protocole : une requête JSON sur l'entrée standard, puis des lignes JSON sur
-//! la sortie standard : `{"progres": n}` (jetons produits) et, à la fin,
-//! `{"texte": "…"}` ou `{"erreur": "…"}`.
+//! Protocole : une requête JSON par ligne sur l'entrée standard ; pour chacune, des lignes JSON
+//! sur la sortie standard : `{"progres": n}` (jetons produits) puis `{"texte": "…"}` ou
+//! `{"erreur": "…"}`. Le modèle reste chargé d'une requête à l'autre (un seul chargement pour
+//! toute une série) ; le programme s'arrête à la fermeture de l'entrée standard.
 
-use std::io::{Read, Write};
+use std::io::{BufRead, Write};
 use std::num::NonZeroU32;
 
 use anyhow::{Context, Result, bail};
@@ -56,31 +57,45 @@ fn emettre(valeur: serde_json::Value) {
     let _ = out.flush();
 }
 
+/// Modèle chargé, gardé pour les requêtes suivantes qui le demandent.
+struct Charge {
+    backend: LlamaBackend,
+    modele: Option<(String, LlamaModel)>,
+}
+
 fn main() {
-    let mut entree = String::new();
-    let resultat = std::io::stdin()
-        .read_to_string(&mut entree)
-        .context("Lecture de la requête")
-        .and_then(|_| serde_json::from_str::<Requete>(&entree).context("Requête invalide"))
-        .and_then(|r| rediger(&r));
-    match resultat {
-        Ok(texte) => emettre(json!({ "texte": texte })),
-        Err(e) => {
-            emettre(json!({ "erreur": format!("{e:#}") }));
-            std::process::exit(1);
+    let mut charge: Option<Charge> = None;
+    for ligne in std::io::stdin().lock().lines() {
+        let Ok(ligne) = ligne else { break };
+        if ligne.trim().is_empty() {
+            continue;
+        }
+        let resultat = serde_json::from_str::<Requete>(&ligne).context("Requête invalide").and_then(|r| rediger(&mut charge, &r));
+        match resultat {
+            Ok(texte) => emettre(json!({ "texte": texte })),
+            Err(e) => emettre(json!({ "erreur": format!("{e:#}") })),
         }
     }
 }
 
-fn rediger(r: &Requete) -> Result<String> {
-    let backend = LlamaBackend::init()?;
-    llama_cpp_2::send_logs_to_tracing(llama_cpp_2::LogOptions::default().with_logs_enabled(false));
-
-    // Sans mmap : sur processeur, llama.cpp réorganise les poids (« repack ») et
-    // garderait sinon deux copies du modèle en mémoire (fichier + réorganisée).
-    let params_modele = LlamaModelParams::default().with_use_mmap(false);
-    let modele = LlamaModel::load_from_file(&backend, &r.modele, &params_modele)
-        .with_context(|| format!("Chargement du modèle {}", r.modele))?;
+fn rediger(charge: &mut Option<Charge>, r: &Requete) -> Result<String> {
+    if charge.is_none() {
+        let backend = LlamaBackend::init()?;
+        llama_cpp_2::send_logs_to_tracing(llama_cpp_2::LogOptions::default().with_logs_enabled(false));
+        *charge = Some(Charge { backend, modele: None });
+    }
+    let Charge { backend, modele: garde } = charge.as_mut().expect("initialisé");
+    if garde.as_ref().is_none_or(|(chemin, _)| *chemin != r.modele) {
+        *garde = None; // libère l'ancien modèle avant de charger le suivant
+        // Sans mmap : sur processeur, llama.cpp réorganise les poids (« repack ») et
+        // garderait sinon deux copies du modèle en mémoire (fichier + réorganisée).
+        let params_modele = LlamaModelParams::default().with_use_mmap(false);
+        let m = LlamaModel::load_from_file(backend, &r.modele, &params_modele)
+            .with_context(|| format!("Chargement du modèle {}", r.modele))?;
+        *garde = Some((r.modele.clone(), m));
+    }
+    let modele = &garde.as_ref().expect("chargé").1;
+    let backend = &*backend;
 
     // Gabarit de conversation propre au modèle (ChatML pour Qwen, etc.).
     let gabarit = modele.chat_template(None).context("Le modèle n'a pas de gabarit de conversation")?;
@@ -113,7 +128,7 @@ fn rediger(r: &Requete) -> Result<String> {
         .with_n_batch(LOT as u32)
         .with_n_threads(fils)
         .with_n_threads_batch(fils);
-    let mut ctx = modele.new_context(&backend, params).context("Création du contexte")?;
+    let mut ctx = modele.new_context(backend, params).context("Création du contexte")?;
 
     // Lecture de l'invite, par lots.
     let mut lot = LlamaBatch::new(LOT, 1);

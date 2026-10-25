@@ -119,33 +119,54 @@ fn importer(engine: &Engine, path: &Path, dir: &Path, meeting: &mut Meeting) -> 
     Ok(())
 }
 
-/// Nettoyage de la transcription, comme dans l'application (journal dans nettoyage.log).
+/// Nettoyage de la transcription, comme dans l'application.
 fn nettoyer(m: &mut Meeting) -> Result<()> {
     let t = Instant::now();
     let glossaire = Glossary::parse(&Config::load().glossary);
-    let n = crate::nettoyage::executer_avec_modele(m, &glossaire, &Default::default(), &mut |n| {
-        eprintln!("Nettoyage : partie {} sur {} faite", n.groupes_faits, n.groupes);
-    });
-    let modele = if n.sans_modele { "règles seulement, modèle de rédaction absent" } else { "règles et modèle local" };
-    eprintln!("Transcription nettoyée en {:.0} s ({modele})", t.elapsed().as_secs_f32());
+    let n = crate::nettoyage::executer(m, m.nettoyage.clone(), &glossaire, &Default::default(), &mut |_| {});
+    eprintln!("Transcription nettoyée en {:.1} s ({} phrases)", t.elapsed().as_secs_f32(), n.phrases.len());
     m.nettoyage = Some(n);
     m.save()?;
     m.export_all()?;
     Ok(())
 }
 
-pub fn compte_rendu(agenda_path: &str, source: &str) -> Result<()> {
+/// `source` : enregistrement (transcrit puis nettoyé), `rencontre.json` (nettoyé à nouveau, pour
+/// mesurer) ou transcription en texte. `palier` : mesure sur un autre palier que celui du poste.
+pub fn compte_rendu(agenda_path: &str, source: &str, palier: Option<crate::models::Palier>) -> Result<()> {
+    if let Some(p) = palier {
+        crate::models::forcer_palier(p);
+    }
+    let moteur = config::moteur();
+    eprintln!("Palier {} : {}", crate::models::palier().nom(), moteur.nom());
     let agenda = crate::agenda::read(Path::new(agenda_path))?;
     eprintln!("Ordre du jour lu ({} caractères) :\n{agenda}\n", agenda.chars().count());
 
-    let (transcript, duration) = if import::is_audio(Path::new(source)) {
+    let chemin = Path::new(source);
+    let mut duree_nettoyage = None;
+    let rencontre = if import::is_audio(chemin) {
         let nom = Path::new(agenda_path).file_name().unwrap_or_default().to_string_lossy().into_owned();
-        let mut m = transcribe(source, None, Some(Agenda::new(nom, agenda.clone())))?;
+        let m = transcribe(source, None, Some(Agenda::new(nom, agenda.clone())))?;
         eprintln!("Rencontre enregistrée dans {}", m.dir().display());
-        nettoyer(&mut m)?;
-        (m.texte_compte_rendu(), crate::storage::clock(m.duration_s * 1000))
+        Some(m)
+    } else if chemin.extension().is_some_and(|e| e == "json") {
+        let mut m = crate::storage::charger_fichier(chemin)?;
+        // Mesure : tout est refait, nettoyage compris.
+        m.nettoyage = None;
+        m.summary = None;
+        Some(m)
     } else {
-        (std::fs::read_to_string(source).with_context(|| format!("Lecture de {source}"))?, "non précisée".into())
+        None
+    };
+    let (transcript, duration, points, hors_point) = match rencontre {
+        Some(mut m) => {
+            let t = Instant::now();
+            nettoyer(&mut m)?;
+            duree_nettoyage = Some(t.elapsed().as_secs_f32());
+            let (points, hors_point) = crate::summary::points_de(&m);
+            (m.texte_compte_rendu(), crate::storage::clock(m.duration_s * 1000), points, hors_point)
+        }
+        None => (std::fs::read_to_string(source).with_context(|| format!("Lecture de {source}"))?, "non précisée".into(), Vec::new(), String::new()),
     };
     let t = Instant::now();
     // Titre : première ligne de l'ordre du jour (souvent le nom de l'instance).
@@ -158,18 +179,26 @@ pub fn compte_rendu(agenda_path: &str, source: &str) -> Result<()> {
             l.trim_end_matches(|c: char| c == '–' || c == '-' || c == ':' || c.is_whitespace()).to_string()
         })
         .unwrap_or_else(|| std::path::Path::new(source).file_stem().unwrap_or_default().to_string_lossy().into_owned());
-    let moteur = config::moteur();
+    let par_point = !points.is_empty();
     let req = crate::summary::Request {
         moteur: &moteur,
-        progress: None,
+        avancement: None,
         title: &title,
         date: &chrono::Local::now().format("%Y-%m-%d").to_string(),
         duration: &duration,
         agenda: Some(&agenda),
         transcript: &transcript,
+        points,
+        hors_point,
+        reprendre: false,
     };
     let cr = crate::summary::compte_rendu(&req)?;
     println!("{cr}");
-    eprintln!("Compte rendu rédigé en {:.0} s par {}", t.elapsed().as_secs_f32(), moteur.nom());
+    let duree_cr = t.elapsed().as_secs_f32();
+    let mode = if par_point { "par point" } else { "en un appel" };
+    eprintln!("Compte rendu ({mode}) rédigé en {duree_cr:.0} s par {}", moteur.nom());
+    if let Some(n) = duree_nettoyage {
+        eprintln!("Total : nettoyage {n:.1} s + compte rendu {duree_cr:.0} s = {:.1} min", (n + duree_cr) / 60.0);
+    }
     Ok(())
 }

@@ -314,11 +314,29 @@ impl Meeting {
     }
 
     /// transcription.md d'un point (toutes ses périodes) : nettoyée si le nettoyage est terminé.
-    fn markdown_du_point(&self, point: Option<usize>) -> Option<String> {
-        let paragraphes: Vec<Paragraphe> = match self.nettoyage_termine() {
+    fn paragraphes_du_point(&self, point: Option<usize>) -> Vec<Paragraphe> {
+        match self.nettoyage_termine() {
             Some(_) => self.groupes_nettoyes().into_iter().filter(|(p, _)| *p == point).flat_map(|(_, v)| v).collect(),
             None => self.segments_par_point().into_iter().filter(|(p, _)| *p == point).flat_map(|(_, v)| Self::paragraphs(&v)).collect(),
-        };
+        }
+    }
+
+    /// Transcription d'un point (toutes ses périodes), nettoyée si le nettoyage est terminé ;
+    /// `None` s'il n'a pas été abordé.
+    pub fn texte_du_point(&self, point: Option<usize>) -> Option<String> {
+        let paragraphes = self.paragraphes_du_point(point);
+        let lignes: Vec<String> = paragraphes.iter().map(|(t, src, text)| format!("[{}] {} : {text}", clock(*t), src.label())).collect();
+        (!lignes.is_empty()).then(|| lignes.join("\n\n"))
+    }
+
+    /// Dossier d'un point (audio, transcription.md, resume.md).
+    pub fn dossier_du_point(&self, point: Option<usize>) -> PathBuf {
+        let titres: Vec<String> = self.agenda.iter().flat_map(|a| a.points.iter().map(|p| p.titre.clone())).collect();
+        self.dir().join(crate::audio::blocs::prefixe(point, &titres))
+    }
+
+    fn markdown_du_point(&self, point: Option<usize>) -> Option<String> {
+        let paragraphes = self.paragraphes_du_point(point);
         if paragraphes.is_empty() {
             return None;
         }
@@ -399,11 +417,10 @@ impl Meeting {
             std::fs::write(dir.join("transcription-nettoyee.md"), self.to_markdown_nettoye())?;
         }
         if !self.periodes.is_empty() {
-            let titres: Vec<String> = self.agenda.iter().flat_map(|a| a.points.iter().map(|p| p.titre.clone())).collect();
-            let points = std::iter::once(None).chain((0..titres.len()).map(Some));
-            for point in points {
+            let n = self.agenda.as_ref().map_or(0, |a| a.points.len());
+            for point in std::iter::once(None).chain((0..n).map(Some)) {
                 if let Some(md) = self.markdown_du_point(point) {
-                    let dossier = dir.join(crate::audio::blocs::prefixe(point, &titres));
+                    let dossier = self.dossier_du_point(point);
                     std::fs::create_dir_all(&dossier)?;
                     std::fs::write(dossier.join("transcription.md"), md)?;
                 }
@@ -424,6 +441,16 @@ fn list_dans(racine: &Path) -> Vec<Meeting> {
     let mut v: Vec<Meeting> = std::fs::read_dir(racine).into_iter().flatten().flatten().filter_map(|e| charger(&e.path())).collect();
     v.sort_by_key(|m| std::cmp::Reverse(m.started_at));
     v
+}
+
+/// Rencontre lue depuis un `rencontre.json` quelconque (ligne de commande) : son dossier reste
+/// celui du fichier, même hors du dossier des rencontres (`dossier` absolu, que `dir` reprend tel quel).
+pub fn charger_fichier(chemin: &Path) -> Result<Meeting> {
+    let json = std::fs::read(chemin).with_context(|| format!("Lecture de {}", chemin.display()))?;
+    let mut m: Meeting = serde_json::from_slice(&json).with_context(|| format!("{} illisible", chemin.display()))?;
+    let dir = std::path::absolute(chemin)?.parent().context("dossier de la rencontre")?.to_path_buf();
+    m.dossier = dir.to_string_lossy().into_owned();
+    Ok(m)
 }
 
 /// Lit `rencontre.json` ; `None` pour tout autre dossier (l'utilisateur range ce qu'il veut dans Musique).
@@ -690,7 +717,7 @@ mod tests {
         // Sans nettoyage terminé, le compte rendu lit la transcription brute.
         assert_eq!(m.texte_compte_rendu(), m.plain_text());
 
-        let n = crate::nettoyage::executer(&m, None, &crate::quebec::Glossary::parse(""), None, &Default::default(), &mut |_| {}, &mut |_| {});
+        let n = crate::nettoyage::executer(&m, None, &crate::quebec::Glossary::parse(""), &Default::default(), &mut |_| {});
         m.nettoyage = Some(n);
         assert_eq!(m.texte_compte_rendu(), "— Hors point —\n\n[00:00] Salle : Bon, on attend Julie.\n\n— 2. Budget —\n\n[00:01] Salle : Le budget est adopté.");
         assert!(m.plain_text().contains("Le le budget"), "la version brute reste intacte");
