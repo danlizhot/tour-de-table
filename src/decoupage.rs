@@ -10,6 +10,8 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use crate::agenda::Point;
+use crate::storage::Declenchement;
+use crate::stt::Segment;
 
 /// Score minimal pour proposer un changement de point.
 pub const SEUIL: u8 = 75;
@@ -17,6 +19,8 @@ pub const SEUIL: u8 = 75;
 pub const FENETRE_TITRE_MS: u64 = 15_000;
 /// Un point commencé depuis moins longtemps est rarement déjà terminé.
 pub const DEBUT_RECENT_MS: u64 = 30_000;
+/// Écart minimal entre le début du point actif et la frontière d'un changement automatique.
+pub const ECART_MINIMAL_MS: u64 = 1000;
 /// Nom du journal des détections, dans le dossier de la rencontre.
 pub const JOURNAL: &str = "decoupage.log";
 
@@ -547,6 +551,42 @@ impl Detecteur {
         }
         meilleur.map(|(point, c)| Detection { point, score: c.score as u8, raison: c.raisons.join(" ; "), frontiere_ms: debut_ms })
     }
+}
+
+/// Début d'un point dans une rencontre déjà transcrite, proposé puis vérifié par l'utilisateur.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Frontiere {
+    /// Indice dans `Agenda::points` ; `None` : retour hors point.
+    pub point: Option<usize>,
+    pub debut_ms: u64,
+    /// Paroles qui ont déclenché la détection (vide pour une frontière ajoutée à la main).
+    pub extrait: String,
+    pub raison: String,
+    pub declenchement: Declenchement,
+}
+
+/// Découpage d'une rencontre déjà transcrite (import) : mêmes règles que pendant la rencontre,
+/// sans bandeau ni délai. Chaque détection au-dessus du seuil change de point.
+pub fn detecter_hors_ligne(segments: &[Segment], points: &[Point]) -> Vec<Frontiere> {
+    let mut detecteur = Detecteur::default();
+    let mut frontieres: Vec<Frontiere> = Vec::new();
+    for s in segments {
+        let actif = frontieres.last().and_then(|f| f.point);
+        let ctx = Contexte { points, actif, dernier: actif, debut_actif_ms: frontieres.last().map(|f| f.debut_ms) };
+        let Some(d) = detecteur.analyser(s.start_ms, s.end_ms, &s.text, &ctx) else { continue };
+        let plancher = frontieres.last().map(|f| f.debut_ms + ECART_MINIMAL_MS);
+        if d.score < SEUIL || plancher.is_some_and(|p| d.frontiere_ms < p) {
+            continue;
+        }
+        frontieres.push(Frontiere {
+            point: Some(d.point),
+            debut_ms: d.frontiere_ms,
+            extrait: s.text.clone(),
+            raison: format!("score {} : {}", d.score, d.raison),
+            declenchement: Declenchement::Auto,
+        });
+    }
+    frontieres
 }
 
 /// Ajoute une ligne horodatée au journal des détections de la rencontre.

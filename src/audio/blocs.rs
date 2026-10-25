@@ -95,7 +95,7 @@ pub fn prefixe(point: Option<usize>, titres: &[String]) -> String {
     format!("{rang:0largeur$}-{nom}")
 }
 
-fn suffixe(source: Source) -> &'static str {
+pub(crate) fn suffixe(source: Source) -> &'static str {
     match source {
         Source::Salle => "-salle",
         Source::Distance => "-distance",
@@ -103,12 +103,12 @@ fn suffixe(source: Source) -> &'static str {
     }
 }
 
-fn spec() -> hound::WavSpec {
+pub(crate) fn spec() -> hound::WavSpec {
     hound::WavSpec { channels: 1, sample_rate: SAMPLE_RATE, bits_per_sample: 16, sample_format: hound::SampleFormat::Int }
 }
 
 /// Écriture atomique d'un bloc (fichier temporaire puis renommage).
-fn ecrire_wav(chemin: &Path, echantillons: &[i16]) -> Result<()> {
+pub(crate) fn ecrire_wav(chemin: &Path, echantillons: &[i16]) -> Result<()> {
     let tmp = chemin.with_extension("wav.tmp");
     let mut w = hound::WavWriter::create(&tmp, spec())?;
     for &x in echantillons {
@@ -124,7 +124,7 @@ pub fn quantifier(x: f32) -> i16 {
 }
 
 /// Inverse exact de `quantifier` : la valeur relue redonne le même échantillon.
-fn dequantifier(v: i16) -> f32 {
+pub fn dequantifier(v: i16) -> f32 {
     (v as f32 + 0.5 * v.signum() as f32) / i16::MAX as f32
 }
 
@@ -142,7 +142,7 @@ pub fn empreinte(chemin: &Path) -> Result<String> {
     Ok(format!("{:x}", h.finalize()))
 }
 
-fn ms(echantillons: u64) -> u64 {
+pub fn ms(echantillons: u64) -> u64 {
     echantillons * 1000 / SAMPLE_RATE as u64
 }
 
@@ -219,6 +219,11 @@ impl Ecrivain {
             coupes: VecDeque::new(),
             annulable: None,
         }
+    }
+
+    /// Blocs déjà fermés et inscrits à l'index.
+    pub fn blocs_fermes(&self) -> usize {
+        self.index.blocs.len()
     }
 
     /// Titres des points, pour nommer les dossiers des passages à venir.
@@ -621,7 +626,7 @@ pub fn reconstituer_dans(dir: &Path, rencontre: &Meeting, portee: Portee, source
     Ok(avertissements)
 }
 
-fn lire_bloc(dir: &Path, b: &Bloc) -> Result<Vec<i16>> {
+pub fn lire_bloc(dir: &Path, b: &Bloc) -> Result<Vec<i16>> {
     let chemin = dir.join(&b.fichier);
     let octets = std::fs::read(&chemin).context("fichier manquant")?;
     decoder(&octets, b)

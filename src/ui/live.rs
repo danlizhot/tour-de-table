@@ -1,10 +1,13 @@
 //! Rencontre en cours : enregistrement, import d'un fichier, contrôles et accueil.
 
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+
 use eframe::egui::{self, Color32, RichText, Sense, Ui, Vec2};
 
 use super::widgets::{BLEU, DISTANCE, SALLE, download_bar, draw_logo, meter, record_button, transcript};
 use super::{ModelState, TourDeTableApp, View};
-use crate::audio::{self, Source};
+use crate::audio::{self, Source, import};
 use crate::config;
 use crate::models;
 use crate::recorder::{Options, Recorder};
@@ -77,6 +80,14 @@ impl TourDeTableApp {
                 let _ = std::fs::remove_dir_all(m.dir());
                 return;
             }
+            // Import : le découpage par point est vérifié avant tout le reste (compte rendu compris).
+            if import::en_attente(&m.dir()) {
+                if let Err(e) = m.save() {
+                    self.notify(format!("Sauvegarde : {e:#}"), true);
+                }
+                self.ouvrir_verification(m, true);
+                return;
+            }
             if let Err(e) = m.save().and_then(|_| m.export_all().map(|_| ())) {
                 self.notify(format!("Sauvegarde : {e:#}"), true);
             }
@@ -96,6 +107,10 @@ impl TourDeTableApp {
             self.notify("Attendez la fin de la transcription en cours avant d'importer un fichier.", true);
             return;
         }
+        if self.verification.is_some() || self.decoupage_job.is_some() {
+            self.notify("Validez d'abord le découpage par point affiché avant d'importer un autre fichier.", true);
+            return;
+        }
         if !matches!(self.model, ModelState::Ready(_)) {
             self.notify("Installez d'abord le modèle de reconnaissance vocale (bouton « Télécharger » de l'écran d'accueil).", true);
             return;
@@ -111,19 +126,43 @@ impl TourDeTableApp {
         self.push_settings();
 
         let (tx, rx) = crossbeam_channel::bounded(1);
-        let path = path.to_path_buf();
+        let avancement = Arc::new(import::Avancement::default());
+        let (path, dir, av, utt_tx) = (path.to_path_buf(), self.live.as_ref().map(Meeting::dir).unwrap_or_default(), avancement.clone(), self.utt_tx.clone());
         std::thread::spawn(move || {
-            let result = audio::import::decode(&path).map(|samples| {
-                let duration = samples.len() as u64 / audio::SAMPLE_RATE as u64;
-                let mut utterances = Vec::new();
-                let mut seg = audio::dsp::Segmenter::new(Source::Mixte, config::VAD_SENSITIVITY);
-                seg.push(&samples, &mut utterances);
-                seg.flush(&mut utterances);
-                (utterances, duration)
-            });
+            let result = (|| -> anyhow::Result<u64> {
+                let source = import::copier_source(&path, &dir)?;
+                let travail = dir.join(import::TRAVAIL);
+                let index = import::ecrire_blocs(&source, &travail, &av)?;
+                import::transcrire_blocs(&travail, &index, |k, enonces| {
+                    // Un bloc d'avance au plus : la file de Whisper reste courte, la mémoire aussi.
+                    while av.enonces_transcrits.load(Ordering::Relaxed) < av.envoyes_avant(k.saturating_sub(1)) {
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                    av.bloc_envoye(enonces.len());
+                    for u in enonces {
+                        utt_tx.send(u).map_err(|_| anyhow::anyhow!("Application fermée"))?;
+                    }
+                    Ok(())
+                })?;
+                Ok(index.blocs.iter().map(|b| b.decalage + b.echantillons).max().unwrap_or(0) / audio::SAMPLE_RATE as u64)
+            })();
             let _ = tx.send(result.map_err(|e| format!("{e:#}")));
         });
-        self.import_job = Some((name, rx));
+        self.import_job = Some((name, rx, avancement));
+    }
+
+    /// Où en est l'import : décodage en blocs, puis transcription bloc par bloc.
+    fn etat_import(&self) -> Option<String> {
+        let (name, _, av) = self.import_job.as_ref()?;
+        let total = av.total.load(Ordering::Relaxed);
+        Some(if total == 0 {
+            match av.ecrits.load(Ordering::Relaxed) {
+                0 => format!("Lecture de « {name} »…"),
+                n => format!("Lecture de « {name} » : {n} blocs de 2 minutes écrits…"),
+            }
+        } else {
+            format!("Transcription de « {name} » : bloc {} sur {total}", (av.blocs_transcrits() + 1).min(total))
+        })
     }
 
     pub(super) fn pick_audio(&mut self) {
@@ -164,6 +203,9 @@ impl TourDeTableApp {
                 if self.in_flight > 1 {
                     ui.label(RichText::new(format!("{} énoncés en attente", self.in_flight)).small().weak());
                 }
+            } else if let Some(etat) = self.etat_import() {
+                ui.spinner();
+                ui.label(etat);
             } else if self.finishing {
                 ui.spinner();
                 ui.label(format!("Fin de la transcription… ({} restants)", self.in_flight));
@@ -188,8 +230,8 @@ impl TourDeTableApp {
             (Some(m), _) => {
                 if m.segments.is_empty() {
                     ui.centered_and_justified(|ui| {
-                        let text = match &self.import_job {
-                            Some((name, _)) => format!("Lecture de « {name} »…"),
+                        let text = match self.etat_import() {
+                            Some(etat) => etat,
                             None if self.finishing => "Transcription de l'enregistrement…".to_string(),
                             None => "À l'écoute… la transcription apparaît au fil de la rencontre.".to_string(),
                         };

@@ -136,17 +136,28 @@ source sur l'horloge pour garder des horodatages justes.
 **Importer un enregistrement existant** : bouton « Importer un enregistrement… » ou glisser le
 fichier dans la fenêtre. Formats : MP4 (enregistrements Teams), M4A (Zoom, téléphones), MP3, WAV,
 FLAC, OGG. Le fichier devient une rencontre comme les autres : ordre du jour, transcription et
-compte rendu. Décodage entièrement intégré (Symphonia), sans logiciel à installer.
+compte rendu. Décodage entièrement intégré (Symphonia), sans logiciel à installer, et en flux :
+même un enregistrement de plusieurs heures n'est jamais chargé entier en mémoire. Une copie
+intacte du fichier est gardée dans `source/` ; l'audio est rangé en blocs de 2 minutes,
+transcrits l'un après l'autre (la progression s'affiche par bloc).
+
+À la fin de la transcription, avec un ordre du jour, l'application propose le début de chaque
+point d'après les annonces reconnues (« on passe au point 3… »). Un écran de vérification montre
+l'heure proposée et la phrase qui l'a déclenchée ; on peut écouter 10 s autour de chaque
+frontière, la déplacer, en ajouter ou en retirer, puis valider. Sans ordre du jour, tout reste
+hors point : le bouton « Découper par points » de la fiche ouvre plus tard le même écran.
 
 **Compte rendu automatique** : si un ordre du jour est joint (déposé avant l'import ou avant de
-démarrer la rencontre), le compte rendu est rédigé dès la fin de la transcription. On peut donc
+démarrer la rencontre), le compte rendu est rédigé dès la fin de la transcription (pour un
+import, dès la validation du découpage par point). On peut donc
 déposer l'ordre du jour, importer l'enregistrement et revenir plus tard : tout est prêt.
 
 **Paramètres** : seulement le micro et la sortie audio, la question sur les haut-parleurs de la
 salle et le lexique. Tout le reste (modèles, performance, détection de voix, conservation de
 l'audio, compte rendu automatique) est décidé par l'application.
 
-Ligne de commande, pour transcrire un enregistrement existant :
+Ligne de commande, pour transcrire un enregistrement existant (il devient une rencontre du
+dossier Musique, découpée par point d'après les annonces détectées, acceptées sans vérification) :
 
 ```
 tourdetable --transcrire enregistrement.m4a                       # MP4, M4A, MP3, WAV, FLAC, OGG
@@ -225,7 +236,10 @@ src/
   models.rs      modèles (Whisper, rédaction) et leur téléchargement
   agenda.rs      lecture de l'ordre du jour (Word, PDF, texte)
   summary.rs     compte rendu par le modèle intégré (découpage des longues rencontres)
-  audio/import.rs  import d'enregistrements (MP4, M4A, MP3, WAV, FLAC, OGG)
+  audio/import.rs  import d'enregistrements (MP4, M4A, MP3, WAV, FLAC, OGG), décodage en flux
+  audio/frontieres.rs  rangement par point de l'audio d'un import (ou « Découper par points »)
+  audio/lecture.rs écoute d'un extrait autour d'une frontière
+  ui/verification.rs  vérification des frontières proposées
 redaction/       programme auxiliaire de rédaction (llama.cpp), séparé à cause de ggml
   cli.rs         commandes --transcrire et --compte-rendu
 ```

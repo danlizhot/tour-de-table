@@ -15,8 +15,6 @@ use crate::stt::Segment;
 pub const DUREE_BANDEAU: Duration = Duration::from_secs(10);
 /// Durée de la mise en évidence d'un bouton « Débuter le point ».
 pub const DUREE_PROPOSITION: Duration = Duration::from_secs(60);
-/// Écart minimal entre le début du point actif et la frontière d'un changement automatique.
-const ECART_MINIMAL_MS: u64 = 1000;
 
 /// Changement automatique qu'on peut encore annuler.
 pub struct Bandeau {
@@ -64,7 +62,7 @@ impl TourDeTableApp {
         // La frontière doit tomber après le début du point actif (ou la fin du dernier point) et
         // avant maintenant ; sinon, on se contente de proposer.
         let plancher = m.periodes.last().map_or(0, |p| p.fin_ms.unwrap_or(p.debut_ms));
-        if d.frontiere_ms < plancher + ECART_MINIMAL_MS || d.frontiere_ms > rec.position_ms() {
+        if d.frontiere_ms < plancher + decoupage::ECART_MINIMAL_MS || d.frontiere_ms > rec.position_ms() {
             self.proposition = Some((d.point, Instant::now()));
             return "frontière hors du point actif : bouton mis en évidence".into();
         }

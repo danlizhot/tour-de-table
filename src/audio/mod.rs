@@ -7,7 +7,9 @@
 
 pub mod blocs;
 pub mod dsp;
+pub mod frontieres;
 pub mod import;
+pub mod lecture;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};

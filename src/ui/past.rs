@@ -86,10 +86,11 @@ impl TourDeTableApp {
 
     pub(super) fn past_view(&mut self, ui: &mut Ui, idx: usize) {
         let mut action = None;
+        let occupe = self.decoupage_job.is_some() || self.import_job.is_some() || self.finishing;
         {
             let m = &mut self.meetings[idx];
             ui.horizontal(|ui| {
-                let resp = ui.add(egui::TextEdit::singleline(&mut m.title).font(egui::TextStyle::Heading).desired_width(ui.available_width() - 500.0));
+                let resp = ui.add(egui::TextEdit::singleline(&mut m.title).font(egui::TextStyle::Heading).desired_width(ui.available_width() - 640.0));
                 if resp.lost_focus() {
                     let _ = m.save();
                 }
@@ -99,6 +100,15 @@ impl TourDeTableApp {
                     }
                     if ui.button("Dossier").clicked() {
                         action = Some("reveal");
+                    }
+                    if crate::audio::blocs::existe(&m.dir())
+                        && m.agenda.as_ref().is_some_and(|a| !a.points.is_empty())
+                        && ui
+                            .add_enabled(!occupe, egui::Button::new("Découper par points"))
+                            .on_hover_text("Répartit l'audio et la transcription entre les points de l'ordre du jour")
+                            .clicked()
+                    {
+                        action = Some("decouper");
                     }
                     if crate::audio::blocs::existe(&m.dir())
                         && ui.button("Exporter l'audio complet").on_hover_text("Fichier WAV de toute la rencontre").clicked()
@@ -212,6 +222,7 @@ impl TourDeTableApp {
                 Err(e) => self.notify(format!("Export : {e:#}"), true),
             },
             Some("summary") => self.summarize(idx),
+            Some("decouper") => self.ouvrir_verification(self.meetings[idx].clone(), false),
             Some("install-llm") => {
                 self.start_download(models::LLM_RECOMMENDED);
             }

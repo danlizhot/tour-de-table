@@ -5,6 +5,7 @@ mod decoupage;
 mod live;
 mod past;
 mod settings;
+mod verification;
 mod widgets;
 
 use std::sync::Arc;
@@ -36,8 +37,9 @@ enum View {
 
 /// Rédaction en cours : (rencontre, résultat, jetons rédigés, début).
 type TacheCompteRendu = (String, Receiver<Result<String, String>>, Arc<std::sync::atomic::AtomicUsize>, std::time::Instant);
-/// Décodage d'un fichier audio : nom affiché, résultat (énoncés et durée).
-type TacheImport = (String, Receiver<Result<(Vec<Utterance>, u64), String>>);
+/// Import d'un fichier audio : nom affiché, résultat (durée, une fois tous les blocs envoyés à
+/// la transcription) et avancement.
+type TacheImport = (String, Receiver<Result<u64, String>>, Arc<audio::import::Avancement>);
 
 struct Download {
     file: String,
@@ -69,8 +71,12 @@ pub struct TourDeTableApp {
     notices: Vec<(String, bool)>,
     /// Ordre du jour déposé avant de démarrer : rattaché à la prochaine rencontre.
     draft_agenda: Option<Agenda>,
-    /// Fichier audio en cours de décodage (nom affiché, résultat : énoncés et durée).
+    /// Fichier audio en cours d'import (nom affiché, résultat : durée, avancement).
     import_job: Option<TacheImport>,
+    /// Écran de vérification du découpage par point (fin d'un import, « Découper par points »).
+    verification: Option<verification::Verification>,
+    /// Rangement de l'audio par point après validation.
+    decoupage_job: Option<verification::TacheDecoupage>,
     /// Éditeur des points de l'ordre du jour ouvert (« Modifier les points »).
     edit_points: bool,
     /// Exportation de l'audio en cours : fichiers écrits et avertissements.
@@ -108,6 +114,8 @@ impl TourDeTableApp {
             notices: Vec::new(),
             draft_agenda: None,
             import_job: None,
+            verification: None,
+            decoupage_job: None,
             edit_points: false,
             audio_export: None,
             detecteur: Default::default(),
@@ -160,6 +168,19 @@ impl TourDeTableApp {
     fn reprendre_rencontres_interrompues(&mut self) {
         for i in 0..self.meetings.len() {
             let dir = self.meetings[i].dir();
+            // Import (ou découpage) interrompu avant la validation : tout va hors point.
+            if crate::audio::import::en_attente(&dir) {
+                let m = &mut self.meetings[i];
+                let titre = m.title.clone();
+                match crate::audio::frontieres::appliquer(&dir, m, &[]).and_then(|()| m.save()) {
+                    Ok(()) => self.notify(
+                        format!("Le découpage par point de « {titre} » n'a pas été validé : son audio est rangé hors point. Utilisez « Découper par points » dans sa fiche."),
+                        false,
+                    ),
+                    Err(e) => self.notify(format!("Reprise de l'import « {titre} » : {e:#}"), true),
+                }
+                continue;
+            }
             if !crate::audio::blocs::interrompue(&self.meetings[i], &dir) {
                 continue;
             }
@@ -191,19 +212,17 @@ impl TourDeTableApp {
                 Err(e) => self.notify(format!("Exportation de l'audio : {e}"), true),
             }
         }
-        if let Some((name, rx)) = &self.import_job
+        self.pump_decoupage();
+        if let Some((name, rx, _)) = &self.import_job
             && let Ok(result) = rx.try_recv()
         {
             let name = name.clone();
             self.import_job = None;
             match result {
-                Ok((utterances, duration)) => {
-                    log::info!("Import « {name} » : {duration} s, {} énoncés", utterances.len());
+                Ok(duration) => {
+                    log::info!("Import « {name} » : {duration} s, tous les blocs envoyés à la transcription");
                     if let Some(m) = self.live.as_mut() {
                         m.duration_s = duration;
-                    }
-                    for u in utterances {
-                        let _ = self.utt_tx.send(u);
                     }
                     self.finishing = true;
                 }
@@ -231,6 +250,7 @@ impl TourDeTableApp {
                 }
                 Reply::Segments { segments, handled } => {
                     self.in_flight = self.in_flight.saturating_sub(handled);
+                    self.compter_import(handled);
                     if let Some(m) = self.live.as_mut() {
                         for s in segments.iter().cloned() {
                             m.insert(s);
@@ -243,6 +263,7 @@ impl TourDeTableApp {
                 }
                 Reply::Error { message, handled } => {
                     self.in_flight = self.in_flight.saturating_sub(handled);
+                    self.compter_import(handled);
                     self.notify(message, true);
                 }
             }
@@ -281,6 +302,13 @@ impl TourDeTableApp {
                 }
                 Err(e) => self.notify(e, true),
             }
+        }
+    }
+
+    /// Énoncés de l'import en cours revenus de Whisper : le fil de l'import envoie le bloc suivant.
+    fn compter_import(&self, handled: usize) {
+        if let Some((_, _, av)) = &self.import_job {
+            av.enonces_transcrits.fetch_add(handled, std::sync::atomic::Ordering::Relaxed);
         }
     }
 
@@ -338,7 +366,7 @@ impl TourDeTableApp {
         {
             self.view = View::Live;
         }
-        let idle = self.recorder.is_none() && !self.finishing && self.import_job.is_none();
+        let idle = self.recorder.is_none() && !self.finishing && self.import_job.is_none() && self.verification.is_none();
         if ui
             .add_enabled(idle, egui::Button::new("Importer un enregistrement…").min_size(Vec2::new(ui.available_width(), 28.0)))
             .on_hover_text("MP3, M4A, MP4 (Teams), WAV, FLAC ou OGG. Vous pouvez aussi glisser le fichier dans la fenêtre.")
@@ -371,7 +399,15 @@ impl TourDeTableApp {
 impl eframe::App for TourDeTableApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.pump();
-        if self.recorder.is_some() || self.finishing || self.download.is_some() || self.summary_job.is_some() || self.import_job.is_some() {
+        let ecoute = self.verification.as_ref().is_some_and(verification::Verification::lecture_en_cours);
+        if self.recorder.is_some()
+            || self.finishing
+            || self.download.is_some()
+            || self.summary_job.is_some()
+            || self.import_job.is_some()
+            || self.decoupage_job.is_some()
+            || ecoute
+        {
             ctx.request_repaint_after(Duration::from_millis(80));
         }
     }
@@ -396,7 +432,7 @@ impl eframe::App for TourDeTableApp {
             ui.add_space(4.0);
         });
         egui::Panel::left("history").resizable(true).default_size(240.0).show(ui, |ui| self.side_list(ui));
-        if matches!(self.view, View::Live) {
+        if matches!(self.view, View::Live) && self.verification.is_none() {
             self.raccourcis_points(&ctx);
             egui::Panel::bottom("controls").show(ui, |ui| self.controls(ui));
         }
@@ -411,6 +447,7 @@ impl eframe::App for TourDeTableApp {
                 });
             }
             match self.view {
+                _ if self.verification.is_some() => self.verification_view(ui),
                 View::Live => self.live_view(ui),
                 View::Past(i) if i < self.meetings.len() => self.past_view(ui, i),
                 View::Past(_) => self.view = View::Live,

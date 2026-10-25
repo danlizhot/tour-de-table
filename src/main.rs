@@ -18,6 +18,7 @@ mod ui;
 
 use eframe::Renderer;
 
+
 fn main() {
     diagnostic::init();
     whisper_rs::install_logging_hooks();
@@ -159,5 +160,64 @@ fn wgpu_options() -> egui_wgpu::WgpuConfiguration {
             ..WgpuSetupCreateNew::without_display_handle()
         }),
         ..Default::default()
+    }
+}
+
+/// Tests : allocations du fil courant, pour vérifier qu'un traitement garde une mémoire bornée.
+#[cfg(test)]
+pub mod memoire {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::cell::Cell;
+
+    thread_local! {
+        static ACTUEL: Cell<usize> = const { Cell::new(0) };
+        static POINTE: Cell<usize> = const { Cell::new(0) };
+    }
+
+    fn plus(n: usize) {
+        let _ = ACTUEL.try_with(|a| {
+            let v = a.get() + n;
+            a.set(v);
+            let _ = POINTE.try_with(|p| p.set(p.get().max(v)));
+        });
+    }
+
+    fn moins(n: usize) {
+        let _ = ACTUEL.try_with(|a| a.set(a.get().saturating_sub(n)));
+    }
+
+    struct Compteur;
+
+    unsafe impl GlobalAlloc for Compteur {
+        unsafe fn alloc(&self, l: Layout) -> *mut u8 {
+            let p = unsafe { System.alloc(l) };
+            if !p.is_null() {
+                plus(l.size());
+            }
+            p
+        }
+        unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
+            unsafe { System.dealloc(p, l) };
+            moins(l.size());
+        }
+        unsafe fn realloc(&self, p: *mut u8, l: Layout, taille: usize) -> *mut u8 {
+            let q = unsafe { System.realloc(p, l, taille) };
+            if !q.is_null() {
+                moins(l.size());
+                plus(taille);
+            }
+            q
+        }
+    }
+
+    #[global_allocator]
+    static COMPTEUR: Compteur = Compteur;
+
+    /// Mémoire allouée au plus fort de `f` par le fil courant, au-delà de ce qu'il tenait avant.
+    pub fn pointe<R>(f: impl FnOnce() -> R) -> (R, usize) {
+        let base = ACTUEL.with(Cell::get);
+        POINTE.with(|p| p.set(base));
+        let r = f();
+        (r, POINTE.with(Cell::get) - base)
     }
 }
