@@ -217,7 +217,8 @@ src/
   ui/widgets.rs  composants, couleurs, logo vectoriel
   audio/mod.rs   capture micro + loopback par plateforme
   audio/dsp.rs   mono, rééchantillonnage 16 kHz (FIR), détection de voix, découpage
-  recorder.rs    session : alignement horloge, mixage, WAV
+  recorder.rs    session : alignement horloge, mixage, changement de point
+  audio/blocs.rs audio en blocs de 2 min par point : index, reconstitution, réparation
   stt.rs         fil Whisper (modèle gardé en mémoire)
   quebec.rs      invite, typographie, lexique, filtre d'hallucinations
   storage.rs     rencontres (JSON) et exports MD/TXT/SRT

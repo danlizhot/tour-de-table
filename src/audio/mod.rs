@@ -5,6 +5,7 @@
 //! * Linux : micro via ALSA/PulseAudio, son système via la source « monitor »
 //!   de PulseAudio/PipeWire (`parec`).
 
+pub mod blocs;
 pub mod dsp;
 pub mod import;
 

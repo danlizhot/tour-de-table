@@ -67,6 +67,8 @@ pub struct TourDeTableApp {
     import_job: Option<(String, Receiver<Result<(Vec<Utterance>, u64), String>>)>,
     /// Éditeur des points de l'ordre du jour ouvert (« Modifier les points »).
     edit_points: bool,
+    /// Exportation de l'audio en cours : fichiers écrits et avertissements.
+    audio_export: Option<Receiver<Result<Vec<String>, String>>>,
 }
 
 impl TourDeTableApp {
@@ -96,8 +98,10 @@ impl TourDeTableApp {
             draft_agenda: None,
             import_job: None,
             edit_points: false,
+            audio_export: None,
             cfg,
         };
+        app.reprendre_rencontres_interrompues();
         app.push_settings();
         app.load_model();
         app
@@ -137,8 +141,42 @@ impl TourDeTableApp {
         }
     }
 
+    /// Rencontres interrompues par un plantage ou une coupure de courant : l'audio est réparé
+    /// (seuls les blocs ouverts au moment de l'arrêt sont relus) et la période en cours fermée.
+    fn reprendre_rencontres_interrompues(&mut self) {
+        for i in 0..self.meetings.len() {
+            let dir = self.meetings[i].dir();
+            if !crate::audio::blocs::interrompue(&self.meetings[i], &dir) {
+                continue;
+            }
+            let m = &mut self.meetings[i];
+            let titre = m.title.clone();
+            match crate::audio::blocs::reprendre(m, &dir).and_then(|()| m.save()) {
+                Ok(()) => self.notify(format!("La rencontre « {titre} » s'est interrompue brusquement : son audio a été réparé."), false),
+                Err(e) => self.notify(format!("Reprise de la rencontre « {titre} » : {e:#}"), true),
+            }
+        }
+    }
+
     /// Traitement hors affichage : canaux des fils audio, Whisper et tâches.
     fn pump(&mut self) {
+        if let Some(rx) = &self.audio_export
+            && let Ok(res) = rx.try_recv()
+        {
+            self.audio_export = None;
+            match res {
+                Ok(messages) => {
+                    for (i, msg) in messages.into_iter().enumerate() {
+                        // Le premier message dit où est le fichier ; les avertissements suivent.
+                        let avertissement = !msg.starts_with("Audio exporté");
+                        if i < 4 || avertissement {
+                            self.notify(msg, avertissement);
+                        }
+                    }
+                }
+                Err(e) => self.notify(format!("Exportation de l'audio : {e}"), true),
+            }
+        }
         if let Some((name, rx)) = &self.import_job {
             if let Ok(result) = rx.try_recv() {
                 let name = name.clone();

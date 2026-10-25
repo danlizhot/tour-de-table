@@ -7,6 +7,7 @@ use eframe::egui::{self, Align, Layout, RichText, Ui};
 
 use super::widgets::{download_bar, markdown, short_model, transcript};
 use super::{TourDeTableApp, View};
+use crate::audio::blocs;
 use crate::config;
 use crate::models;
 use crate::storage::{self, clock};
@@ -54,12 +55,41 @@ impl TourDeTableApp {
         self.summary_job = Some((m.id.clone(), rx, progress, std::time::Instant::now()));
     }
 
+    /// Reconstitue l'audio de la rencontre (ou d'un point) dans un fichier choisi, dans un fil.
+    pub(super) fn exporter_audio(&mut self, idx: usize, portee: blocs::Portee) {
+        if self.audio_export.is_some() {
+            self.notify("Une exportation audio est déjà en cours.", false);
+            return;
+        }
+        let m = self.meetings[idx].clone();
+        let nom = match portee {
+            blocs::Portee::Tout => format!("{}.wav", m.dossier),
+            blocs::Portee::Point(i) => {
+                let titres = super::live::titres_points(m.agenda.as_ref());
+                format!("{}-{}.wav", m.dossier, blocs::prefixe(Some(i), &titres))
+            }
+        };
+        let Some(chemin) = rfd::FileDialog::new()
+            .set_title("Exporter l'audio")
+            .add_filter("Audio WAV", &["wav"])
+            .set_file_name(nom)
+            .save_file()
+        else {
+            return;
+        };
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        std::thread::spawn(move || {
+            let _ = tx.send(blocs::exporter(&m, portee, &chemin).map_err(|e| format!("{e:#}")));
+        });
+        self.audio_export = Some(rx);
+    }
+
     pub(super) fn past_view(&mut self, ui: &mut Ui, idx: usize) {
         let mut action = None;
         {
             let m = &mut self.meetings[idx];
             ui.horizontal(|ui| {
-                let resp = ui.add(egui::TextEdit::singleline(&mut m.title).font(egui::TextStyle::Heading).desired_width(ui.available_width() - 330.0));
+                let resp = ui.add(egui::TextEdit::singleline(&mut m.title).font(egui::TextStyle::Heading).desired_width(ui.available_width() - 500.0));
                 if resp.lost_focus() {
                     let _ = m.save();
                 }
@@ -69,6 +99,11 @@ impl TourDeTableApp {
                     }
                     if ui.button("Dossier").clicked() {
                         action = Some("reveal");
+                    }
+                    if crate::audio::blocs::existe(&m.dir())
+                        && ui.button("Exporter l'audio complet").on_hover_text("Fichier WAV de toute la rencontre").clicked()
+                    {
+                        action = Some("audio");
                     }
                     if ui.button("Exporter").on_hover_text("Markdown, texte et sous-titres SRT").clicked() {
                         action = Some("export");
@@ -171,6 +206,7 @@ impl TourDeTableApp {
                 self.view = View::Live;
             }
             Some("reveal") => storage::reveal(&self.meetings[idx].dir()),
+            Some("audio") => self.exporter_audio(idx, blocs::Portee::Tout),
             Some("export") => match self.meetings[idx].export_all() {
                 Ok(dir) => storage::reveal(&dir),
                 Err(e) => self.notify(format!("Export : {e:#}"), true),

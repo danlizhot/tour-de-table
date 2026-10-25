@@ -3754,6 +3754,7 @@ dependencies = [
  "rfd",
  "serde",
  "serde_json",
+ "sha2",
  "symphonia",
  "ureq",
  "wgpu",

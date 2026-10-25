@@ -13,9 +13,9 @@ use crate::storage::{Meeting, clock};
 impl TourDeTableApp {
     pub(super) fn start_recording(&mut self) {
         let meeting = Meeting::new(models::RECOMMENDED);
-        // L'audio est toujours conservé : il sert au découpage par point de l'ordre du jour.
-        let wav_dir = meeting.dir();
-        let _ = std::fs::create_dir_all(&wav_dir);
+        // L'audio est toujours conservé, en blocs rangés par point de l'ordre du jour.
+        let dossier = meeting.dir();
+        let _ = std::fs::create_dir_all(&dossier);
         let opts = Options {
             capture_mic: self.cfg.capture_mic,
             capture_system: self.cfg.capture_system,
@@ -23,7 +23,8 @@ impl TourDeTableApp {
             system_device: self.cfg.system_device.clone(),
             mode: self.cfg.mode,
             sensitivity: config::VAD_SENSITIVITY,
-            wav_dir: Some(wav_dir),
+            dossier,
+            points: titres_points(self.draft_agenda.as_ref()),
         };
         match Recorder::start(opts, self.utt_tx.clone()) {
             Ok(rec) => {
@@ -227,4 +228,9 @@ impl TourDeTableApp {
             }
         });
     }
+}
+
+/// Titres des points, pour nommer les dossiers des blocs audio.
+pub(super) fn titres_points(agenda: Option<&crate::storage::Agenda>) -> Vec<String> {
+    agenda.map(|a| a.points.iter().map(|p| p.titre.clone()).collect()).unwrap_or_default()
 }

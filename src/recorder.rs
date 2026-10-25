@@ -1,5 +1,6 @@
 //! Une session d'enregistrement : ouvre les sources, aligne tout sur
 //! l'horloge murale, découpe en énoncés et les envoie au moteur Whisper.
+//! L'audio est conservé en blocs d'environ 2 minutes, par point (voir `audio::blocs`).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -9,8 +10,9 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
-use crossbeam_channel::{RecvTimeoutError, Sender};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
 
+use crate::audio::blocs::Ecrivain;
 use crate::audio::dsp::{Aligner, Resampler, Segmenter, Utterance};
 use crate::audio::{self, Level, SAMPLE_RATE, Source};
 use crate::config::CaptureMode;
@@ -22,8 +24,17 @@ pub struct Options {
     pub system_device: Option<String>,
     pub mode: CaptureMode,
     pub sensitivity: f32,
-    /// Dossier où écrire les fichiers WAV, si l'audio doit être conservé.
-    pub wav_dir: Option<PathBuf>,
+    /// Dossier de la rencontre, où sont écrits les blocs audio.
+    pub dossier: PathBuf,
+    /// Titres des points de l'ordre du jour, pour nommer les dossiers des blocs.
+    pub points: Vec<String>,
+}
+
+/// Messages de l'interface au fil audio.
+enum Commande {
+    /// Change de point ; le fil répond par l'échantillon de la coupe.
+    Point(Option<usize>, Sender<u64>),
+    Titres(Vec<String>),
 }
 
 pub struct Recorder {
@@ -38,6 +49,7 @@ pub struct Recorder {
     /// Sources réellement ouvertes et avertissements (source manquante, etc.).
     pub active: Vec<Source>,
     pub warnings: Vec<String>,
+    commandes: Sender<Commande>,
 }
 
 struct Track {
@@ -47,8 +59,6 @@ struct Track {
     mix_buf: Vec<f32>,
 }
 
-type Wav = hound::WavWriter<std::io::BufWriter<std::fs::File>>;
-
 impl Recorder {
     pub fn start(opts: Options, out: Sender<Utterance>) -> Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
@@ -56,11 +66,12 @@ impl Recorder {
         let sys_level = Arc::new(Level::default());
         let echantillons = Arc::new(AtomicU64::new(0));
         let (ready_tx, ready_rx) = crossbeam_channel::bounded(1);
+        let (commandes, commandes_rx) = crossbeam_channel::unbounded();
 
         let thread = {
             let (stop, mic_level, sys_level, ech) = (stop.clone(), mic_level.clone(), sys_level.clone(), echantillons.clone());
             std::thread::Builder::new().name("audio".into()).spawn(move || {
-                run(opts, out, stop, mic_level, sys_level, ech, ready_tx);
+                run(opts, out, commandes_rx, stop, mic_level, sys_level, ech, ready_tx);
             })?
         };
 
@@ -81,7 +92,28 @@ impl Recorder {
             echantillons,
             active,
             warnings,
+            commandes,
         })
+    }
+
+    /// Ferme les blocs audio en cours et ouvre ceux de `point` (hors point : `None`), à
+    /// l'échantillon exact de la demande. Retourne la position de la coupe en millisecondes,
+    /// sur l'horloge des segments : le début de la nouvelle période.
+    pub fn changer_point(&self, point: Option<usize>) -> u64 {
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        let _ = self.commandes.send(Commande::Point(point, tx));
+        match rx.recv_timeout(Duration::from_secs(1)) {
+            Ok(coupe) => coupe * 1000 / SAMPLE_RATE as u64,
+            Err(_) => {
+                log::warn!("Le fil audio n'a pas confirmé le changement de point");
+                self.position_ms()
+            }
+        }
+    }
+
+    /// Titres des points, après une modification de l'ordre du jour pendant la rencontre.
+    pub fn nommer_points(&self, titres: Vec<String>) {
+        let _ = self.commandes.send(Commande::Titres(titres));
     }
 
     /// Position courante sur l'horloge des segments, en millisecondes.
@@ -102,9 +134,11 @@ pub fn position_ms(echantillons: &AtomicU64) -> u64 {
     echantillons.load(Ordering::Relaxed) * 1000 / SAMPLE_RATE as u64
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run(
     opts: Options,
     out: Sender<Utterance>,
+    commandes: Receiver<Commande>,
     stop: Arc<AtomicBool>,
     mic_level: Arc<Level>,
     sys_level: Arc<Level>,
@@ -150,41 +184,26 @@ fn run(
     } else {
         active.iter().map(|&s| (s, Segmenter::new(s, opts.sensitivity))).collect()
     };
-    let mut wavs: HashMap<Source, Wav> = HashMap::new();
-    if let Some(dir) = &opts.wav_dir {
-        let spec = hound::WavSpec {
-            channels: 1,
-            sample_rate: SAMPLE_RATE,
-            bits_per_sample: 16,
-            sample_format: hound::SampleFormat::Int,
-        };
-        for &s in segmenters.keys() {
-            let name = match s {
-                Source::Salle => "salle.wav",
-                Source::Distance => "distance.wav",
-                Source::Mixte => "reunion.wav",
-            };
-            match hound::WavWriter::create(dir.join(name), spec) {
-                Ok(w) => {
-                    wavs.insert(s, w);
-                }
-                Err(e) => log::warn!("WAV {name} : {e}"),
-            }
+    let mut sources: Vec<Source> = segmenters.keys().copied().collect();
+    sources.sort_by_key(|s| *s as u8);
+    let mut ecrivain = Ecrivain::new(opts.dossier.clone(), sources, opts.points.clone());
+    let mut erreur_signalee = false;
+    let mut signaler = |r: Result<()>| {
+        if let Err(e) = r
+            && !std::mem::replace(&mut erreur_signalee, true)
+        {
+            log::error!("Écriture de l'audio : {e:#}");
         }
-    }
+    };
 
     let start = Instant::now();
     let mut resampled = Vec::with_capacity(4096);
     let mut utterances = Vec::new();
-    let mut feed = |source: Source, samples: &[f32], segs: &mut HashMap<Source, Segmenter>, utts: &mut Vec<Utterance>| {
+    let feed = |source: Source, samples: &[f32], segs: &mut HashMap<Source, Segmenter>, utts: &mut Vec<Utterance>, ecr: &mut Ecrivain| {
         if let Some(seg) = segs.get_mut(&source) {
             seg.push(samples, utts);
         }
-        if let Some(w) = wavs.get_mut(&source) {
-            for &x in samples {
-                let _ = w.write_sample((x.clamp(-1.0, 1.0) * i16::MAX as f32) as i16);
-            }
-        }
+        ecr.pousser(source, samples);
     };
 
     loop {
@@ -203,7 +222,7 @@ fn run(
                     if mixed {
                         track.mix_buf.extend_from_slice(&block);
                     } else {
-                        feed(chunk.source, &block, &mut segmenters, &mut utterances);
+                        feed(chunk.source, &block, &mut segmenters, &mut utterances, &mut ecrivain);
                     }
                 }
             }
@@ -221,7 +240,7 @@ fn run(
                 if mixed {
                     track.mix_buf.extend_from_slice(&pad);
                 } else {
-                    feed(source, &pad, &mut segmenters, &mut utterances);
+                    feed(source, &pad, &mut segmenters, &mut utterances, &mut ecrivain);
                 }
             }
         }
@@ -236,13 +255,27 @@ fn run(
                     }
                 }
                 sum.iter_mut().for_each(|x| *x = x.clamp(-1.0, 1.0));
-                feed(Source::Mixte, &sum, &mut segmenters, &mut utterances);
+                feed(Source::Mixte, &sum, &mut segmenters, &mut utterances, &mut ecrivain);
             }
         }
 
         // Ce qui a été transmis aux découpeurs (le reste attend le mixage).
         let transmis = tracks.values().map(|t| t.aligner.written - t.mix_buf.len() as u64).max().unwrap_or(0);
         echantillons.store(transmis, Ordering::Relaxed);
+
+        // Coupes des blocs : ici, jamais dans le fil de l'interface. Un changement de point
+        // coupe à l'échantillon transmis le plus avancé ; l'écrivain l'appliquera à toutes les sources.
+        while let Ok(c) = commandes.try_recv() {
+            match c {
+                Commande::Point(point, reponse) => {
+                    ecrivain.changer_point(point, transmis);
+                    let _ = reponse.send(transmis);
+                }
+                Commande::Titres(titres) => ecrivain.nommer_points(titres),
+            }
+        }
+        let parle = segmenters.values().any(Segmenter::en_enonce);
+        signaler(ecrivain.avancer(parle));
 
         if stopping {
             for seg in segmenters.values_mut() {
@@ -258,9 +291,5 @@ fn run(
     }
 
     drop(captures);
-    for (_, w) in wavs {
-        if let Err(e) = w.finalize() {
-            log::warn!("Finalisation WAV : {e}");
-        }
-    }
+    signaler(ecrivain.terminer().map(|_| ()));
 }

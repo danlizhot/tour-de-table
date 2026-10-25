@@ -152,6 +152,11 @@ impl Segmenter {
         self.pending.drain(..offset);
     }
 
+    /// Un énoncé est en cours : on ne coupe pas un bloc audio au milieu d'une phrase.
+    pub fn en_enonce(&self) -> bool {
+        self.current.is_some()
+    }
+
     pub fn flush(&mut self, out: &mut Vec<Utterance>) {
         if let Some(cur) = self.current.take() {
             self.emit(cur, out);

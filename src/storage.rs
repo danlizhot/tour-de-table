@@ -2,10 +2,12 @@
 //!
 //! ```text
 //! Musique/Tour de table/2026-10-30-rencontre-ca-mensuel/
-//!   rencontre.json   transcription complète (sauvée après chaque segment)
-//!   salle.wav        micro (optionnel)
-//!   distance.wav     son système (optionnel)
+//!   rencontre.json     transcription complète (sauvée après chaque segment)
+//!   index-audio.json   blocs audio d'environ 2 minutes, par point (voir `audio::blocs`)
+//!   00-hors-point/passage-01/bloc-001-salle.wav …
 //! ```
+//!
+//! Les rencontres d'avant les blocs gardent salle.wav, distance.wav ou reunion.wav tels quels.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -355,7 +357,7 @@ fn nom_dossier(racine: &Path, date: &DateTime<Local>, titre: &str) -> String {
 }
 
 /// Titre réduit à des minuscules ASCII sans accents séparées par des tirets, 40 caractères au plus.
-fn slug(titre: &str) -> String {
+pub(crate) fn slug(titre: &str) -> String {
     let mut s = String::new();
     for c in titre.chars().flat_map(char::to_lowercase) {
         let lettre = match c {

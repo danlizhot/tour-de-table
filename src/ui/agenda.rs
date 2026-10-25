@@ -70,6 +70,9 @@ impl TourDeTableApp {
             _ => {
                 if let Some(m) = &self.live {
                     let _ = m.save();
+                    if let Some(rec) = &self.recorder {
+                        rec.nommer_points(super::live::titres_points(m.agenda.as_ref()));
+                    }
                     self.push_settings();
                 }
             }
@@ -90,7 +93,15 @@ impl TourDeTableApp {
             self.start_recording();
         }
         let (Some(rec), Some(m)) = (&self.recorder, self.live.as_mut()) else { return };
-        m.debuter_point(point, rec.position_ms(), Declenchement::Manuel);
+        // Déjà sur ce point (ou déjà hors point) : pas de coupe. Une période ouverte dont le point a
+        // été supprimé (point `None`) se ferme encore.
+        let ouverte = m.periodes.last().is_some_and(|p| p.fin_ms.is_none());
+        if point == m.point_actif() && (point.is_some() || !ouverte) {
+            return;
+        }
+        // Le fil audio coupe les blocs et donne l'échantillon exact de la coupe.
+        let ms = rec.changer_point(point);
+        m.debuter_point(point, ms, Declenchement::Manuel);
         if let Err(e) = m.save() {
             log::warn!("Sauvegarde après changement de point : {e}");
         }
@@ -179,6 +190,7 @@ impl TourDeTableApp {
         let mut edited = false;
         let mut manual = false;
         let mut debuter: Option<Option<usize>> = None;
+        let mut exporter: Option<usize> = None;
         let mut edition = None;
         let mut renomme = false;
         let slot = self.agenda_slot().clone();
@@ -200,6 +212,8 @@ impl TourDeTableApp {
         // « Débuter le point » démarre l'enregistrement s'il ne l'est pas encore.
         let peut_debuter = !passee && (enregistre || (self.live.is_none() && self.peut_demarrer()));
         let editer = slot.as_ref().is_some_and(|a| a.points.is_empty()) || self.edit_points;
+        // Rencontre passée enregistrée en blocs : l'audio de chaque point peut être exporté.
+        let audio_par_point = passee && self.agenda_meeting().is_some_and(|m| crate::audio::blocs::existe(&m.dir()));
 
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -246,8 +260,10 @@ impl TourDeTableApp {
                     ui.add_space(2.0);
                     for (i, p) in a.points.iter().enumerate() {
                         let duree = durees.get(i).copied().flatten();
-                        if let Some(clic) = ligne_point(ui, i, p, actif == Some(i), duree, peut_debuter) {
-                            debuter = Some(Some(clic));
+                        match ligne_point(ui, i, p, actif == Some(i), duree, peut_debuter, audio_par_point) {
+                            Some(ClicPoint::Debuter(i)) => debuter = Some(Some(i)),
+                            Some(ClicPoint::Exporter(i)) => exporter = Some(i),
+                            None => {}
                         }
                     }
                 }
@@ -308,6 +324,9 @@ impl TourDeTableApp {
         if let Some(point) = debuter {
             self.debuter_point(point);
         }
+        if let (Some(point), &View::Past(idx)) = (exporter, &self.view) {
+            self.exporter_audio(idx, crate::audio::blocs::Portee::Point(point));
+        }
         if browse {
             let picked = rfd::FileDialog::new()
                 .set_title("Choisir l'ordre du jour")
@@ -337,8 +356,13 @@ fn coche(ui: &mut Ui) {
     ui.painter().line(vec![p(0.1, 0.55), p(0.4, 0.85), p(0.9, 0.2)], egui::Stroke::new(2.0, SALLE));
 }
 
-/// Une ligne de la liste des points ; retourne l'indice du point à débuter sur clic.
-fn ligne_point(ui: &mut Ui, i: usize, p: &Point, actif: bool, duree: Option<u64>, peut_debuter: bool) -> Option<usize> {
+enum ClicPoint {
+    Debuter(usize),
+    Exporter(usize),
+}
+
+/// Une ligne de la liste des points ; retourne l'action demandée sur clic.
+fn ligne_point(ui: &mut Ui, i: usize, p: &Point, actif: bool, duree: Option<u64>, peut_debuter: bool, exporter: bool) -> Option<ClicPoint> {
     let mut clic = None;
     let retrait = (p.niveau.saturating_sub(1)) as f32 * 22.0;
     let fond = if actif { BLEU.gamma_multiply(0.22) } else { Color32::TRANSPARENT };
@@ -354,9 +378,12 @@ fn ligne_point(ui: &mut Ui, i: usize, p: &Point, actif: bool, duree: Option<u64>
                     } else if peut_debuter {
                         let texte = if duree.is_some() { "Revenir au point" } else { "Débuter le point" };
                         if ui.small_button(texte).on_hover_text(RACCOURCIS).clicked() {
-                            clic = Some(i);
+                            clic = Some(ClicPoint::Debuter(i));
                         }
                     }
+                }
+                if exporter && duree.is_some() && ui.small_button("Exporter l'audio de ce point").on_hover_text("Fichier WAV : tous les passages sur ce point, bout à bout").clicked() {
+                    clic = Some(ClicPoint::Exporter(i));
                 }
                 if let Some(d) = duree.filter(|_| !actif) {
                     ui.label(RichText::new(clock(d)).small().weak());
