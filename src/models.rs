@@ -34,14 +34,13 @@ const EMPREINTES: &[Empreinte] = &[Empreinte {
     sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
 }];
 
-/// Palier de mémoire vive, qui détermine le modèle de rédaction.
+/// Palier de mémoire vive : avec 8 Go, Whisper est déchargé pendant la rédaction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Palier {
     /// 8 Go et moins : Whisper est déchargé pendant la rédaction.
     Huit,
+    /// 16 Go et plus.
     Seize,
-    /// 32 Go et plus.
-    TrenteDeux,
 }
 
 const GIO: u64 = 1 << 30;
@@ -51,7 +50,6 @@ impl Palier {
     /// graphique intégrée) : les seuils sont donc sous les tailles nominales.
     pub fn selon_ram(octets: u64) -> Self {
         match octets {
-            o if o >= 28 * GIO => Palier::TrenteDeux,
             o if o >= 14 * GIO => Palier::Seize,
             _ => Palier::Huit,
         }
@@ -61,15 +59,15 @@ impl Palier {
         match self {
             Palier::Huit => "8 Go",
             Palier::Seize => "16 Go",
-            Palier::TrenteDeux => "32 Go",
         }
     }
 }
 
-/// Modèles de langue pour le nettoyage et le compte rendu (GGUF Q4_K_M, llama.cpp), un par
-/// palier. Licence Apache 2.0 tous les trois : utilisables sans restriction par un organisme.
+/// Modèle de langue du compte rendu (GGUF Q4_K_M, llama.cpp), le même sur tous les postes.
+/// Licence Apache 2.0 : utilisable sans restriction par un organisme. Mesuré sur une rencontre
+/// de 2 h (processeur seul), Ministral 3 8B prenait 1,3 fois plus de temps ; Qwen3 30B-A3B,
+/// plus rapide sur 32 Go, demandait 18,6 Go à télécharger et ~20 Go de mémoire.
 pub struct LlmInfo {
-    pub palier: Palier,
     pub file: &'static str,
     pub label: &'static str,
     pub url: &'static str,
@@ -82,7 +80,6 @@ pub struct LlmInfo {
 
 pub const LLM_CATALOG: &[LlmInfo] = &[
     LlmInfo {
-        palier: Palier::Huit,
         file: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
         label: "Qwen3 4B Instruct",
         url: "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
@@ -90,32 +87,10 @@ pub const LLM_CATALOG: &[LlmInfo] = &[
         sha256: "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
         ram_mb: 3700,
     },
-    LlmInfo {
-        palier: Palier::Seize,
-        file: "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
-        label: "Ministral 3 8B Instruct",
-        url: "https://huggingface.co/unsloth/Ministral-3-8B-Instruct-2512-GGUF/resolve/main/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
-        octets: 5_198_386_720,
-        sha256: "5dbc3647eb563b9f8d3c70ec3d906cce84b86bb35c5e0b8a36e7df3937ab7174",
-        ram_mb: 6500,
-    },
-    LlmInfo {
-        palier: Palier::TrenteDeux,
-        file: "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
-        label: "Qwen3 30B-A3B Instruct",
-        url: "https://huggingface.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF/resolve/main/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
-        octets: 18_556_686_752,
-        sha256: "6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0",
-        ram_mb: 20_000,
-    },
 ];
 
 pub fn llm_info(file: &str) -> Option<&'static LlmInfo> {
     LLM_CATALOG.iter().find(|m| m.file == file)
-}
-
-fn modele_du_palier(palier: Palier) -> &'static LlmInfo {
-    LLM_CATALOG.iter().find(|m| m.palier == palier).expect("un modèle par palier")
 }
 
 static PALIER: OnceLock<Palier> = OnceLock::new();
@@ -125,7 +100,7 @@ pub fn palier() -> Palier {
     *PALIER.get_or_init(|| {
         let ram = ram_totale();
         let p = Palier::selon_ram(ram);
-        log::info!("Mémoire vive : {:.1} Gio, palier {} : {}", ram as f64 / GIO as f64, p.nom(), modele_du_palier(p).label);
+        log::info!("Mémoire vive : {:.1} Gio, palier {}", ram as f64 / GIO as f64, p.nom());
         p
     })
 }
@@ -136,9 +111,9 @@ pub fn forcer_palier(p: Palier) {
     let _ = PALIER.set(p);
 }
 
-/// Modèle de rédaction de ce poste.
+/// Modèle de rédaction.
 pub fn modele_redaction() -> &'static LlmInfo {
-    modele_du_palier(palier())
+    &LLM_CATALOG[0]
 }
 
 fn ram_totale() -> u64 {
@@ -274,12 +249,10 @@ mod tests {
         // Poste de 16 Go : ~15,3 Gio, parfois moins avec une carte graphique intégrée.
         assert_eq!(Palier::selon_ram(14 * GIO), Palier::Seize);
         assert_eq!(Palier::selon_ram(15 * GIO + GIO / 3), Palier::Seize);
-        // Poste de 32 Go : ~31 Gio.
-        assert_eq!(Palier::selon_ram(31 * GIO), Palier::TrenteDeux);
-        assert_eq!(Palier::selon_ram(128 * GIO), Palier::TrenteDeux);
-        assert_eq!(modele_du_palier(Palier::Huit).file, "Qwen3-4B-Instruct-2507-Q4_K_M.gguf");
-        assert_eq!(modele_du_palier(Palier::Seize).file, "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf");
-        assert_eq!(modele_du_palier(Palier::TrenteDeux).file, "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf");
+        // Poste de 32 Go et plus.
+        assert_eq!(Palier::selon_ram(31 * GIO), Palier::Seize);
+        assert_eq!(Palier::selon_ram(128 * GIO), Palier::Seize);
+        assert_eq!(modele_redaction().file, "Qwen3-4B-Instruct-2507-Q4_K_M.gguf");
     }
 
     #[test]

@@ -321,11 +321,13 @@ impl Meeting {
         }
     }
 
-    /// Transcription d'un point (toutes ses périodes), nettoyée si le nettoyage est terminé ;
-    /// `None` s'il n'a pas été abordé.
+    /// Transcription d'un point (toutes ses périodes) pour le compte rendu, nettoyée si le
+    /// nettoyage est terminé, en paragraphes sans horodatages (des jetons de plus à lire,
+    /// inutiles au résumé) ; `None` s'il n'a pas été abordé.
     pub fn texte_du_point(&self, point: Option<usize>) -> Option<String> {
         let paragraphes = self.paragraphes_du_point(point);
-        let lignes: Vec<String> = paragraphes.iter().map(|(t, src, text)| format!("[{}] {} : {text}", clock(*t), src.label())).collect();
+        // Ni horodatages ni sources : « Salle » finirait en responsable d'un suivi.
+        let lignes: Vec<String> = paragraphes.into_iter().map(|(_, _, text)| text).collect();
         (!lignes.is_empty()).then(|| lignes.join("\n\n"))
     }
 
@@ -730,6 +732,9 @@ mod tests {
             assert_eq!(md.is_some(), point != Some(0), "point non abordé : aucun fichier");
         }
         assert!(m.markdown_du_point(Some(1)).unwrap().starts_with("# 2. Budget\n\n"));
+        // Entrée du compte rendu par point : sans horodatages.
+        assert_eq!(m.texte_du_point(Some(1)).as_deref(), Some("Le budget est adopté."));
+        assert_eq!(m.texte_du_point(Some(0)), None);
 
         // Points renumérotés : les phrases suivent.
         m.renumeroter_periodes(|i| Some(i + 1));

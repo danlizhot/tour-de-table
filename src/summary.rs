@@ -81,13 +81,22 @@ const CHUNK_CHARS: usize = 24_000;
 
 const NON_ABORDE: &str = "Point non abordé ou reporté.";
 
+/// Longueur maximale d'une réponse, en jetons. La rédaction (environ 2 à 5 jetons par seconde
+/// sur processeur seul) prend l'essentiel du temps d'un compte rendu : chaque point est court.
+const JETONS_POINT: usize = 600;
+const JETONS_ASSEMBLAGE: usize = 600;
+const JETONS_NOTES: usize = 1200;
+const JETONS_DOCUMENT: usize = 3072;
+
 const PAR_POINT: &str = "Tu es secrétaire de réunion. Voici la transcription d'un seul point de l'ordre du jour : \
 « {point} ». Rédige uniquement ce point, sans titre, en trois rubriques dans cet ordre :\n\
-**Discussion** : l'essentiel en quelques phrases.\n\
-**Décisions** : une proposition adoptée, votée ou acceptée par le groupe est une décision : écris « Il est résolu de… ». \
-S'il n'y en a pas, écris « Aucune ».\n\
-**Suivis** : un tableau à trois colonnes, Action | Responsable | Échéance, une ligne par tâche. Chaque fois qu'une \
+**Discussion** : l'essentiel en 120 mots au plus, sans liste ni redite.\n\
+**Décisions** : une ligne courte par décision. Une proposition adoptée, votée ou acceptée par le groupe est une \
+décision : écris « Il est résolu de… ». S'il n'y en a pas, écris « Aucune ».\n\
+**Suivis** : un tableau à trois colonnes, Action | Responsable | Échéance, une ligne courte par tâche, sans doublon. \
+Chaque fois qu'une \
 personne accepte ou se voit confier une tâche (« je m'en occupe », « tu t'en occupes? Correct »), c'est un suivi. \
+Le responsable est la personne nommée ; si personne n'est nommé, écris « non précisé » (jamais « je » ni « Salle »). \
 Reprends l'échéance telle qu'elle a été dite (« d'ici la fin novembre », « pour le 15 décembre »), sinon « non précisée ». \
 S'il n'y en a pas, écris « Aucun » au lieu du tableau.\n\
 Si la date, l'heure ou le lieu de la prochaine rencontre sont annoncés, mentionne-les dans la discussion.\n";
@@ -100,7 +109,7 @@ Les sujets discutés dans les échanges hors des points (transcription ci-dessou
 ## Prochaine rencontre\n\
 La date, l'heure et le lieu de la prochaine rencontre s'ils ont été annoncés ; sinon, omets cette section. \
 Ne recopie pas le lieu ou l'heure de cette rencontre-ci.\n\
-Ne répète pas les points déjà rédigés et ne fais pas de tableau récapitulatif.\n";
+Sois bref. Ne répète pas les points déjà rédigés et ne fais pas de tableau récapitulatif.\n";
 
 /// Avancement d'un compte rendu, lu par l'interface.
 #[derive(Default)]
@@ -157,7 +166,7 @@ pub fn points_de(m: &crate::storage::Meeting) -> (Vec<PointCr>, String) {
 
 pub fn compte_rendu(r: &Request) -> Result<String> {
     let mut session: Option<Session> = None;
-    let mut rediger = |prompt: &str| -> Result<String> {
+    let mut rediger = |prompt: &str, max_jetons: usize| -> Result<String> {
         if session.is_none() {
             session = Some(Session::ouvrir(r.moteur)?);
         }
@@ -165,7 +174,7 @@ pub fn compte_rendu(r: &Request) -> Result<String> {
         if let Some(a) = r.avancement {
             a.jetons.store(0, Ordering::Relaxed);
         }
-        s.rediger(prompt, r.avancement.map(|a| &a.jetons), r.avancement.map(|a| &a.annuler))
+        s.rediger(prompt, max_jetons, r.avancement.map(|a| &a.jetons), r.avancement.map(|a| &a.annuler))
     };
     rediger_compte_rendu(r, &mut rediger)
 }
@@ -187,8 +196,8 @@ fn rediger_compte_rendu(r: &Request, rediger: &mut Redacteur) -> Result<String> 
     Ok(doc)
 }
 
-/// Appel au modèle : invite → réponse. Simulé dans les tests.
-type Redacteur<'a> = dyn FnMut(&str) -> Result<String> + 'a;
+/// Appel au modèle : invite et longueur maximale de la réponse (jetons) → réponse. Simulé dans les tests.
+type Redacteur<'a> = dyn FnMut(&str, usize) -> Result<String> + 'a;
 
 /// Comportement d'avant le découpage par point : toute la transcription d'un coup (condensée
 /// par tranches si elle est longue).
@@ -213,7 +222,7 @@ fn en_un_appel(r: &Request, rediger: &mut Redacteur) -> Result<String> {
     }
     prompt.push_str("\n\n=== TRANSCRIPTION ===\n");
     prompt.push_str(&transcript);
-    generate(rediger, &prompt)
+    generate(rediger, &prompt, JETONS_DOCUMENT)
 }
 
 /// Étape 1 : un appel par point ; étape 2 : sujets hors point et prochaine rencontre. Le
@@ -251,8 +260,8 @@ fn par_point(r: &Request, rediger: &mut Redacteur) -> Result<String> {
     prompt.push_str(&sections);
     prompt.push_str("\n\n=== ÉCHANGES HORS DES POINTS ===\n");
     prompt.push_str(if hors_point.trim().is_empty() { "(aucun)" } else { &hors_point });
-    let fin = generate(rediger, &prompt)?;
-    let (sujets, prochaine) = sections_de_fin(&fin);
+    let fin = generate(rediger, &prompt, JETONS_ASSEMBLAGE)?;
+    let (sujets, prochaine) = sections_de_fin(&reparer_tableaux(&fin));
     suivis.extend(lignes_de_tableau(&sujets));
 
     let mut doc = format!(
@@ -299,9 +308,10 @@ fn resume_du_point(r: &Request, p: &PointCr, transcription: &str, rediger: &mut 
     prompt.push_str(STYLE);
     prompt.push_str("\n\n=== TRANSCRIPTION DU POINT ===\n");
     prompt.push_str(&source);
-    let reponse = generate(rediger, &prompt)?;
+    let reponse = generate(rediger, &prompt, JETONS_POINT)?;
     // Le titre est ajouté par Tour de table : on retire celui que le modèle aurait mis.
     let corps = reponse.lines().skip_while(|l| l.trim().is_empty() || l.trim_start().starts_with('#')).collect::<Vec<_>>().join("\n");
+    let corps = reparer_tableaux(&corps);
     if let Some(chemin) = &p.resume {
         let ecrit = chemin.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| std::fs::write(chemin, format!("{entete}\n{corps}\n")));
         if let Err(e) = ecrit {
@@ -316,18 +326,63 @@ fn empreinte(texte: &str) -> String {
     format!("{:x}", Sha256::digest(texte.as_bytes()))[..16].to_string()
 }
 
+/// Cellules d'une ligne de tableau Markdown, avec ou sans « | » aux extrémités (certains modèles les
+/// omettent) ; `None` pour une ligne qui n'est pas un tableau.
+fn cellules(ligne: &str) -> Option<Vec<String>> {
+    let l = ligne.trim();
+    if l.matches('|').count() < 2 {
+        return None;
+    }
+    let l = l.strip_prefix('|').unwrap_or(l);
+    let l = l.strip_suffix('|').unwrap_or(l);
+    Some(l.split('|').map(|c| c.trim().to_string()).collect())
+}
+
+fn est_separateur(cellules: &[String]) -> bool {
+    cellules.iter().all(|c| !c.is_empty() && c.chars().all(|ch| matches!(ch, '-' | ':' | ' ')))
+}
+
+/// Tableaux d'une réponse remis en forme (« | a | b | c | ») ; une ligne incomplète, coupée par
+/// la longueur maximale de la réponse, est retirée.
+fn reparer_tableaux(md: &str) -> String {
+    let mut lignes: Vec<String> = Vec::new();
+    let mut largeur = 0;
+    for ligne in md.lines() {
+        let Some(c) = cellules(ligne) else {
+            lignes.push(ligne.to_string());
+            largeur = 0;
+            continue;
+        };
+        if est_separateur(&c) {
+            lignes.push(format!("|{}|", vec!["---"; c.len()].join("|")));
+        } else if largeur == 0 || c.len() == largeur {
+            largeur = c.len();
+            lignes.push(format!("| {} |", c.join(" | ")));
+        }
+    }
+    // Réponse coupée en pleine ligne de tableau : « Vérifier avec » sans aucun « | ».
+    if let [.., avant, derniere] = &lignes[..]
+        && avant.starts_with('|')
+        && !derniere.trim().is_empty()
+        && !derniere.contains('|')
+        && !md.trim_end().ends_with(['.', '!', '?'])
+    {
+        lignes.pop();
+    }
+    lignes.join("\n").trim_end().to_string()
+}
+
 /// Lignes de données des tableaux Markdown (ni en-tête, ni séparateur, ni « Aucun »).
 fn lignes_de_tableau(md: &str) -> Vec<String> {
     md.lines()
-        .map(str::trim)
-        .filter(|l| l.starts_with('|') && l.ends_with('|') && l.len() > 2)
-        .filter(|l| !l.chars().all(|c| matches!(c, '|' | '-' | ':' | ' ')))
-        .filter(|l| {
-            let bas = l.to_lowercase();
+        .filter_map(cellules)
+        .filter(|c| c.len() == 3 && !c[0].is_empty() && !est_separateur(c))
+        .filter(|c| {
+            let bas = c.join(" ").to_lowercase();
             !(bas.contains("action") && bas.contains("responsable"))
         })
-        .filter(|l| !l.trim_start_matches(['|', ' ']).to_lowercase().starts_with("aucun"))
-        .map(str::to_string)
+        .filter(|c| !c[0].trim_start_matches('*').to_lowercase().starts_with("aucun"))
+        .map(|c| format!("| {} |", c.join(" | ")))
         .collect()
 }
 
@@ -438,15 +493,15 @@ fn condense(texte: &str, agenda: Option<&str>, rediger: &mut Redacteur) -> Resul
         prompt.push_str("\n\n=== PASSAGE ===\n");
         prompt.push_str(&chunk);
         notes.push_str(&format!("\n--- Notes, partie {part} ---\n"));
-        notes.push_str(&generate(rediger, &prompt)?);
+        notes.push_str(&generate(rediger, &prompt, JETONS_NOTES)?);
         start = end;
         part += 1;
     }
     Ok(notes)
 }
 
-fn generate(rediger: &mut Redacteur, prompt: &str) -> Result<String> {
-    let texte = rediger(prompt)?;
+fn generate(rediger: &mut Redacteur, prompt: &str, max_jetons: usize) -> Result<String> {
+    let texte = rediger(prompt, max_jetons)?;
     Ok(tidy_answer(&crate::quebec::normalize_document(texte.trim())))
 }
 
@@ -492,15 +547,15 @@ impl Session {
 
     /// Une requête. `annuler` arrête le programme dès sa prochaine ligne de sortie ; la session
     /// est alors inutilisable.
-    pub fn rediger(&mut self, prompt: &str, progress: Option<&AtomicUsize>, annuler: Option<&AtomicBool>) -> Result<String> {
+    pub fn rediger(&mut self, prompt: &str, max_jetons: usize, progress: Option<&AtomicUsize>, annuler: Option<&AtomicBool>) -> Result<String> {
         // Contexte de travail : invite (≈ 3 caractères par jeton en français) + réponse.
         // Plafonné à 12 k jetons pour rester raisonnable sur un poste de 8 Go.
-        let contexte = (prompt.chars().count() / 3 + 3072).clamp(8192, 12288);
+        let contexte = (prompt.chars().count() / 3 + max_jetons + 256).clamp(4096, 12288);
         let requete = json!({
             "modele": self.modele,
             "invite": prompt,
             "contexte": contexte,
-            "max_jetons": 3072,
+            "max_jetons": max_jetons,
             "temperature": 0.2,
             "fils": self.fils,
         });
@@ -552,7 +607,12 @@ fn tidy_answer(md: &str) -> String {
                     }
                 }
             }
-            line.to_string()
+            // « Il est résolu de adopter » → « Il est résolu d'adopter ».
+            let mut l = line.to_string();
+            for v in ['a', 'e', 'é', 'è', 'ê', 'i', 'o', 'u', 'h'] {
+                l = l.replace(&format!("résolu de {v}"), &format!("résolu d'{v}"));
+            }
+            l
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -590,8 +650,10 @@ mod tests {
     }
 
     /// Modèle simulé : répond selon le point demandé et note les invites reçues.
-    fn simule(invites: &mut Vec<String>) -> impl FnMut(&str) -> Result<String> + '_ {
-        |invite: &str| {
+    fn simule(invites: &mut Vec<String>) -> impl FnMut(&str, usize) -> Result<String> + '_ {
+        |invite: &str, max_jetons: usize| {
+            // Chaque point est court ; seule l'ancienne rédaction d'un coup a droit à 3 072 jetons.
+            assert!(max_jetons <= JETONS_ASSEMBLAGE.max(JETONS_POINT), "{max_jetons}");
             invites.push(invite.to_string());
             Ok(if invite.contains("« 1. Ouverture »") {
                 "### 1. Ouverture\n**Discussion** : Ouverture à 19 h.\n**Décisions** : Aucune\n**Suivis** : Aucun".into()
@@ -616,8 +678,8 @@ mod tests {
             resume: dossier.map(|d| d.join(nom).join("resume.md")),
         };
         vec![
-            p("1. Ouverture", Some("[00:01] Salle : On ouvre à 19 h."), "01-ouverture"),
-            p("2. Budget", Some("[00:05] Salle : Le budget est de 2 500 $. Julie publie l'annonce."), "02-budget"),
+            p("1. Ouverture", Some("On ouvre à 19 h."), "01-ouverture"),
+            p("2. Budget", Some("Le budget est de 2 500 $. Julie publie l'annonce."), "02-budget"),
             p("3. Varia", None, "03-varia"),
         ]
     }
@@ -625,12 +687,12 @@ mod tests {
     #[test]
     fn compte_rendu_par_point() {
         let moteur = moteur();
-        let r = requete(&moteur, points(None), "[00:30] Salle : Le stationnement est plein.", false);
+        let r = requete(&moteur, points(None), "Le stationnement est plein.", false);
         let mut invites = Vec::new();
         let doc = rediger_compte_rendu(&r, &mut simule(&mut invites)).unwrap();
         // Un appel par point abordé, puis l'assemblage ; le point non abordé n'appelle pas le modèle.
         assert_eq!(invites.len(), 3);
-        assert!(invites[0].contains("[00:01] Salle : On ouvre") && !invites[0].contains("budget"));
+        assert!(invites[0].contains("=== TRANSCRIPTION DU POINT ===\nOn ouvre à 19 h.") && !invites[0].contains("budget"));
         assert!(invites[2].contains("=== POINTS RÉDIGÉS ===") && invites[2].contains("stationnement est plein"));
 
         let ordre: Vec<usize> = ["### 1. Ouverture", "### 2. Budget", "### 3. Varia", "## Sujets hors", "## Tableau des suivis", "## Prochaine"]
@@ -672,7 +734,7 @@ mod tests {
 
         // Transcription du point modifiée (nettoyage relancé) : il est rédigé à nouveau.
         let mut p = points(Some(&dir));
-        p[1].transcription = Some("[00:05] Salle : Budget adopté.".into());
+        p[1].transcription = Some("Budget adopté.".into());
         invites.clear();
         rediger_compte_rendu(&requete(&moteur, p, "", true), &mut simule(&mut invites)).unwrap();
         assert_eq!(invites.len(), 2);
@@ -687,7 +749,8 @@ mod tests {
     fn ancienne_rencontre_sans_periodes() {
         let moteur = moteur();
         let mut invites = Vec::new();
-        let mut appel = |i: &str| {
+        let mut appel = |i: &str, max_jetons: usize| {
+            assert_eq!(max_jetons, JETONS_DOCUMENT);
             invites.push(i.to_string());
             Ok("# Compte rendu — CA mensuel\n### 1. Ouverture\nCoût de 300 $.".to_string())
         };
@@ -701,6 +764,23 @@ mod tests {
         let mut m = crate::storage::Meeting::new("test.bin");
         m.agenda = Some(crate::storage::Agenda::new("od.txt".into(), "1. Ouverture\n2. Budget".into()));
         assert!(points_de(&m).0.is_empty());
+    }
+
+    #[test]
+    fn tableaux_sans_barres_et_coupes() {
+        let md = "**Suivis**\nAction | Responsable | Échéance\n--- | --- | ---\nFaire les appels | Julie | le 3 février\n\
+                  Écrire à la Ville | non précisé | non précisée\nVér";
+        let r = reparer_tableaux(md);
+        assert_eq!(
+            r,
+            "**Suivis**\n| Action | Responsable | Échéance |\n|---|---|---|\n| Faire les appels | Julie | le 3 février |\n\
+             | Écrire à la Ville | non précisé | non précisée |"
+        );
+        assert_eq!(lignes_de_tableau(&r).len(), 2);
+        // Ligne coupée après une cellule : retirée.
+        assert_eq!(reparer_tableaux("| A | B | C |\n|---|---|---|\n| x | y | z |\n| Vérifier | Ju"), "| A | B | C |\n|---|---|---|\n| x | y | z |");
+        assert_eq!(tidy_answer("Il est résolu de adopter le budget."), "Il est résolu d'adopter le budget.");
+        assert_eq!(tidy_answer("Il est résolu de reporter."), "Il est résolu de reporter.");
     }
 
     #[test]

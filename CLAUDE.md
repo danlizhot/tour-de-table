@@ -51,9 +51,9 @@ séparé, livré à côté de `tourdetable`, qui reçoit une requête JSON par l
 `{"erreur": …}`). Le modèle reste chargé entre les requêtes : `summary::Session` garde le
 programme ouvert pour toute une série (nettoyage, compte rendu par point).
 
-Modèle de rédaction : un par palier de mémoire vive (`models::palier`, 8 / 16 / 32 Go), jamais
-choisi par l'utilisateur. Au palier 8 Go, Whisper est déchargé (`stt::Request::Unload`) pendant
-la rédaction.
+Modèle de rédaction : Qwen3 4B Instruct 2507 sur tous les postes (`models::modele_redaction`),
+jamais choisi par l'utilisateur. Avec 8 Go de mémoire vive (`models::palier`), Whisper est
+déchargé (`stt::Request::Unload`) pendant la rédaction.
 
 **Ne JAMAIS ajouter `llama-cpp-2` (ni rien qui lie llama.cpp/ggml) aux dépendances du crate
 principal.** Toute fonction qui a besoin d'un modèle de langue passe par ce programme.

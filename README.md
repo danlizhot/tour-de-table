@@ -123,14 +123,9 @@ saisir à la main.
 
 **Modèle de langue intégré : rien à installer.** Le programme auxiliaire `tourdetable-redaction`,
 livré avec l'application, fait tourner llama.cpp sur l'ordinateur, avec un seul chargement du
-modèle pour tout le nettoyage ou tout le compte rendu. Le modèle est choisi selon la mémoire vive
-de l'ordinateur, à chaque lancement (licence Apache 2.0 pour les trois) :
-
-| Mémoire | Modèle | Téléchargement | RAM pendant la rédaction |
-|---|---|---|---|
-| 8 Go et moins | Qwen3 4B Instruct 2507 | 2,5 Go | ~3,7 Go |
-| 16 Go | Ministral 3 8B Instruct 2512 | 5,2 Go | ~6,5 Go |
-| 32 Go et plus | Qwen3 30B-A3B Instruct 2507 | 18,6 Go | ~20 Go |
+modèle pour tout le compte rendu. Le modèle, le même sur tous les postes, est **Qwen3 4B
+Instruct 2507** (licence Apache 2.0, 2,5 Go à télécharger, ~3,7 Go de mémoire pendant la
+rédaction).
 
 Chaque téléchargement reprend là où il s'était arrêté, et sa taille et son SHA-256 sont vérifiés.
 La transcription doit être terminée avant la rédaction : les deux modèles ne calculent jamais en

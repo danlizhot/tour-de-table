@@ -197,7 +197,7 @@ impl Config {
         }
         let redaction = crate::models::modele_redaction().file;
         if let Some(m) = self.ancien_modele_redaction.take().filter(|m| m != redaction) {
-            notes.push(format!("Modèle de rédaction « {m} » remplacé par {redaction} (choisi selon la mémoire vive)"));
+            notes.push(format!("Modèle de rédaction « {m} » remplacé par {redaction}"));
         }
         notes
     }
