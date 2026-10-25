@@ -47,9 +47,8 @@ transcrire et en tirer le compte rendu.
 Application native d'environ 25 Mo. Fonctionne avec 8 Go de mémoire ; 16 Go sont conseillés pour
 la rédaction des comptes rendus.
 
-Rien d'autre à installer : au premier usage, Tour de table télécharge une seule fois son modèle de
-reconnaissance vocale (574 Mo) et, si vous rédigez des comptes rendus, son modèle de rédaction
-(2,7 Go).
+Rien d'autre à installer : au premier démarrage, Tour de table télécharge tout seul, une seule
+fois, ses modèles de reconnaissance vocale (574 Mo) et de rédaction (2,7 Go), soit 3,3 Go.
 
 ## Fonctionnalités (jusqu'à 20, ≤ 200 caractères chacune)
 
@@ -82,8 +81,8 @@ Version 0.1.1
 
 * Windows 10 (version 1809) ou plus récent, 64 bits
 * Mémoire : 8 Go minimum, 16 Go conseillés
-* Espace disque : 1 Go pour la reconnaissance vocale, 3 à 5 Go de plus pour la rédaction des
-  comptes rendus
+* Espace disque : 4 Go (3,3 Go de modèles téléchargés au premier démarrage)
+* Connexion Internet au premier démarrage seulement
 * Micro
 
 ## Autres renseignements demandés par le Partner Center

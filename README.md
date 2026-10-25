@@ -128,7 +128,10 @@ modèle pour tout le compte rendu. Le modèle, le même sur tous les postes, est
 par défaut avant de répondre : Tour de table désactive cette réflexion, trop lente sur un
 ordinateur sans carte graphique.
 
-Chaque téléchargement reprend là où il s'était arrêté, et sa taille et son SHA-256 sont vérifiés.
+Chaque téléchargement reprend là où il s'était arrêté, et sa taille et son SHA-256 sont vérifiés ;
+un fichier endommagé est supprimé et téléchargé une seconde fois. À chaque démarrage, la taille
+des modèles est contrôlée : s'il en manque un (ou si la mémoire vive du poste a changé de palier),
+l'écran d'installation revient pour ce qui manque seulement.
 La transcription doit être terminée avant la rédaction : les deux modèles ne calculent jamais en
 même temps. Avec 8 Go, Whisper est même déchargé pendant la rédaction et rechargé ensuite.
 
@@ -152,14 +155,17 @@ source sur l'horloge pour garder des horodatages justes.
 
 ## Utilisation
 
-1. Lancez Tour de table, puis cliquez sur **Télécharger Large v3 Turbo**. C'est la seule connexion
-   Internet, et elle ne se fait qu'une fois (Hugging Face, dépôt officiel de whisper.cpp).
+1. Lancez Tour de table. Au premier démarrage, il installe tout seul ses deux modèles, sans rien
+   demander : reconnaissance de la parole (574 Mo), puis rédaction des comptes rendus (2,7 Go).
+   L'écran « Installation… » montre l'avancement et le temps restant. C'est la seule connexion
+   Internet, et elle n'a lieu qu'une fois (Hugging Face). Vous pouvez fermer l'application en
+   cours de route : l'installation reprend là où elle s'était arrêtée au démarrage suivant.
 2. Au besoin, choisissez le micro et la sortie audio dans **Paramètres** (« Par défaut » convient
    le plus souvent), puis cliquez sur **Démarrer**.
 3. La transcription s'affiche au fil de la rencontre et elle est sauvegardée après chaque phrase.
    Vous ne perdez donc rien en cas de panne.
-4. À l'arrêt : **Rédiger le compte rendu** (modèle de langue local, installé d'un clic la
-   première fois), **Exporter** (Markdown, texte, sous-titres SRT) ou **Copier**.
+4. À l'arrêt : **Rédiger le compte rendu** (modèle de langue local), **Exporter** (Markdown,
+   texte, sous-titres SRT) ou **Copier**.
 
 **Importer un enregistrement existant** : bouton « Importer un enregistrement… » ou glisser le
 fichier dans la fenêtre. Formats : MP4 (enregistrements Teams), M4A (Zoom, téléphones), MP3, WAV,
@@ -185,7 +191,9 @@ salle et le lexique. Tout le reste (modèles, performance, détection de voix, c
 l'audio, compte rendu automatique) est décidé par l'application.
 
 Ligne de commande, pour transcrire un enregistrement existant (il devient une rencontre du
-dossier Musique, découpée par point d'après les annonces détectées, acceptées sans vérification) :
+dossier Musique, découpée par point d'après les annonces détectées, acceptées sans vérification).
+Elle ne télécharge rien : lancez l'application une première fois, ou copiez les modèles (voir
+« Déploiement en organisation »).
 
 ```
 tourdetable --transcrire enregistrement.m4a                       # MP4, M4A, MP3, WAV, FLAC, OGG
@@ -203,6 +211,41 @@ précédentes (et celles de « Noter », l'ancien nom) y sont déplacées automa
 | Windows | `Musique\Tour de table\` | `%APPDATA%\TourDeTable\TourDeTable\data\` |
 | macOS | `~/Music/Tour de table/` | `~/Library/Application Support/ca.TourDeTable.TourDeTable/` |
 | Linux | `$XDG_MUSIC_DIR/Tour de table/` (souvent `~/Musique`) | `~/.local/share/tourdetable/` |
+
+## Déploiement en organisation
+
+L'application est distribuée **sans aucun modèle** et n'a **aucun paramètre** de déploiement.
+
+**Accès réseau.** Au premier démarrage, les modèles sont téléchargés depuis Hugging Face. À
+autoriser dans le pare-feu ou le filtre Web : `huggingface.co`, qui redirige vers ses serveurs de
+téléchargement en `*.hf.co` (constaté le 25 octobre 2026 : `us.aws.cdn.hf.co` depuis l'Amérique
+du Nord ; le nom varie selon la région, d'où le joker). Un proxy est suivi s'il est déclaré dans
+les variables d'environnement `HTTPS_PROXY`, `HTTP_PROXY` ou `ALL_PROXY` (exceptions :
+`NO_PROXY`) ; le proxy configuré dans les réglages de Windows ou de macOS n'est pas lu. Les
+certificats sont vérifiés par le magasin du système : un proxy qui inspecte le trafic chiffré
+fonctionne si son autorité de certification est installée sur le poste.
+
+**Postes sans accès Internet.** Copiez d'avance les deux fichiers ci-dessous dans le dossier des
+modèles. Au démarrage, Tour de table calcule leur empreinte (quelques secondes, sans écran
+d'installation) et les utilise directement ; un fichier dont l'empreinte ne correspond pas est
+supprimé, et l'écran d'installation tente de le télécharger.
+
+| Fichier | Octets | SHA-256 | Source |
+|---|---|---|---|
+| `ggml-large-v3-turbo-q5_0.bin` | 574 041 195 | `394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2` | https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin |
+| `Qwen3.5-4B-Q4_K_M.gguf` | 2 740 937 888 | `00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4` | https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf |
+
+| Système | Dossier des modèles (pour chaque utilisateur) |
+|---|---|
+| Windows | `%APPDATA%\TourDeTable\TourDeTable\data\modeles\` |
+| macOS | `~/Library/Application Support/ca.TourDeTable.TourDeTable/modeles/` |
+| Linux | `~/.local/share/tourdetable/modeles/` (ou `$XDG_DATA_HOME/tourdetable/modeles/`) |
+
+Vérification de l'empreinte avant la copie : `Get-FileHash fichier` (PowerShell), `shasum -a 256
+fichier` (macOS) ou `sha256sum fichier` (Linux). La version du Microsoft Store tourne dans un
+paquet dont Windows peut rediriger le dossier `%APPDATA%` ; pour un déploiement hors ligne,
+préférez la version `.zip`, ou vérifiez l'emplacement réel dans la première ligne de
+`journal.txt`.
 
 ## Dépannage
 
@@ -254,6 +297,7 @@ src/
   ui/nettoyage.rs file du nettoyage, « Brute / Nettoyée »
   ui/agenda.rs   ordre du jour
   ui/settings.rs Paramètres
+  ui/installation.rs installation des modèles au premier démarrage
   ui/widgets.rs  composants, couleurs, logo vectoriel
   audio/mod.rs   capture micro + loopback par plateforme
   audio/dsp.rs   mono, rééchantillonnage 16 kHz (FIR), détection de voix, découpage
@@ -263,7 +307,7 @@ src/
   quebec.rs      invite, typographie, lexique, filtre d'hallucinations
   nettoyage.rs   nettoyage de la transcription, par règles (data/nettoyage.txt)
   storage.rs     rencontres (JSON) et exports MD/TXT/SRT
-  models.rs      modèles (Whisper, rédaction) et leur téléchargement
+  models.rs      modèles (Whisper, rédaction), téléchargement et vérification
   agenda.rs      lecture de l'ordre du jour (Word, PDF, texte)
   summary.rs     compte rendu par le modèle intégré (découpage des longues rencontres)
   audio/import.rs  import d'enregistrements (MP4, M4A, MP3, WAV, FLAC, OGG), décodage en flux

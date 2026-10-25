@@ -29,7 +29,8 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
 * `src/ui/` : `mod.rs` (état `TourDeTableApp`, boucle `eframe::App`, `pump`, barre du haut et
   historique), `live.rs` (rencontre en cours, import, contrôles), `past.rs` (fiche d'une
   rencontre, compte rendu), `agenda.rs` (ordre du jour), `verification.rs` (frontières d'un
-  import à vérifier), `settings.rs` (Paramètres),
+  import à vérifier), `settings.rs` (Paramètres), `installation.rs` (installation automatique des
+  modèles au premier démarrage, plein écran),
   `widgets.rs` (couleurs, composants, logo). Garder chaque fichier sous ~700 lignes.
 * `storage.rs` : une rencontre = un dossier de Musique/Tour de table (nom fixé à la création,
   champ `dossier`) avec `rencontre.json`, sauvegardé après chaque
@@ -51,7 +52,8 @@ séparé, livré à côté de `tourdetable`, qui reçoit une requête JSON par l
 `{"erreur": …}`). Le modèle reste chargé entre les requêtes : `summary::Session` garde le
 programme ouvert pour toute une série (nettoyage, compte rendu par point).
 
-Modèle de rédaction : Qwen3.5 4B sur tous les postes (`models::modele_redaction`),
+L'application est livrée sans modèle : `ui/installation.rs` les télécharge sans aucun clic
+(aucune autre interface de téléchargement). Modèle de rédaction : Qwen3.5 4B sur tous les postes (`models::modele_redaction`),
 jamais choisi par l'utilisateur. Avec 8 Go de mémoire vive (`models::palier`), Whisper est
 déchargé (`stt::Request::Unload`) pendant la rédaction.
 
@@ -81,8 +83,8 @@ Le code n'a jamais été passé par `rustfmt` (lignes d'environ 130 colonnes, sa
   journal, interface, messages de commit.
 * **Typographie OQLF** dans l'interface et les textes : « 14 h 30 », « 2 500 $ », pas d'espace
   avant ? ! ;, espace avant le deux-points, guillemets « » avec espaces.
-* **Aucune donnée ne quitte l'ordinateur.** Seule connexion permise : téléchargement d'un
-  modèle sur clic explicite (Hugging Face). Pas de
+* **Aucune donnée ne quitte l'ordinateur.** Seule connexion permise : installation des modèles
+  (Hugging Face), automatique au premier démarrage ou quand un modèle manque. Pas de
   télémétrie. Toute nouvelle connexion exige de mettre à jour `CONFIDENTIALITE.md` (et la page
   publiée, voir README).
 * **Compatibilité ascendante de `rencontre.json`** (et de la configuration) : tout nouveau champ

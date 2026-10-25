@@ -18,6 +18,21 @@ use crate::quebec::Glossary;
 use crate::storage::{Agenda, Meeting};
 use crate::stt::{Engine, Reply, Request, Settings};
 
+/// La ligne de commande ne télécharge rien : sans les modèles, elle explique comment les obtenir.
+fn exiger_modeles(fichiers: &[&str]) -> Result<()> {
+    let manquants: Vec<&str> = fichiers.iter().copied().filter(|f| !crate::models::installed(f)).collect();
+    if !manquants.is_empty() {
+        bail!(
+            "modèle(s) absent(s) : {}.\n\
+             Lancez une première fois l'application Tour de table : elle télécharge automatiquement les modèles.\n\
+             Sans accès à Internet, copiez les fichiers dans {} (voir la section « Déploiement en organisation » du README).",
+            manquants.join(", "),
+            config::models_dir().display()
+        );
+    }
+    Ok(())
+}
+
 pub fn transcribe_file(fichier: &str, model: Option<&str>) -> Result<()> {
     let m = transcribe(fichier, model, None)?;
     eprintln!("Rencontre enregistrée dans {}", m.dir().display());
@@ -28,6 +43,9 @@ pub fn transcribe_file(fichier: &str, model: Option<&str>) -> Result<()> {
 /// transcription bloc par bloc, puis découpage par point (frontières détectées acceptées
 /// telles quelles).
 fn transcribe(fichier: &str, model: Option<&str>, agenda: Option<Agenda>) -> Result<Meeting> {
+    if model.is_none() {
+        exiger_modeles(&[crate::models::RECOMMENDED])?;
+    }
     let cfg = Config::load();
     let model_path = model.map(std::path::PathBuf::from).unwrap_or_else(config::model_path);
     let path = Path::new(fichier);
@@ -139,6 +157,14 @@ pub fn compte_rendu(agenda_path: &str, source: &str, palier: Option<crate::model
     if let Some(p) = palier {
         crate::models::forcer_palier(p);
     }
+    let mut requis = Vec::new();
+    if modele.is_none() {
+        requis.push(crate::models::modele_redaction().file);
+    }
+    if import::is_audio(Path::new(source)) {
+        requis.push(crate::models::RECOMMENDED);
+    }
+    exiger_modeles(&requis)?;
     let mut moteur = config::moteur();
     if let Some(m) = modele {
         moteur.modele = std::path::PathBuf::from(m);

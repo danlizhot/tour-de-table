@@ -5,11 +5,10 @@ use std::sync::atomic::Ordering;
 
 use eframe::egui::{self, Align, Layout, RichText, Ui};
 
-use super::widgets::{download_bar, markdown, short_model, transcript, transcript_nettoye};
+use super::widgets::{markdown, short_model, transcript, transcript_nettoye};
 use super::{TourDeTableApp, View};
 use crate::audio::blocs;
 use crate::config;
-use crate::models;
 use crate::storage::{self, clock};
 
 impl TourDeTableApp {
@@ -18,9 +17,9 @@ impl TourDeTableApp {
         if self.summary_job.is_some() {
             return;
         }
-        if !models::installed(models::modele_redaction().file) {
+        if !self.redaction_prete() {
             self.notify(
-                "Transcription terminée et nettoyée. Pour la rédaction automatique du compte rendu, installez d'abord le modèle de rédaction (bouton ci-dessous).",
+                "Transcription terminée et nettoyée. Le modèle de rédaction n'est pas encore prêt : rédigez le compte rendu plus tard avec le bouton ci-dessous.",
                 false,
             );
             return;
@@ -160,8 +159,7 @@ impl TourDeTableApp {
                 };
                 (etape, a.jetons.load(Ordering::Relaxed), t0.elapsed().as_secs())
             });
-        // Modèle de rédaction intégré pas encore téléchargé : on propose de l'installer.
-        let llm_missing = (!models::installed(models::modele_redaction().file)).then(models::modele_redaction);
+        let redaction_prete = self.redaction_prete();
         let has_agenda = self.meetings[idx].agenda.is_some();
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -176,19 +174,13 @@ impl TourDeTableApp {
                         format!("{etape}Rédaction : environ {} mots · {}", jetons * 3 / 4, clock(secs * 1000))
                     };
                     ui.label(RichText::new(etat).weak());
-                } else if let Some(info) = llm_missing {
-                    if let Some(dl) = self.download.as_ref().filter(|d| d.file == info.file) {
-                        download_bar(ui, dl);
-                    } else if ui
-                        .add_enabled(self.download.is_none(), egui::Button::new(format!(
-                            "Installer le modèle de rédaction ({:.1} Go, une seule fois)",
-                            info.octets as f32 / 1e9
-                        )).small())
-                        .on_hover_text(format!("{} · choisi pour un poste de {} de mémoire", info.label, models::palier().nom()))
-                        .clicked()
-                    {
-                        action = Some("install-llm");
-                    }
+                } else if !redaction_prete {
+                    let texte = if self.installation.is_some() {
+                        "Vérification du modèle de rédaction…"
+                    } else {
+                        "Modèle de rédaction introuvable : redémarrez Tour de table pour le réinstaller."
+                    };
+                    ui.label(RichText::new(texte).weak());
                 } else {
                     let label = match (self.meetings[idx].summary.is_some(), has_agenda) {
                         (true, _) => "Régénérer",
@@ -250,9 +242,6 @@ impl TourDeTableApp {
                 self.summarize(idx, reprendre);
             }
             Some("decouper") => self.ouvrir_verification(self.meetings[idx].clone(), false),
-            Some("install-llm") => {
-                self.start_download(models::modele_redaction().file);
-            }
             _ => {}
         }
     }

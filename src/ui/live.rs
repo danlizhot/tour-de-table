@@ -3,9 +3,9 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use eframe::egui::{self, Color32, RichText, Sense, Ui, Vec2};
+use eframe::egui::{RichText, Sense, Ui, Vec2};
 
-use super::widgets::{BLEU, DISTANCE, SALLE, download_bar, draw_logo, meter, record_button, transcript};
+use super::widgets::{DISTANCE, SALLE, draw_logo, meter, record_button, transcript};
 use super::{ModelState, TourDeTableApp, View};
 use crate::audio::{self, Source, import};
 use crate::config;
@@ -115,7 +115,7 @@ impl TourDeTableApp {
             return;
         }
         if !self.whisper_disponible() {
-            self.notify("Installez d'abord le modèle de reconnaissance vocale (bouton « Télécharger » de l'écran d'accueil).", true);
+            self.notify("Le modèle de reconnaissance vocale n'est pas encore prêt : réessayez dans un instant.", true);
             return;
         }
         self.suspendre_nettoyage();
@@ -258,6 +258,8 @@ impl TourDeTableApp {
         }
     }
 
+    /// Modèle de reconnaissance vocale introuvable (effacé depuis le démarrage : l'installation le
+    /// remet en place au prochain démarrage) ou en erreur.
     fn welcome(&mut self, ui: &mut Ui) {
         ui.add_space(30.0);
         ui.vertical_centered(|ui| {
@@ -265,19 +267,10 @@ impl TourDeTableApp {
             draw_logo(ui.painter(), rect);
             ui.add_space(12.0);
             ui.heading("Bienvenue dans Tour de table");
-            ui.label("Pour commencer, installez un modèle de reconnaissance vocale (une seule fois).");
-            ui.add_space(12.0);
-            let info = &models::WHISPER;
-            if let Some(dl) = &self.download {
-                download_bar(ui, dl);
-            } else if ui
-                .add(egui::Button::new(
-                    RichText::new(format!("Télécharger {} ({} Mo)", info.label, info.size_mb)).color(Color32::WHITE),
-                ).fill(BLEU).min_size(Vec2::new(280.0, 36.0)))
-                .clicked()
-            {
-                self.start_download(info.file);
-            }
+            ui.label(match &self.model {
+                ModelState::Failed(_) => "Le modèle de reconnaissance vocale n'a pas pu être chargé : la raison est indiquée en haut à droite et dans le journal.",
+                _ => "Le modèle de reconnaissance vocale est introuvable. Redémarrez Tour de table pour le réinstaller.",
+            });
         });
     }
 }

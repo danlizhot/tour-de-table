@@ -1,11 +1,13 @@
 //! Catalogue et téléchargement des modèles : Whisper (format ggml de whisper.cpp) et rédaction
 //! (GGUF, llama.cpp). Le modèle de rédaction est choisi d'après la mémoire vive, sans choix
-//! offert à l'utilisateur.
+//! offert à l'utilisateur. Les deux sont installés automatiquement au premier démarrage
+//! (`ui/installation.rs`) : l'application est distribuée sans aucun modèle.
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 
@@ -14,12 +16,11 @@ pub const RECOMMENDED: &str = "ggml-large-v3-turbo-q5_0.bin";
 pub struct ModelInfo {
     pub file: &'static str,
     pub label: &'static str,
-    pub size_mb: u32,
 }
 
 /// Le seul modèle Whisper : multilingue (les modèles « .en » ne savent pas le
 /// français), quantifié en 5 bits, ~1,2 Go de RAM en transcription, convient dès 8 Go.
-pub const WHISPER: ModelInfo = ModelInfo { file: RECOMMENDED, label: "Large v3 Turbo (q5)", size_mb: 574 };
+pub const WHISPER: ModelInfo = ModelInfo { file: RECOMMENDED, label: "Large v3 Turbo (q5)" };
 
 /// Taille exacte et SHA-256 de chaque fichier téléchargé, vérifiés à la fin du téléchargement.
 struct Empreinte {
@@ -124,11 +125,158 @@ fn ram_totale() -> u64 {
 }
 
 /// Modèles de rédaction d'un autre palier encore présents (mémoire ajoutée ou retirée depuis
-/// leur téléchargement) : à supprimer une fois le modèle du palier actuel installé.
-#[allow(dead_code)]
+/// leur téléchargement), avec leurs fichiers `.part` et `.verifie` : à supprimer une fois le
+/// modèle du palier actuel installé et vérifié.
 pub fn modeles_redaction_obsoletes() -> Vec<PathBuf> {
     let actuel = modele_redaction().file;
-    LLM_CATALOG.iter().filter(|m| m.file != actuel).map(|m| path(m.file)).filter(|p| p.exists()).collect()
+    LLM_CATALOG
+        .iter()
+        .filter(|m| m.file != actuel)
+        .flat_map(|m| [path(m.file), partiel(m.file), marque(m.file)])
+        .filter(|p| p.exists())
+        .collect()
+}
+
+/// Modèle à installer, avec un libellé en langage simple pour l'écran d'installation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Requis {
+    pub file: &'static str,
+    pub libelle: &'static str,
+    pub octets: u64,
+}
+
+/// Modèles nécessaires sur ce poste, dans l'ordre d'installation : la reconnaissance vocale
+/// d'abord (l'application est utilisable dès qu'elle est là), puis la rédaction.
+pub fn requis() -> [Requis; 2] {
+    let redaction = modele_redaction();
+    [
+        Requis { file: RECOMMENDED, libelle: "Reconnaissance de la parole", octets: EMPREINTES[0].octets },
+        Requis { file: redaction.file, libelle: "Rédaction des comptes rendus", octets: redaction.octets },
+    ]
+}
+
+/// État d'un modèle au démarrage. Vérification rapide : la taille, et la marque laissée par
+/// une vérification complète précédente ; l'empreinte n'est recalculée que pour un fichier
+/// jamais vérifié (copié à l'avance par le service informatique, ou téléchargé par une version
+/// antérieure).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Etat {
+    Pret,
+    AVerifier,
+    ATelecharger,
+}
+
+pub fn etat(file: &str) -> Etat {
+    if !installed(file) {
+        return Etat::ATelecharger;
+    }
+    match attendu(file) {
+        Some((_, sha256)) if std::fs::read_to_string(marque(file)).is_ok_and(|m| m.trim() == sha256) => Etat::Pret,
+        Some(_) => Etat::AVerifier,
+        None => Etat::Pret,
+    }
+}
+
+/// Empreinte complète d'un modèle déjà en place ; un fichier corrompu est supprimé.
+pub fn verifier_installe(file: &str) -> Result<()> {
+    let (octets, sha256) = attendu(file).with_context(|| format!("Modèle inconnu : {file}"))?;
+    if let Err(e) = verifier(&path(file), octets, sha256) {
+        supprimer(file);
+        return Err(e);
+    }
+    marquer(file, sha256);
+    Ok(())
+}
+
+/// Octets qui restent à télécharger (un fichier `.part` reprend là où il s'était arrêté).
+pub fn octets_restants(r: &Requis) -> u64 {
+    r.octets.saturating_sub(partiel(r.file).metadata().map_or(0, |m| m.len()).min(r.octets))
+}
+
+/// Retire un modèle, sa partie téléchargée et sa marque de vérification.
+pub fn supprimer(file: &str) {
+    for p in [path(file), partiel(file), marque(file)] {
+        if p.exists()
+            && let Err(e) = std::fs::remove_file(&p)
+        {
+            log::warn!("Suppression de {} : {e}", p.display());
+        }
+    }
+}
+
+/// Marque d'une vérification complète réussie : l'empreinte attendue, à côté du modèle.
+fn marque(file: &str) -> PathBuf {
+    crate::config::models_dir().join(format!("{file}.verifie"))
+}
+
+fn marquer(file: &str, sha256: &str) {
+    if let Err(e) = std::fs::write(marque(file), sha256) {
+        log::warn!("Marque de vérification de {file} : {e}");
+    }
+}
+
+fn partiel(file: &str) -> PathBuf {
+    crate::config::models_dir().join(format!("{file}.part"))
+}
+
+/// Espace libre du disque qui contient `dossier` (ou son plus proche parent existant).
+pub fn espace_libre(dossier: &Path) -> Option<u64> {
+    let existant = dossier.ancestors().find(|p| p.exists())?;
+    let chemin = std::fs::canonicalize(existant).unwrap_or_else(|_| existant.to_path_buf());
+    // Windows : canonicalize donne « \\?\C:\… », les points de montage sont « C:\ ».
+    let chemin = PathBuf::from(chemin.to_string_lossy().trim_start_matches(r"\\?\"));
+    let disques = sysinfo::Disks::new_with_refreshed_list();
+    disques
+        .list()
+        .iter()
+        .filter(|d| chemin.starts_with(d.mount_point()))
+        .max_by_key(|d| d.mount_point().as_os_str().len())
+        .map(sysinfo::Disk::available_space)
+}
+
+/// Serveur des modèles injoignable, connexion coupée ou refusée : on peut réessayer.
+#[derive(Debug)]
+pub struct Reseau(pub String);
+
+impl std::fmt::Display for Reseau {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Reseau {}
+
+/// Fichier complet dont l'empreinte ne correspond pas : il a été supprimé.
+#[derive(Debug)]
+pub struct Corrompu(pub String);
+
+impl std::fmt::Display for Corrompu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Corrompu {}
+
+/// Client HTTP des téléchargements. Réseaux d'organisation : le proxy des variables
+/// `HTTPS_PROXY`, `HTTP_PROXY` ou `ALL_PROXY` (et `NO_PROXY`) est suivi, et les certificats
+/// sont vérifiés par le magasin du système, qui contient l'autorité d'un proxy qui inspecte
+/// le trafic chiffré.
+fn agent() -> &'static ureq::Agent {
+    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    AGENT.get_or_init(|| {
+        let tls = ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build();
+        let config = ureq::Agent::config_builder()
+            .timeout_connect(Some(Duration::from_secs(30)))
+            .timeout_recv_response(Some(Duration::from_secs(60)))
+            .tls_config(tls)
+            .build();
+        match config.proxy() {
+            Some(p) => log::info!("Téléchargements par le proxy {}", p.uri()),
+            None => log::info!("Téléchargements sans proxy"),
+        }
+        ureq::Agent::new_with_config(config)
+    })
 }
 
 fn attendu(file: &str) -> Option<(u64, &'static str)> {
@@ -163,11 +311,13 @@ pub struct Progress {
 }
 
 /// Télécharge `file` dans le dossier des modèles. Un téléchargement interrompu reprend où il
-/// s'était arrêté (fichier `.part`, en-tête Range) ; la taille et le SHA-256 sont vérifiés à la fin.
+/// s'était arrêté (fichier `.part`, en-tête Range) ; la taille et le SHA-256 sont vérifiés à la
+/// fin. Erreurs : [`Reseau`] (on peut réessayer), [`Corrompu`] (partie supprimée), ou locale
+/// (disque plein, dossier interdit en écriture).
 pub fn download(file: &str, progress: Arc<Progress>) -> Result<()> {
     let dest = path(file);
     std::fs::create_dir_all(dest.parent().unwrap())?;
-    let part = dest.with_extension(format!("{}.part", dest.extension().unwrap_or_default().to_string_lossy()));
+    let part = partiel(file);
     let attendu = attendu(file);
 
     let mut deja = part.metadata().map_or(0, |m| m.len());
@@ -175,11 +325,11 @@ pub fn download(file: &str, progress: Arc<Progress>) -> Result<()> {
         deja = 0;
     }
     if attendu.is_none_or(|(octets, _)| deja < octets) {
-        let mut requete = ureq::get(&url(file));
+        let mut requete = agent().get(url(file));
         if deja > 0 {
             requete = requete.header("Range", format!("bytes={deja}-"));
         }
-        let mut resp = requete.call().context("Connexion à Hugging Face")?;
+        let mut resp = requete.call().map_err(|e| Reseau(format!("Connexion au serveur des modèles : {e}")))?;
         // 206 : le serveur reprend ; 200 : il renvoie tout, on recommence.
         if resp.status() != 206 {
             deja = 0;
@@ -199,7 +349,13 @@ pub fn download(file: &str, progress: Arc<Progress>) -> Result<()> {
                 out.flush()?;
                 bail!("Téléchargement annulé");
             }
-            let n = reader.read(&mut buf)?;
+            let n = match reader.read(&mut buf) {
+                Ok(n) => n,
+                Err(e) => {
+                    out.flush()?;
+                    return Err(Reseau(format!("Connexion interrompue : {e}")).into());
+                }
+            };
             if n == 0 {
                 break;
             }
@@ -208,20 +364,24 @@ pub fn download(file: &str, progress: Arc<Progress>) -> Result<()> {
             progress.done.store(done, Ordering::Relaxed);
         }
         out.flush()?;
-        if attendu.is_none() && reste > 0 && done != deja + reste {
-            bail!("Téléchargement incomplet ({done} / {} octets) : relancez-le pour le reprendre", deja + reste);
+        let prevu = attendu.map_or(deja + reste, |(octets, _)| octets);
+        if (attendu.is_some() || reste > 0) && done < prevu {
+            return Err(Reseau(format!("Connexion interrompue ({done} / {prevu} octets)")).into());
         }
     }
-    if let Some((octets, sha256)) = attendu
-        && let Err(e) = verifier(&part, octets, sha256)
-    {
-        // Une partie corrompue ne doit pas être reprise : on repartira de zéro.
-        if part.metadata().map_or(0, |m| m.len()) >= octets {
-            let _ = std::fs::remove_file(&part);
+    if let Some((octets, sha256)) = attendu {
+        if let Err(e) = verifier(&part, octets, sha256) {
+            // Une partie corrompue ne doit pas être reprise : on repartira de zéro.
+            if part.metadata().map_or(0, |m| m.len()) >= octets {
+                let _ = std::fs::remove_file(&part);
+            }
+            return Err(e);
         }
-        return Err(e);
+        std::fs::rename(&part, &dest)?;
+        marquer(file, sha256);
+    } else {
+        std::fs::rename(&part, &dest)?;
     }
-    std::fs::rename(&part, &dest)?;
     Ok(())
 }
 
@@ -233,7 +393,7 @@ pub fn verifier(chemin: &Path, octets: u64, sha256: &str) -> Result<()> {
     }
     let calcule = crate::audio::blocs::empreinte(chemin)?;
     if calcule != sha256 {
-        bail!("Fichier corrompu (SHA-256 {calcule}, attendu {sha256}) : il sera retéléchargé");
+        return Err(Corrompu(format!("Fichier corrompu (SHA-256 {calcule}, attendu {sha256})")).into());
     }
     Ok(())
 }

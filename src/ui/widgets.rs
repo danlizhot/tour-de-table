@@ -1,10 +1,7 @@
 //! Composants réutilisables : couleurs, transcription, Markdown, jauges, logo.
 
-use std::sync::atomic::Ordering;
-
 use eframe::egui::{self, Color32, CornerRadius, Pos2, RichText, Sense, Ui, Vec2};
 
-use super::Download;
 use crate::audio::{DeviceInfo, Source};
 use crate::models;
 use crate::storage::{Meeting, clock};
@@ -178,20 +175,10 @@ pub(super) fn record_button(ui: &mut Ui, recording: bool, enabled: bool) -> egui
         ui.painter().circle_filled(c, 7.0, Color32::WHITE);
     }
     if !enabled {
-        resp.on_disabled_hover_text("Installez d'abord le modèle de reconnaissance vocale (écran d'accueil).")
+        resp.on_disabled_hover_text("Le modèle de reconnaissance vocale n'est pas encore prêt.")
     } else {
         resp
     }
-}
-
-pub(super) fn download_bar(ui: &mut Ui, dl: &Download) {
-    let done = dl.progress.done.load(Ordering::Relaxed) as f32;
-    let total = dl.progress.total.load(Ordering::Relaxed).max(1) as f32;
-    ui.add(
-        egui::ProgressBar::new(done / total)
-            .text(format!("{} : {:.0} / {:.0} Mo", short_model(&dl.file), done / 1e6, total / 1e6))
-            .desired_width(360.0),
-    );
 }
 
 pub(super) fn short_model(file: &str) -> String {

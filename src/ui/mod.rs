@@ -2,6 +2,7 @@
 
 mod agenda;
 mod decoupage;
+mod installation;
 mod live;
 mod nettoyage;
 mod past;
@@ -17,7 +18,7 @@ use eframe::egui::{self, Align, Color32, CornerRadius, Layout, RichText, Sense, 
 
 use crate::audio::{self, DeviceInfo, dsp::Utterance};
 use crate::config::{self, Config};
-use crate::models::{self, Progress};
+use crate::models;
 use crate::quebec::Glossary;
 use crate::recorder::Recorder;
 use crate::storage::{self, Agenda, Meeting, clock};
@@ -26,6 +27,8 @@ use widgets::{ROUGE, SALLE, draw_logo, short_model, style};
 
 enum ModelState {
     Missing,
+    /// Modèles copiés à l'avance dont l'empreinte est vérifiée avant le premier chargement.
+    Verification,
     Loading,
     Ready(String),
     Failed(String),
@@ -43,12 +46,6 @@ type TacheCompteRendu = (String, Receiver<Result<String, String>>, Arc<crate::su
 /// Import d'un fichier audio : nom affiché, résultat (durée, une fois tous les blocs envoyés à
 /// la transcription) et avancement.
 type TacheImport = (String, Receiver<Result<u64, String>>, Arc<audio::import::Avancement>);
-
-struct Download {
-    file: String,
-    progress: Arc<Progress>,
-    done: Receiver<Result<(), String>>,
-}
 
 pub struct TourDeTableApp {
     cfg: Config,
@@ -68,7 +65,8 @@ pub struct TourDeTableApp {
     meetings: Vec<Meeting>,
     view: View,
     show_settings: bool,
-    download: Option<Download>,
+    /// Installation des modèles manquants (plein écran tant qu'un téléchargement est nécessaire).
+    installation: Option<installation::Installation>,
     /// Rédaction en cours : (rencontre, résultat, jetons rédigés, début).
     summary_job: Option<TacheCompteRendu>,
     notices: Vec<(String, bool)>,
@@ -117,7 +115,7 @@ impl TourDeTableApp {
             meetings: storage::list(),
             view: View::Live,
             show_settings: false,
-            download: None,
+            installation: installation::Installation::au_demarrage(),
             summary_job: None,
             notices: Vec::new(),
             draft_agenda: None,
@@ -156,7 +154,10 @@ impl TourDeTableApp {
     }
 
     pub(super) fn load_model(&mut self) {
-        if models::installed(models::RECOMMENDED) {
+        if self.installation.as_ref().is_some_and(|i| !i.pret(models::RECOMMENDED)) {
+            // Chargé dès que l'installation l'a vérifié.
+            self.model = ModelState::Verification;
+        } else if models::installed(models::RECOMMENDED) {
             self.model = ModelState::Loading;
             let _ = self.engine.tx.send(Request::Load { path: config::model_path(), use_gpu: config::USE_GPU });
         } else {
@@ -285,20 +286,11 @@ impl TourDeTableApp {
             self.finalize();
         }
 
-        if let Some(dl) = &self.download
-            && let Ok(res) = dl.done.try_recv()
-        {
-            let file = dl.file.clone();
-            self.download = None;
-            match res {
-                Ok(()) => {
-                    self.notify(format!("Modèle {file} installé."), false);
-                    if file == models::RECOMMENDED {
-                        self.load_model();
-                    }
-                }
-                Err(e) => self.notify(format!("Téléchargement : {e}"), true),
-            }
+        if self.installation.as_ref().is_some_and(installation::Installation::terminee) {
+            self.installation = None;
+        }
+        if matches!(self.model, ModelState::Verification) && self.installation.as_ref().is_none_or(|i| i.pret(models::RECOMMENDED)) {
+            self.load_model();
         }
 
         if let Some((id, rx, _, _)) = &self.summary_job
@@ -357,14 +349,10 @@ impl TourDeTableApp {
         }
     }
 
-    pub(super) fn start_download(&mut self, file: &str) {
-        let progress = Arc::new(Progress::default());
-        let (tx, rx) = crossbeam_channel::bounded(1);
-        let (f, p) = (file.to_string(), progress.clone());
-        std::thread::spawn(move || {
-            let _ = tx.send(models::download(&f, p).map_err(|e| format!("{e:#}")));
-        });
-        self.download = Some(Download { file: file.to_string(), progress, done: rx });
+    /// Modèle de rédaction installé et vérifié.
+    pub(super) fn redaction_prete(&self) -> bool {
+        let file = models::modele_redaction().file;
+        self.installation.as_ref().is_none_or(|i| i.pret(file)) && models::installed(file)
     }
 
     // ───────────────────────── Affichage ─────────────────────────
@@ -388,6 +376,7 @@ impl TourDeTableApp {
                 let (txt, color) = match &self.model {
                     ModelState::Missing => ("Aucun modèle installé".to_string(), ROUGE),
                     ModelState::Loading => ("Chargement du modèle…".to_string(), Color32::from_rgb(0xD9, 0x77, 0x06)),
+                    ModelState::Verification => ("Vérification des modèles…".to_string(), Color32::from_rgb(0xD9, 0x77, 0x06)),
                     ModelState::Ready(n) => (format!("Modèle : {}", short_model(n)), SALLE),
                     ModelState::Failed(_) => ("Modèle en erreur".to_string(), ROUGE),
                     ModelState::EnPause => ("Modèle en pause pendant la rédaction".to_string(), Color32::from_rgb(0xD9, 0x77, 0x06)),
@@ -448,7 +437,7 @@ impl eframe::App for TourDeTableApp {
         let ecoute = self.verification.as_ref().is_some_and(verification::Verification::lecture_en_cours);
         if self.recorder.is_some()
             || self.finishing
-            || self.download.is_some()
+            || self.installation.is_some()
             || self.summary_job.is_some()
             || self.import_job.is_some()
             || self.decoupage_job.is_some()
@@ -460,6 +449,10 @@ impl eframe::App for TourDeTableApp {
     }
 
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+        if let Some(inst) = self.installation.as_mut().filter(|i| i.visible()) {
+            egui::CentralPanel::default_margins().show(ui, |ui| inst.afficher(ui));
+            return;
+        }
         let ctx = ui.ctx().clone();
         let (hovering, dropped) = ctx.input(|i| (!i.raw.hovered_files.is_empty(), i.raw.dropped_files.clone()));
         for f in dropped {

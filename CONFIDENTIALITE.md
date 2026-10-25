@@ -1,6 +1,6 @@
 # Politique de confidentialité — Tour de table
 
-*Dernière mise à jour : 24 octobre 2026*
+*Dernière mise à jour : 25 octobre 2026*
 
 Tour de table est une application de transcription de rencontres qui fonctionne **entièrement
 sur votre ordinateur**. Cette politique explique quelles données l'application traite, où elles
@@ -32,12 +32,15 @@ Aucun service infonuagique de transcription n'est utilisé.
 
 ## Connexions réseau
 
-Tour de table n'établit qu'une seule sorte de connexion :
+La seule connexion Internet de Tour de table a lieu à l'installation des modèles :
 
-* **Téléchargement des modèles** (reconnaissance vocale et rédaction), seulement quand vous
-   cliquez sur « Télécharger » ou « Installer ». Les fichiers proviennent de Hugging Face
-   (`huggingface.co`) : dépôt officiel de whisper.cpp et dépôts publics des modèles Qwen. Comme tout
-   site Web, ce serveur peut journaliser votre adresse IP. Aucune de vos données n'est transmise.
+* **Téléchargement des modèles** (reconnaissance vocale et rédaction), automatiquement au premier
+   démarrage, puis seulement si un modèle manque (fichier effacé ou endommagé, mémoire vive du
+   poste modifiée). Les fichiers proviennent de Hugging Face (`huggingface.co` et ses serveurs de
+   téléchargement en `hf.co`) : dépôt officiel de whisper.cpp et dépôts publics des modèles Qwen.
+   Comme tout site Web, ces serveurs peuvent journaliser votre adresse IP. Aucune de vos données
+   n'est transmise. Si les modèles ont été copiés à l'avance par votre service informatique,
+   aucune connexion n'a lieu.
 
 Les comptes rendus sont rédigés **par le modèle intégré, sur votre ordinateur, sans aucune
 connexion**.
