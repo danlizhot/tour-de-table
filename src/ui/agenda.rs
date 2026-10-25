@@ -86,6 +86,7 @@ impl TourDeTableApp {
     /// Débute un point (ou, pour `None`, ferme la période en cours) à la position courante de
     /// l'enregistrement. Si l'enregistrement n'est pas démarré, il démarre sur ce point.
     pub(super) fn debuter_point(&mut self, point: Option<usize>) {
+        self.abandonner_propositions();
         if self.recorder.is_none() {
             if point.is_none() || self.live.is_some() || !self.peut_demarrer() {
                 return;
@@ -214,6 +215,7 @@ impl TourDeTableApp {
         let editer = slot.as_ref().is_some_and(|a| a.points.is_empty()) || self.edit_points;
         // Rencontre passée enregistrée en blocs : l'audio de chaque point peut être exporté.
         let audio_par_point = passee && self.agenda_meeting().is_some_and(|m| crate::audio::blocs::existe(&m.dir()));
+        let propose = if enregistre { self.point_propose() } else { None };
 
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -260,7 +262,7 @@ impl TourDeTableApp {
                     ui.add_space(2.0);
                     for (i, p) in a.points.iter().enumerate() {
                         let duree = durees.get(i).copied().flatten();
-                        match ligne_point(ui, i, p, actif == Some(i), duree, peut_debuter, audio_par_point) {
+                        match ligne_point(ui, i, p, actif == Some(i), propose == Some(i), duree, peut_debuter, audio_par_point) {
                             Some(ClicPoint::Debuter(i)) => debuter = Some(Some(i)),
                             Some(ClicPoint::Exporter(i)) => exporter = Some(i),
                             None => {}
@@ -362,7 +364,8 @@ enum ClicPoint {
 }
 
 /// Une ligne de la liste des points ; retourne l'action demandée sur clic.
-fn ligne_point(ui: &mut Ui, i: usize, p: &Point, actif: bool, duree: Option<u64>, peut_debuter: bool, exporter: bool) -> Option<ClicPoint> {
+#[allow(clippy::too_many_arguments)]
+fn ligne_point(ui: &mut Ui, i: usize, p: &Point, actif: bool, propose: bool, duree: Option<u64>, peut_debuter: bool, exporter: bool) -> Option<ClicPoint> {
     let mut clic = None;
     let retrait = (p.niveau.saturating_sub(1)) as f32 * 22.0;
     let fond = if actif { BLEU.gamma_multiply(0.22) } else { Color32::TRANSPARENT };
@@ -377,7 +380,14 @@ fn ligne_point(ui: &mut Ui, i: usize, p: &Point, actif: bool, duree: Option<u64>
                         ui.label(RichText::new(clock(duree.unwrap_or(0))).monospace().strong());
                     } else if peut_debuter {
                         let texte = if duree.is_some() { "Revenir au point" } else { "Débuter le point" };
-                        if ui.small_button(texte).on_hover_text(RACCOURCIS).clicked() {
+                        // Point dont l'annonce vient d'être entendue : bouton mis en évidence.
+                        let bouton = if propose {
+                            egui::Button::new(RichText::new(texte).small().strong().color(Color32::WHITE)).fill(BLEU)
+                        } else {
+                            egui::Button::new(RichText::new(texte).small())
+                        };
+                        let aide = if propose { format!("Changement de point entendu : cliquez pour débuter ce point.\n{RACCOURCIS}") } else { RACCOURCIS.to_string() };
+                        if ui.add(bouton).on_hover_text(aide).clicked() {
                             clic = Some(ClicPoint::Debuter(i));
                         }
                     }

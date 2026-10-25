@@ -107,8 +107,25 @@ fn spec() -> hound::WavSpec {
     hound::WavSpec { channels: 1, sample_rate: SAMPLE_RATE, bits_per_sample: 16, sample_format: hound::SampleFormat::Int }
 }
 
+/// Écriture atomique d'un bloc (fichier temporaire puis renommage).
+fn ecrire_wav(chemin: &Path, echantillons: &[i16]) -> Result<()> {
+    let tmp = chemin.with_extension("wav.tmp");
+    let mut w = hound::WavWriter::create(&tmp, spec())?;
+    for &x in echantillons {
+        w.write_sample(x)?;
+    }
+    w.finalize()?;
+    std::fs::rename(&tmp, chemin)?;
+    Ok(())
+}
+
 pub fn quantifier(x: f32) -> i16 {
     (x.clamp(-1.0, 1.0) * i16::MAX as f32) as i16
+}
+
+/// Inverse exact de `quantifier` : la valeur relue redonne le même échantillon.
+fn dequantifier(v: i16) -> f32 {
+    (v as f32 + 0.5 * v.signum() as f32) / i16::MAX as f32
 }
 
 pub fn empreinte(chemin: &Path) -> Result<String> {
@@ -151,8 +168,36 @@ pub struct Ecrivain {
     /// Premier échantillon du bloc en cours.
     debut: u64,
     ouverts: Vec<(Wav, String)>,
+    /// Premier échantillon du passage en cours (dernier changement de point).
+    debut_passage: u64,
     /// Changements de point à appliquer quand l'écriture atteindra leur échantillon.
-    coupes: VecDeque<(u64, Option<usize>)>,
+    coupes: VecDeque<Coupe>,
+    /// De quoi défaire le dernier changement de point détecté dans la parole.
+    annulable: Option<Annulation>,
+}
+
+struct Coupe {
+    a: u64,
+    point: Option<usize>,
+    /// Changement détecté dans la parole : début de l'énoncé de l'annonce, déjà écrit dans
+    /// les blocs du point précédent.
+    frontiere: Option<u64>,
+}
+
+/// État de l'écrivain et fichiers tels qu'ils étaient juste avant une recoupe.
+struct Annulation {
+    /// Index avant la fermeture des blocs ouverts à la coupe.
+    index: Index,
+    /// Contenu des blocs raccourcis ou supprimés par la recoupe.
+    fichiers: Vec<(String, Vec<u8>)>,
+    /// Blocs ouverts à la coupe, dans l'ordre de `sources`.
+    rouverts: Vec<String>,
+    point: Option<usize>,
+    passage: Option<(u32, String)>,
+    numero: u32,
+    debut: u64,
+    debut_passage: u64,
+    coupe: u64,
 }
 
 impl Ecrivain {
@@ -170,7 +215,9 @@ impl Ecrivain {
             numero: 0,
             debut: 0,
             ouverts: Vec::new(),
+            debut_passage: 0,
             coupes: VecDeque::new(),
+            annulable: None,
         }
     }
 
@@ -188,7 +235,21 @@ impl Ecrivain {
     /// Ferme les blocs en cours à l'échantillon `coupe` et ouvre ceux de `point`. `coupe` ne peut
     /// précéder ce qui est déjà écrit : c'est l'échantillon transmis aux découpeurs au moment du clic.
     pub fn changer_point(&mut self, point: Option<usize>, coupe: u64) {
-        self.coupes.push_back((coupe.max(self.ecrits), point));
+        self.annulable = None;
+        self.coupes.push_back(Coupe { a: coupe.max(self.ecrits), point, frontiere: None });
+    }
+
+    /// Changement de point détecté dans la parole, à l'échantillon `coupe` : l'annonce a commencé
+    /// à `frontiere`, quelques secondes plus tôt. L'audio entre les deux, déjà écrit dans les
+    /// blocs du point précédent, passe au début du premier bloc du nouveau point (voir `recouper`).
+    pub fn changer_point_a_posteriori(&mut self, point: Option<usize>, frontiere: u64, coupe: u64) {
+        self.annulable = None;
+        self.coupes.push_back(Coupe { a: coupe.max(self.ecrits), point, frontiere: Some(frontiere) });
+    }
+
+    /// Le dernier changement détecté ne sera plus annulé : libère la copie des blocs recoupés.
+    pub fn oublier_annulation(&mut self) {
+        self.annulable = None;
     }
 
     /// Écrit ce que toutes les sources ont reçu. `parle` : un découpeur est en cours d'énoncé.
@@ -204,14 +265,15 @@ impl Ecrivain {
     fn ecrire_attente(&mut self, n: usize, parle: bool) -> Result<()> {
         let mut fait = 0;
         loop {
-            while let Some(&(c, point)) = self.coupes.front()
-                && c <= self.ecrits
-            {
-                self.coupes.pop_front();
-                self.fermer()?;
-                self.point = point;
-                self.passage = None;
-                self.numero = 0;
+            while self.coupes.front().is_some_and(|c| c.a <= self.ecrits) {
+                let c = self.coupes.pop_front().expect("coupe en attente");
+                match c.frontiere {
+                    Some(f) if f < self.ecrits => self.recouper(c.point, f)?,
+                    _ => {
+                        self.fermer()?;
+                        self.entrer(c.point);
+                    }
+                }
             }
             if fait == n {
                 return Ok(());
@@ -223,13 +285,176 @@ impl Ecrivain {
             }
             let mut lot = (n - fait) as u64;
             lot = lot.min(if dans_bloc < SEUIL { SEUIL - dans_bloc } else { MAXIMUM - dans_bloc });
-            if let Some(&(c, _)) = self.coupes.front() {
-                lot = lot.min(c - self.ecrits);
+            if let Some(c) = self.coupes.front() {
+                lot = lot.min(c.a - self.ecrits);
             }
             let lot = lot as usize;
             self.ecrire(fait, lot)?;
             fait += lot;
         }
+    }
+
+    fn entrer(&mut self, point: Option<usize>) {
+        self.point = point;
+        self.passage = None;
+        self.numero = 0;
+        self.debut_passage = self.ecrits;
+    }
+
+    /// Ferme les blocs en cours et passe à `point` à partir de `frontiere`, déjà écrite : les blocs
+    /// du passage en cours sont raccourcis à la frontière et leur fin ouvre le premier bloc du
+    /// nouveau point. Un bloc illisible ramène à une coupe ordinaire, au moment de la détection.
+    fn recouper(&mut self, point: Option<usize>, frontiere: u64) -> Result<()> {
+        let mut annulation = Annulation {
+            index: self.index.clone(),
+            fichiers: Vec::new(),
+            rouverts: self.ouverts.iter().map(|(_, f)| f.clone()).collect(),
+            point: self.point,
+            passage: self.passage.clone(),
+            numero: self.numero,
+            debut: self.debut,
+            debut_passage: self.debut_passage,
+            coupe: self.ecrits,
+        };
+        self.fermer()?;
+        let coupe = self.ecrits;
+        let f = frontiere.clamp(self.debut_passage, coupe);
+        let passage = self.passage.as_ref().map(|(n, _)| *n);
+        let touches: Vec<usize> = (0..self.index.blocs.len())
+            .filter(|&i| {
+                let b = &self.index.blocs[i];
+                b.point == self.point && Some(b.passage) == passage && b.decalage + b.echantillons > f
+            })
+            .collect();
+        // Tout est lu avant de toucher aux fichiers.
+        let mut lus = Vec::new();
+        for &i in &touches {
+            let b = &self.index.blocs[i];
+            let lu = std::fs::read(self.dir.join(&b.fichier)).map_err(anyhow::Error::from).and_then(|o| Ok((decoder(&o, b)?, o)));
+            match lu {
+                Ok(x) => lus.push(x),
+                Err(e) => {
+                    log::warn!("Recoupe impossible ({}) : {e:#} ; changement de point au moment de la détection", b.fichier);
+                    self.entrer(point);
+                    return Ok(());
+                }
+            }
+        }
+        let n = (coupe - f) as usize;
+        let mut fin = vec![Vec::with_capacity(n); self.sources.len()];
+        let mut supprimes = Vec::new();
+        for (&i, (mut echantillons, octets)) in touches.iter().zip(lus) {
+            let b = &mut self.index.blocs[i];
+            echantillons.resize(b.echantillons as usize, 0);
+            let garde = f.saturating_sub(b.decalage) as usize;
+            if let Some(s) = self.sources.iter().position(|&s| s == b.source) {
+                fin[s].extend_from_slice(&echantillons[garde..]);
+            }
+            annulation.fichiers.push((b.fichier.clone(), octets));
+            let chemin = self.dir.join(&b.fichier);
+            if garde == 0 {
+                std::fs::remove_file(&chemin).with_context(|| format!("Suppression de {}", b.fichier))?;
+                supprimes.push(i);
+            } else {
+                ecrire_wav(&chemin, &echantillons[..garde]).with_context(|| format!("Recoupe de {}", b.fichier))?;
+                b.echantillons = garde as u64;
+                b.duree_ms = ms(garde as u64);
+                b.sha256 = empreinte(&chemin)?;
+            }
+        }
+        let mut i = 0;
+        self.index.blocs.retain(|_| {
+            i += 1;
+            !supprimes.contains(&(i - 1))
+        });
+        log::info!("Recoupe : {} s d'audio passent au nouveau point", ms(n as u64) / 1000);
+        self.point = point;
+        self.passage = None;
+        self.numero = 0;
+        self.debut = f;
+        self.debut_passage = f;
+        if n > 0 {
+            self.ouvrir()?;
+            for ((w, _), mut v) in self.ouverts.iter_mut().zip(fin) {
+                v.resize(n, 0);
+                for x in v {
+                    w.write_sample(x)?;
+                }
+            }
+        }
+        ecrire_index(&self.dir, &self.index)?;
+        self.annulable = Some(annulation);
+        Ok(())
+    }
+
+    /// Défait le dernier changement de point détecté dans la parole : les blocs, l'index et
+    /// l'écrivain reviennent à leur état d'avant, et l'audio enregistré depuis repart dans le
+    /// passage d'origine. Retourne `false` s'il n'y a rien à défaire.
+    pub fn annuler(&mut self) -> Result<bool> {
+        // Pas encore appliqué : il suffit de le retirer.
+        if self.coupes.back().is_some_and(|c| c.frontiere.is_some()) {
+            self.coupes.pop_back();
+            return Ok(true);
+        }
+        let Some(a) = self.annulable.take() else { return Ok(false) };
+        self.fermer()?;
+        let maintenant = self.ecrits;
+        let mut rejoue = vec![Vec::new(); self.sources.len()];
+        if let Some((n, rel)) = self.passage.clone() {
+            let point = self.point;
+            let nouveaux: Vec<Bloc> = self.index.blocs.iter().filter(|b| b.point == point && b.passage == n).cloned().collect();
+            for b in &nouveaux {
+                let mut v = lire_bloc(&self.dir, b).unwrap_or_else(|e| {
+                    log::warn!("Annulation : {} illisible ({e:#}), remplacé par du silence", b.fichier);
+                    Vec::new()
+                });
+                v.resize(b.echantillons as usize, 0);
+                if let Some(s) = self.sources.iter().position(|&s| s == b.source) {
+                    rejoue[s].extend(v);
+                }
+                let _ = std::fs::remove_file(self.dir.join(&b.fichier));
+            }
+            self.index.blocs.retain(|b| !(b.point == point && b.passage == n));
+            // Dossiers devenus vides : le passage, puis le point.
+            let d = self.dir.join(&rel);
+            if std::fs::remove_dir(&d).is_ok()
+                && let Some(p) = d.parent()
+            {
+                let _ = std::fs::remove_dir(p);
+            }
+        }
+        // Le nouveau passage commence à la frontière : ce qui précède la coupe est déjà dans les
+        // fichiers d'origine.
+        let deja = (a.coupe - self.debut_passage) as usize;
+        for (fichier, octets) in &a.fichiers {
+            let chemin = self.dir.join(fichier);
+            if let Some(p) = chemin.parent() {
+                std::fs::create_dir_all(p)?;
+            }
+            let tmp = chemin.with_extension("wav.tmp");
+            std::fs::write(&tmp, octets)?;
+            std::fs::rename(&tmp, &chemin).with_context(|| format!("Rétablissement de {fichier}"))?;
+        }
+        self.index = a.index;
+        let mut ouverts = Vec::new();
+        for f in a.rouverts {
+            ouverts.push((hound::WavWriter::append(self.dir.join(&f)).with_context(|| format!("Réouverture de {f}"))?, f));
+        }
+        self.ouverts = ouverts;
+        self.point = a.point;
+        self.passage = a.passage;
+        self.numero = a.numero;
+        self.debut = a.debut;
+        self.debut_passage = a.debut_passage;
+        self.ecrits = a.coupe;
+        let n = (maintenant - a.coupe) as usize;
+        for (attente, mut v) in self.attente.iter_mut().zip(rejoue) {
+            v.drain(..deja.min(v.len()));
+            v.resize(n, 0);
+            attente.splice(0..0, v.into_iter().map(dequantifier));
+        }
+        ecrire_index(&self.dir, &self.index)?;
+        Ok(true)
     }
 
     fn ecrire(&mut self, de: usize, lot: usize) -> Result<()> {
@@ -399,7 +624,11 @@ pub fn reconstituer_dans(dir: &Path, rencontre: &Meeting, portee: Portee, source
 fn lire_bloc(dir: &Path, b: &Bloc) -> Result<Vec<i16>> {
     let chemin = dir.join(&b.fichier);
     let octets = std::fs::read(&chemin).context("fichier manquant")?;
-    if format!("{:x}", Sha256::digest(&octets)) != b.sha256 {
+    decoder(&octets, b)
+}
+
+fn decoder(octets: &[u8], b: &Bloc) -> Result<Vec<i16>> {
+    if format!("{:x}", Sha256::digest(octets)) != b.sha256 {
         bail!("empreinte différente de l'index (fichier modifié ou abîmé)");
     }
     let lecteur = hound::WavReader::new(std::io::Cursor::new(octets))?;
@@ -776,6 +1005,88 @@ mod tests {
         assert!(reconstituer_dans(&dir, &m, Portee::Tout, Source::Mixte, &sortie).unwrap().is_empty());
         assert_eq!(lire(&sortie), flux.iter().map(|&x| quantifier(x)).collect::<Vec<_>>());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    enum Ev {
+        Point(Option<usize>),
+        /// Point détecté et frontière, en secondes.
+        Auto(Option<usize>, u64),
+        Annuler,
+    }
+
+    /// 200 s en mode séparé, morceaux de 10 ms ; les événements tombent à la seconde donnée.
+    fn simuler(dir: &Path, evenements: &[(u64, Ev)]) -> (Index, Vec<f32>) {
+        let salle = signal(200, &[(20, 40), (100, 150)], 4, 300.0);
+        let distance = signal(200, &[(60, 80)], 5, 220.0);
+        let titres = vec!["Ouverture".to_string(), "Budget".to_string()];
+        let mut e = Ecrivain::new(dir.to_path_buf(), vec![Source::Salle, Source::Distance], titres);
+        let morceau = 160;
+        let mut prochain = 0;
+        for debut in (0..salle.len()).step_by(morceau) {
+            while let Some((t, ev)) = evenements.get(prochain)
+                && debut as u64 >= t * SR
+            {
+                match ev {
+                    Ev::Point(p) => e.changer_point(*p, debut as u64),
+                    Ev::Auto(p, f) => e.changer_point_a_posteriori(*p, f * SR, debut as u64),
+                    Ev::Annuler => assert!(e.annuler().unwrap()),
+                }
+                prochain += 1;
+            }
+            e.pousser(Source::Salle, &salle[debut..debut + morceau]);
+            e.pousser(Source::Distance, &distance[debut..debut + morceau]);
+            e.avancer(false).unwrap();
+        }
+        (e.terminer().unwrap(), salle)
+    }
+
+    fn resume(index: &Index) -> Vec<(Option<usize>, u64, u64, String, String)> {
+        index.blocs.iter().map(|b| (b.point, b.decalage / SR, b.echantillons / SR, b.fichier.clone(), b.sha256.clone())).collect()
+    }
+
+    /// Changement détecté à 140 s, annonce commencée à 125 s : la frontière tombe dans le bloc
+    /// coupé à 130 s (10 s + 120 s). Les deux blocs sont recoupés, puis l'annulation redonne
+    /// exactement les fichiers d'un enregistrement sans changement.
+    #[test]
+    fn recoupe_a_la_frontiere_puis_annulation() {
+        let reference = temporaire("recoupe-reference");
+        let (attendu, _) = simuler(&reference, &[(10, Ev::Point(Some(0)))]);
+        let r: Vec<(Option<usize>, u64, u64)> = attendu.blocs.iter().map(|b| (b.point, b.decalage / SR, b.echantillons / SR)).collect();
+        assert_eq!(r, [(None, 0, 10), (None, 0, 10), (Some(0), 10, 120), (Some(0), 10, 120), (Some(0), 130, 70), (Some(0), 130, 70)]);
+
+        let dir = temporaire("recoupe");
+        let (index, salle) = simuler(&dir, &[(10, Ev::Point(Some(0))), (140, Ev::Auto(Some(1), 125))]);
+        let r: Vec<(Option<usize>, u64, u64, &str)> =
+            index.blocs.iter().filter(|b| b.source == Source::Salle).map(|b| (b.point, b.decalage / SR, b.echantillons / SR, b.fichier.as_str())).collect();
+        assert_eq!(r, [
+            (None, 0, 10, "00-hors-point/passage-01/bloc-001-salle.wav"),
+            (Some(0), 10, 115, "01-ouverture/passage-01/bloc-001-salle.wav"),
+            (Some(1), 125, 75, "02-budget/passage-01/bloc-001-salle.wav"),
+        ]);
+        assert!(!dir.join("01-ouverture/passage-01/bloc-002-salle.wav").exists());
+        assert_eq!(lire_index(&dir).unwrap().blocs, index.blocs);
+        let mut m = Meeting::nouvelle("m", None, chrono::Local::now());
+        m.debuter_point(Some(0), 10_000, Declenchement::Manuel);
+        m.debuter_point(Some(1), 125_000, Declenchement::Auto);
+        m.fermer_periode(200_000);
+        let sortie = dir.join("tout.wav");
+        assert!(reconstituer_dans(&dir, &m, Portee::Tout, Source::Salle, &sortie).unwrap().is_empty());
+        assert_eq!(lire(&sortie), salle.iter().map(|&x| quantifier(x)).collect::<Vec<_>>());
+        let sortie = dir.join("budget.wav");
+        reconstituer_dans(&dir, &m, Portee::Point(1), Source::Salle, &sortie).unwrap();
+        assert_eq!(lire(&sortie), salle[(125 * SR) as usize..].iter().map(|&x| quantifier(x)).collect::<Vec<_>>());
+
+        // Annulation 5 s après : mêmes blocs, à l'octet près, que sans changement.
+        let annule = temporaire("recoupe-annulee");
+        let (index, _) = simuler(&annule, &[(10, Ev::Point(Some(0))), (140, Ev::Auto(Some(1), 125)), (145, Ev::Annuler)]);
+        assert_eq!(resume(&index), resume(&attendu));
+        assert!(!annule.join("02-budget").exists());
+        for b in &index.blocs {
+            assert_eq!(std::fs::read(annule.join(&b.fichier)).unwrap(), std::fs::read(reference.join(&b.fichier)).unwrap(), "{}", b.fichier);
+        }
+        for d in [reference, dir, annule] {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 
     #[test]

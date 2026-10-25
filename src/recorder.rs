@@ -34,6 +34,12 @@ pub struct Options {
 enum Commande {
     /// Change de point ; le fil répond par l'échantillon de la coupe.
     Point(Option<usize>, Sender<u64>),
+    /// Changement détecté dans la parole ; l'annonce a commencé à l'échantillon donné.
+    PointDetecte(Option<usize>, u64),
+    /// Défait le dernier changement détecté ; le fil répond s'il a pu le faire.
+    Annuler(Sender<bool>),
+    /// Le dernier changement détecté ne sera plus annulé.
+    Confirmer,
     Titres(Vec<String>),
 }
 
@@ -109,6 +115,23 @@ impl Recorder {
                 self.position_ms()
             }
         }
+    }
+
+    /// Changement de point détecté dans la parole : la coupe se fait maintenant, mais les blocs
+    /// sont recoupés à `frontiere_ms`, début de l'énoncé de l'annonce (voir `Ecrivain::recouper`).
+    pub fn changer_point_a_posteriori(&self, point: Option<usize>, frontiere_ms: u64) {
+        let _ = self.commandes.send(Commande::PointDetecte(point, frontiere_ms * SAMPLE_RATE as u64 / 1000));
+    }
+
+    /// Défait le dernier changement détecté (blocs et index) ; `false` si c'est impossible.
+    pub fn annuler_changement(&self) -> bool {
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        let _ = self.commandes.send(Commande::Annuler(tx));
+        rx.recv_timeout(Duration::from_secs(2)).unwrap_or(false)
+    }
+
+    pub fn confirmer_changement(&self) {
+        let _ = self.commandes.send(Commande::Confirmer);
     }
 
     /// Titres des points, après une modification de l'ordre du jour pendant la rencontre.
@@ -271,6 +294,15 @@ fn run(
                     ecrivain.changer_point(point, transmis);
                     let _ = reponse.send(transmis);
                 }
+                Commande::PointDetecte(point, frontiere) => ecrivain.changer_point_a_posteriori(point, frontiere, transmis),
+                Commande::Annuler(reponse) => {
+                    let fait = ecrivain.annuler().unwrap_or_else(|e| {
+                        log::error!("Annulation du changement de point : {e:#}");
+                        false
+                    });
+                    let _ = reponse.send(fait);
+                }
+                Commande::Confirmer => ecrivain.oublier_annulation(),
                 Commande::Titres(titres) => ecrivain.nommer_points(titres),
             }
         }

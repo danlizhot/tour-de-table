@@ -1,6 +1,7 @@
 //! Interface native (egui) : rendu GPU immédiat, aucun navigateur embarqué.
 
 mod agenda;
+mod decoupage;
 mod live;
 mod past;
 mod settings;
@@ -69,6 +70,11 @@ pub struct TourDeTableApp {
     edit_points: bool,
     /// Exportation de l'audio en cours : fichiers écrits et avertissements.
     audio_export: Option<Receiver<Result<Vec<String>, String>>>,
+    /// Découpage automatique par point de la rencontre en cours.
+    detecteur: crate::decoupage::Detecteur,
+    /// Point annoncé dont le bouton est mis en évidence, et depuis quand.
+    proposition: Option<(usize, std::time::Instant)>,
+    bandeau: Option<decoupage::Bandeau>,
 }
 
 impl TourDeTableApp {
@@ -99,6 +105,9 @@ impl TourDeTableApp {
             import_job: None,
             edit_points: false,
             audio_export: None,
+            detecteur: Default::default(),
+            proposition: None,
+            bandeau: None,
             cfg,
         };
         app.reprendre_rencontres_interrompues();
@@ -218,13 +227,14 @@ impl TourDeTableApp {
                 Reply::Segments { segments, handled } => {
                     self.in_flight = self.in_flight.saturating_sub(handled);
                     if let Some(m) = self.live.as_mut() {
-                        for s in segments {
+                        for s in segments.iter().cloned() {
                             m.insert(s);
                         }
                         if let Err(e) = m.save() {
                             log::warn!("Sauvegarde incrémentale : {e}");
                         }
                     }
+                    self.detecter(&segments);
                 }
                 Reply::Error { message, handled } => {
                     self.in_flight = self.in_flight.saturating_sub(handled);

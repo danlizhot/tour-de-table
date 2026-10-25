@@ -6,6 +6,7 @@ mod agenda;
 mod audio;
 mod cli;
 mod config;
+mod decoupage;
 mod diagnostic;
 mod models;
 mod quebec;

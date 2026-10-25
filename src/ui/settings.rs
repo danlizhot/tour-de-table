@@ -37,6 +37,12 @@ impl TourDeTableApp {
                     });
 
                     ui.separator();
+                    ui.heading("Ordre du jour");
+                    ui.checkbox(&mut self.cfg.passage_auto, "Passer automatiquement au point annoncé").on_hover_text(
+                        "Quand on entend « on passe au point 4 », la rencontre passe seule à ce point (annulable 10 secondes).\nDécoché : le bouton « Débuter le point » du point annoncé est seulement mis en évidence.",
+                    );
+
+                    ui.separator();
                     ui.heading("Lexique");
                     ui.label(
                         RichText::new(

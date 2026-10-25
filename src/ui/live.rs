@@ -37,6 +37,9 @@ impl TourDeTableApp {
                 self.live = Some(meeting);
                 self.push_settings();
                 self.recorder = Some(rec);
+                self.detecteur = Default::default();
+                self.proposition = None;
+                self.bandeau = None;
                 self.view = View::Live;
                 self.notices.retain(|(_, e)| *e);
             }
@@ -60,6 +63,8 @@ impl TourDeTableApp {
                 let _ = m.save();
             }
             self.edit_points = false;
+            self.proposition = None;
+            self.bandeau = None;
             self.finishing = true;
         }
     }
@@ -174,6 +179,7 @@ impl TourDeTableApp {
     }
 
     pub(super) fn live_view(&mut self, ui: &mut Ui) {
+        self.bandeau(ui);
         if !matches!(self.model, ModelState::Missing | ModelState::Failed(_)) || self.live.is_some() {
             self.agenda_card(ui);
             ui.add_space(6.0);

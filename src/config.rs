@@ -33,6 +33,8 @@ pub struct Config {
     /// Lexique : un terme par ligne (noms propres, acronymes, jargon) ou
     /// une correction `mauvais => bon`.
     pub glossary: String,
+    /// Passer seul au point dont l'annonce est entendue ; sinon, son bouton est mis en évidence.
+    pub passage_auto: bool,
 
     // Anciens choix, lus seulement pour journaliser la bascule sur les choix
     // automatiques ; ils disparaissent du fichier au prochain enregistrement.
@@ -55,6 +57,7 @@ impl Default for Config {
             system_device: None,
             mode: CaptureMode::Separe,
             glossary: String::new(),
+            passage_auto: false,
             ancien_modele: None,
             ancien_moteur: None,
             ancien_modele_redaction: None,
