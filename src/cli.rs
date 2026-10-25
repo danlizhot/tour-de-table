@@ -119,15 +119,31 @@ fn importer(engine: &Engine, path: &Path, dir: &Path, meeting: &mut Meeting) -> 
     Ok(())
 }
 
+/// Nettoyage de la transcription, comme dans l'application (journal dans nettoyage.log).
+fn nettoyer(m: &mut Meeting) -> Result<()> {
+    let t = Instant::now();
+    let glossaire = Glossary::parse(&Config::load().glossary);
+    let n = crate::nettoyage::executer_avec_modele(m, &glossaire, &Default::default(), &mut |n| {
+        eprintln!("Nettoyage : partie {} sur {} faite", n.groupes_faits, n.groupes);
+    });
+    let modele = if n.sans_modele { "règles seulement, modèle de rédaction absent" } else { "règles et modèle local" };
+    eprintln!("Transcription nettoyée en {:.0} s ({modele})", t.elapsed().as_secs_f32());
+    m.nettoyage = Some(n);
+    m.save()?;
+    m.export_all()?;
+    Ok(())
+}
+
 pub fn compte_rendu(agenda_path: &str, source: &str) -> Result<()> {
     let agenda = crate::agenda::read(Path::new(agenda_path))?;
     eprintln!("Ordre du jour lu ({} caractères) :\n{agenda}\n", agenda.chars().count());
 
     let (transcript, duration) = if import::is_audio(Path::new(source)) {
         let nom = Path::new(agenda_path).file_name().unwrap_or_default().to_string_lossy().into_owned();
-        let m = transcribe(source, None, Some(Agenda::new(nom, agenda.clone())))?;
+        let mut m = transcribe(source, None, Some(Agenda::new(nom, agenda.clone())))?;
         eprintln!("Rencontre enregistrée dans {}", m.dir().display());
-        (m.plain_text(), crate::storage::clock(m.duration_s * 1000))
+        nettoyer(&mut m)?;
+        (m.texte_compte_rendu(), crate::storage::clock(m.duration_s * 1000))
     } else {
         (std::fs::read_to_string(source).with_context(|| format!("Lecture de {source}"))?, "non précisée".into())
     };

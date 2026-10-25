@@ -9,6 +9,7 @@ mod config;
 mod decoupage;
 mod diagnostic;
 mod models;
+mod nettoyage;
 mod quebec;
 mod recorder;
 mod storage;

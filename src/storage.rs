@@ -17,6 +17,7 @@ use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
 use crate::agenda::Point;
+use crate::nettoyage::Nettoyage;
 use crate::stt::Segment;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -39,6 +40,9 @@ pub struct Meeting {
     /// Découpage de la rencontre par point de l'ordre du jour, dans l'ordre chronologique.
     #[serde(default)]
     pub periodes: Vec<Periode>,
+    /// Transcription nettoyée (voir `nettoyage`) ; `segments` reste la transcription brute.
+    #[serde(default)]
+    pub nettoyage: Option<Nettoyage>,
 }
 
 /// Ordre du jour déposé avant ou après la rencontre.
@@ -82,6 +86,9 @@ pub enum Declenchement {
     Auto,
 }
 
+/// Paragraphe d'export : début, source et texte.
+type Paragraphe = (u64, crate::audio::Source, String);
+
 /// Titre donné à une rencontre qu'on n'a pas encore nommée.
 const TITRE_PAR_DEFAUT: &str = "Rencontre du %Y-%m-%d à %H h %M";
 
@@ -109,6 +116,7 @@ impl Meeting {
             summary: None,
             agenda: None,
             periodes: Vec::new(),
+            nettoyage: None,
         }
     }
 
@@ -220,6 +228,9 @@ impl Meeting {
         for p in &mut self.periodes {
             p.point = p.point.and_then(&f);
         }
+        for p in self.nettoyage.iter_mut().flat_map(|n| &mut n.phrases) {
+            p.point = p.point.and_then(&f);
+        }
     }
 
     /// Groupes à intertitrer (aucun tant que la rencontre n'est pas découpée par point).
@@ -243,6 +254,79 @@ impl Meeting {
             }
         }
         out
+    }
+
+    /// Paragraphes de la transcription nettoyée, par suites consécutives d'un même point : les
+    /// phrases consécutives d'une même source sont réunies.
+    fn groupes_nettoyes(&self) -> Vec<(Option<usize>, Vec<Paragraphe>)> {
+        let mut out: Vec<(Option<usize>, Vec<Paragraphe>)> = Vec::new();
+        for p in self.nettoyage.iter().flat_map(|n| &n.phrases) {
+            if out.last().is_none_or(|(point, _)| *point != p.point) {
+                out.push((p.point, Vec::new()));
+            }
+            let paragraphes = &mut out.last_mut().expect("groupe ajouté").1;
+            match paragraphes.last_mut() {
+                Some((_, src, text)) if *src == p.source => {
+                    text.push(' ');
+                    text.push_str(&p.texte);
+                }
+                _ => paragraphes.push((p.debut_ms, p.source, p.texte.clone())),
+            }
+        }
+        out
+    }
+
+    /// Nettoyage terminé : c'est la version que lit le compte rendu.
+    pub fn nettoyage_termine(&self) -> Option<&Nettoyage> {
+        self.nettoyage.as_ref().filter(|n| n.termine() && !n.phrases.is_empty())
+    }
+
+    /// Texte donné au compte rendu : la version nettoyée quand elle existe, sinon la brute.
+    pub fn texte_compte_rendu(&self) -> String {
+        if self.nettoyage_termine().is_none() {
+            return self.plain_text();
+        }
+        let mut blocs = Vec::new();
+        for (point, paragraphes) in self.groupes_nettoyes() {
+            if !self.periodes.is_empty() {
+                blocs.push(format!("— {} —", self.intertitre(point)));
+            }
+            blocs.extend(paragraphes.iter().map(|(t, src, text)| format!("[{}] {} : {text}", clock(*t), src.label())));
+        }
+        blocs.join("\n\n")
+    }
+
+    /// transcription-nettoyee.md : même présentation que la transcription brute.
+    pub fn to_markdown_nettoye(&self) -> String {
+        let mut md = format!("# {} — transcription nettoyée\n\n- Date : {}\n\n", self.title, self.started_at.format("%Y-%m-%d %H h %M"));
+        if self.nettoyage.as_ref().is_some_and(|n| !n.termine()) {
+            md.push_str("> Nettoyage partiel : la fin de la rencontre n'est pas encore nettoyée.\n\n");
+        }
+        for (point, paragraphes) in self.groupes_nettoyes() {
+            if !self.periodes.is_empty() {
+                let _ = write!(md, "## {}\n\n", self.intertitre(point));
+            }
+            for (t, src, text) in paragraphes {
+                let _ = write!(md, "[{}] **{}** : {text}\n\n", clock(t), src.label());
+            }
+        }
+        md
+    }
+
+    /// transcription.md d'un point (toutes ses périodes) : nettoyée si le nettoyage est terminé.
+    fn markdown_du_point(&self, point: Option<usize>) -> Option<String> {
+        let paragraphes: Vec<Paragraphe> = match self.nettoyage_termine() {
+            Some(_) => self.groupes_nettoyes().into_iter().filter(|(p, _)| *p == point).flat_map(|(_, v)| v).collect(),
+            None => self.segments_par_point().into_iter().filter(|(p, _)| *p == point).flat_map(|(_, v)| Self::paragraphs(&v)).collect(),
+        };
+        if paragraphes.is_empty() {
+            return None;
+        }
+        let mut md = format!("# {}\n\n{}\n\n", self.intertitre(point), self.title);
+        for (t, src, text) in paragraphes {
+            let _ = write!(md, "[{}] **{}** : {text}\n\n", clock(t), src.label());
+        }
+        Some(md)
     }
 
     pub fn plain_text(&self) -> String {
@@ -311,6 +395,20 @@ impl Meeting {
         std::fs::write(dir.join("transcription.md"), self.to_markdown())?;
         std::fs::write(dir.join("transcription.txt"), self.plain_text())?;
         std::fs::write(dir.join("transcription.srt"), self.to_srt())?;
+        if self.nettoyage.is_some() {
+            std::fs::write(dir.join("transcription-nettoyee.md"), self.to_markdown_nettoye())?;
+        }
+        if !self.periodes.is_empty() {
+            let titres: Vec<String> = self.agenda.iter().flat_map(|a| a.points.iter().map(|p| p.titre.clone())).collect();
+            let points = std::iter::once(None).chain((0..titres.len()).map(Some));
+            for point in points {
+                if let Some(md) = self.markdown_du_point(point) {
+                    let dossier = dir.join(crate::audio::blocs::prefixe(point, &titres));
+                    std::fs::create_dir_all(&dossier)?;
+                    std::fs::write(dossier.join("transcription.md"), md)?;
+                }
+            }
+        }
         if let Some(sum) = &self.summary {
             std::fs::write(dir.join("compte-rendu.md"), sum)?;
         }
@@ -580,6 +678,37 @@ mod tests {
         });
         assert_eq!(m.point_de(2100), None);
         assert_eq!(m.point_de(100), Some(0));
+    }
+
+    #[test]
+    fn transcription_nettoyee_exports_et_compte_rendu() {
+        let mut m = rencontre_avec_points();
+        m.insert(seg(500, Source::Salle, "Euh bon, on attend Julie."));
+        m.debuter_point(Some(1), 1000, Declenchement::Manuel);
+        m.insert(seg(1000, Source::Salle, "Le le budget est adopté."));
+        m.fermer_periode(3000);
+        // Sans nettoyage terminé, le compte rendu lit la transcription brute.
+        assert_eq!(m.texte_compte_rendu(), m.plain_text());
+
+        let n = crate::nettoyage::executer(&m, None, &crate::quebec::Glossary::parse(""), None, &Default::default(), &mut |_| {}, &mut |_| {});
+        m.nettoyage = Some(n);
+        assert_eq!(m.texte_compte_rendu(), "— Hors point —\n\n[00:00] Salle : Bon, on attend Julie.\n\n— 2. Budget —\n\n[00:01] Salle : Le budget est adopté.");
+        assert!(m.plain_text().contains("Le le budget"), "la version brute reste intacte");
+        let md = m.to_markdown_nettoye();
+        assert!(md.contains("## 2. Budget\n\n[00:01] **Salle** : Le budget est adopté."), "{md}");
+
+        // transcription.md de chaque dossier de point.
+        for point in [None, Some(0), Some(1)] {
+            let md = m.markdown_du_point(point);
+            assert_eq!(md.is_some(), point != Some(0), "point non abordé : aucun fichier");
+        }
+        assert!(m.markdown_du_point(Some(1)).unwrap().starts_with("# 2. Budget\n\n"));
+
+        // Points renumérotés : les phrases suivent.
+        m.renumeroter_periodes(|i| Some(i + 1));
+        assert_eq!(m.nettoyage.as_ref().unwrap().phrases[1].point, Some(2));
+        // Ancien rencontre.json : aucun nettoyage.
+        assert!(serde_json::from_str::<Meeting>(ANCIEN_FORMAT).unwrap().nettoyage.is_none());
     }
 
     /// Dossier temporaire vide, propre au test : le vrai dossier Musique n'est jamais touché.

@@ -15,6 +15,7 @@ use crate::storage::{Meeting, clock};
 
 impl TourDeTableApp {
     pub(super) fn start_recording(&mut self) {
+        self.suspendre_nettoyage();
         let meeting = Meeting::new(models::RECOMMENDED);
         // L'audio est toujours conservé, en blocs rangés par point de l'ordre du jour.
         let dossier = meeting.dir();
@@ -91,12 +92,11 @@ impl TourDeTableApp {
             if let Err(e) = m.save().and_then(|_| m.export_all().map(|_| ())) {
                 self.notify(format!("Sauvegarde : {e:#}"), true);
             }
-            let with_agenda = m.agenda.is_some();
+            // Transcription → nettoyage → compte rendu (avec un ordre du jour).
+            let (id, with_agenda) = (m.id.clone(), m.agenda.is_some());
             self.meetings.insert(0, m);
             self.view = View::Past(0);
-            if with_agenda {
-                self.auto_compte_rendu(0);
-            }
+            self.demander_nettoyage(&id, with_agenda, true);
         }
     }
 
@@ -115,6 +115,7 @@ impl TourDeTableApp {
             self.notify("Installez d'abord le modèle de reconnaissance vocale (bouton « Télécharger » de l'écran d'accueil).", true);
             return;
         }
+        self.suspendre_nettoyage();
         let name = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         // Date de l'enregistrement plutôt que celle de l'import, si connue.
         let started_at = path.metadata().and_then(|m| m.modified()).map_or_else(|_| chrono::Local::now(), Into::into);

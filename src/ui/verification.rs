@@ -140,16 +140,20 @@ impl TourDeTableApp {
         };
         self.verification = None;
         let avec_agenda = m.agenda.as_ref().is_some_and(|a| !a.points.is_empty());
+        let (id, deja_nettoyee) = (m.id.clone(), m.nettoyage.is_some());
         if nouvelle {
             self.meetings.insert(0, m);
             self.view = View::Past(0);
-            if avec_agenda {
-                self.auto_compte_rendu(0);
-            }
+            // Transcription → nettoyage → compte rendu (avec un ordre du jour).
+            self.demander_nettoyage(&id, avec_agenda, true);
         } else if let Some(i) = self.meetings.iter().position(|x| x.id == m.id) {
             self.meetings[i] = m;
             self.view = View::Past(i);
             self.notify("Découpage par point enregistré.", false);
+            // Les phrases nettoyées sont rattachées aux anciens points : on recommence.
+            if deja_nettoyee {
+                self.demander_nettoyage(&id, false, true);
+            }
         }
     }
 

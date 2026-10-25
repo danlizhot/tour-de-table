@@ -1,0 +1,28 @@
+# Hésitations retirées par le nettoyage de la transcription (passe 1), lues par
+# src/nettoyage.rs à la compilation. Majuscules et ponctuation collée au mot sont sans
+# importance. Une expression par ligne ; chaque section commence par [nom].
+#
+# Ne jamais ajouter ici un québécisme porteur de sens (« tsé », « pantoute », « correct »,
+# « pis », « là »…) : ils sont dans quebec::BASE_PROMPT exprès, pour que Whisper les garde.
+
+[hesitation]
+# Mot isolé retiré partout dans la phrase.
+euh
+euhm
+heu
+hum
+hmm
+mmh
+
+[debut]
+# Retiré seulement en début de phrase.
+bon ben
+
+[double-permis]
+# Mots dont le doublement est correct en français : jamais réduits à une occurrence.
+nous
+vous
+oui
+non
+si
+très

@@ -80,6 +80,11 @@ impl Glossary {
         p
     }
 
+    /// Termes du lexique, tels qu'ils doivent être écrits.
+    pub fn termes(&self) -> &[String] {
+        &self.terms
+    }
+
     pub fn apply(&self, text: &str) -> String {
         let mut out = text.to_string();
         for (from, to) in &self.replacements {

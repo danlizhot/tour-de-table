@@ -61,6 +61,27 @@ déployer l'application dans une organisation.
 * **Filtre d'hallucinations** : Whisper invente parfois « Sous-titrage Société Radio-Canada » ou
   « Merci d'avoir regardé » sur du silence. Ces phrases sont retirées.
 
+## Nettoyage de la transcription
+
+Dès l'arrêt de l'enregistrement (pour un import : dès la validation du découpage par point), la
+transcription est nettoyée, point par point (« Nettoyage — point 3 sur 8 »). Jamais pendant un
+enregistrement ou une transcription : une rencontre qui démarre interrompt le nettoyage, qui
+reprend ensuite là où il en était (même après une fermeture de l'application).
+
+* **La transcription brute n'est jamais modifiée.** La fiche de la rencontre propose les deux
+  versions (« Brute / Nettoyée ») et un bouton « Relancer le nettoyage ».
+* **Règles d'abord**, sans modèle de langue : phrases coupées entre deux énoncés recollées,
+  boucles de Whisper (même phrase répétée trois fois ou plus) réduites, hésitations retirées
+  (« euh », « hum », « bon ben » en début de phrase, « le le »), puis lexique et typographie.
+  Les québécismes porteurs de sens (« tsé », « pantoute », « correct ») sont gardés.
+* **Puis le modèle de rédaction local**, par morceaux d'environ 4 minutes : ponctuation,
+  accords, mots mal reconnus, faux départs, sans rien résumer ni ajouter. Une correction trop
+  courte ou trop longue, qui perd une phrase ou un chiffre, est rejetée : les règles seules
+  s'appliquent à ce morceau (détail dans `nettoyage.log`). Sans modèle installé, seules les
+  règles sont appliquées et la fiche l'indique.
+* Le compte rendu part de la version nettoyée. Exports : `transcription-nettoyee.md`, et un
+  `transcription.md` dans le dossier de chaque point.
+
 ## Ordre du jour et compte rendu
 
 Déposez l'ordre du jour **avant** la rencontre (sur l'écran de départ) ou **après** (dans la fiche
@@ -148,8 +169,8 @@ frontière, la déplacer, en ajouter ou en retirer, puis valider. Sans ordre du 
 hors point : le bouton « Découper par points » de la fiche ouvre plus tard le même écran.
 
 **Compte rendu automatique** : si un ordre du jour est joint (déposé avant l'import ou avant de
-démarrer la rencontre), le compte rendu est rédigé dès la fin de la transcription (pour un
-import, dès la validation du découpage par point). On peut donc
+démarrer la rencontre), le compte rendu est rédigé dès la fin du nettoyage de la transcription
+(pour un import, après la validation du découpage par point). On peut donc
 déposer l'ordre du jour, importer l'enregistrement et revenir plus tard : tout est prêt.
 
 **Paramètres** : seulement le micro et la sortie audio, la question sur les haut-parleurs de la
@@ -223,6 +244,7 @@ src/
   ui/mod.rs      interface egui : état, boucle, barre du haut, historique
   ui/live.rs     rencontre en cours, import, contrôles
   ui/past.rs     fiche d'une rencontre, compte rendu
+  ui/nettoyage.rs file du nettoyage, « Brute / Nettoyée »
   ui/agenda.rs   ordre du jour
   ui/settings.rs Paramètres
   ui/widgets.rs  composants, couleurs, logo vectoriel
@@ -232,6 +254,7 @@ src/
   audio/blocs.rs audio en blocs de 2 min par point : index, reconstitution, réparation
   stt.rs         fil Whisper (modèle gardé en mémoire)
   quebec.rs      invite, typographie, lexique, filtre d'hallucinations
+  nettoyage.rs   nettoyage de la transcription (règles, puis modèle intégré avec garde-fous)
   storage.rs     rencontres (JSON) et exports MD/TXT/SRT
   models.rs      modèles (Whisper, rédaction) et leur téléchargement
   agenda.rs      lecture de l'ordre du jour (Word, PDF, texte)

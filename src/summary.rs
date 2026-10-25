@@ -10,7 +10,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use anyhow::{Context, Result, bail};
 use serde_json::json;
@@ -123,7 +123,7 @@ pub fn compte_rendu(r: &Request) -> Result<String> {
 
 /// Nombres du texte, normalisés (« 2 500 », « 2500 » et « 2,5 » restent distincts
 /// de leurs voisins) : chiffres groupés par milliers avec espace ou espace insécable.
-fn numbers(text: &str) -> Vec<String> {
+pub(crate) fn numbers(text: &str) -> Vec<String> {
     let chars: Vec<char> = text.chars().collect();
     let mut out = Vec::new();
     let mut i = 0;
@@ -212,7 +212,7 @@ fn condense(r: &Request) -> Result<String> {
 }
 
 fn generate(r: &Request, prompt: &str) -> Result<String> {
-    let texte = generate_integre(&r.moteur.modele, r.moteur.fils, prompt, r.progress)?;
+    let texte = generate_integre(&r.moteur.modele, r.moteur.fils, prompt, r.progress, None)?;
     Ok(tidy_answer(&crate::quebec::normalize_document(texte.trim())))
 }
 
@@ -227,7 +227,14 @@ fn helper() -> Result<PathBuf> {
     Ok(path)
 }
 
-fn generate_integre(modele: &std::path::Path, fils: usize, prompt: &str, progress: Option<&AtomicUsize>) -> Result<String> {
+/// Un appel au programme de rédaction. `annuler` arrête le programme dès sa prochaine ligne de sortie.
+pub(crate) fn generate_integre(
+    modele: &std::path::Path,
+    fils: usize,
+    prompt: &str,
+    progress: Option<&AtomicUsize>,
+    annuler: Option<&AtomicBool>,
+) -> Result<String> {
     if !modele.exists() {
         bail!("Le modèle de rédaction n'est pas installé : installez-le depuis la fiche de la rencontre");
     }
@@ -260,6 +267,11 @@ fn generate_integre(modele: &std::path::Path, fils: usize, prompt: &str, progres
     let mut erreur = None;
     for line in BufReader::new(child.stdout.take().expect("sortie redirigée")).lines() {
         let line = line?;
+        if annuler.is_some_and(|a| a.load(Ordering::Relaxed)) {
+            let _ = child.kill();
+            let _ = child.wait();
+            bail!("Rédaction annulée");
+        }
         let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
         if let (Some(n), Some(p)) = (v["progres"].as_u64(), progress) {
             p.store(n as usize, Ordering::Relaxed);

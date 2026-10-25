@@ -54,6 +54,37 @@ pub(super) fn transcript(ui: &mut Ui, m: &Meeting, follow: bool) {
     });
 }
 
+/// Transcription nettoyée, même présentation que `transcript`.
+pub(super) fn transcript_nettoye(ui: &mut Ui, m: &Meeting, n: &crate::nettoyage::Nettoyage) {
+    egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+        let mut last: Option<Source> = None;
+        let mut point = None;
+        for (i, p) in n.phrases.iter().enumerate() {
+            if !m.periodes.is_empty() && (i == 0 || p.point != point) {
+                point = p.point;
+                last = None;
+                ui.add_space(12.0);
+                ui.label(RichText::new(m.intertitre(p.point)).strong().size(16.5).color(if p.point.is_some() { BLEU_CLAIR } else { Color32::GRAY }));
+                ui.separator();
+            }
+            if last != Some(p.source) {
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(clock(p.debut_ms)).monospace().small().weak());
+                    ui.label(RichText::new(p.source.label()).strong().color(source_color(p.source)));
+                });
+                last = Some(p.source);
+            }
+            ui.add(egui::Label::new(RichText::new(&p.texte).size(15.0)).selectable(true).wrap());
+        }
+        if !n.termine() {
+            ui.add_space(8.0);
+            ui.label(RichText::new("La suite de la rencontre n'est pas encore nettoyée : voir la version brute.").weak().italics());
+        }
+        ui.add_space(12.0);
+    });
+}
+
 /// Rendu Markdown minimal pour le compte rendu : titres, listes, tableaux, **gras**.
 pub(super) fn markdown(ui: &mut Ui, md: &str) {
     for line in md.lines() {

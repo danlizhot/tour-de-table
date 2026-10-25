@@ -35,6 +35,10 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   champ `dossier`) avec `rencontre.json`, sauvegardé après chaque
   segment (écriture atomique `.tmp` + `rename`).
 * `summary.rs` : compte rendu par le programme auxiliaire.
+* `nettoyage.rs` : nettoyage de la transcription (règles de `data/nettoyage.txt`, puis modèle
+  par le programme auxiliaire, avec garde-fous). Enchaînement : transcription → nettoyage →
+  compte rendu. `Meeting::segments` (brut) n'est jamais modifié ; résultat dans
+  `Meeting::nettoyage`. File d'attente et exclusion avec l'enregistrement dans `ui/nettoyage.rs`.
 * `quebec.rs` : invite québécoise, typographie OQLF, lexique, filtre d'hallucinations.
 
 ### Crate auxiliaire `tourdetable-redaction` (`redaction/`)

@@ -3,6 +3,7 @@
 mod agenda;
 mod decoupage;
 mod live;
+mod nettoyage;
 mod past;
 mod settings;
 mod verification;
@@ -86,6 +87,11 @@ pub struct TourDeTableApp {
     /// Point annoncé dont le bouton est mis en évidence, et depuis quand.
     proposition: Option<(usize, std::time::Instant)>,
     bandeau: Option<decoupage::Bandeau>,
+    /// Nettoyage de la transcription en cours, et rencontres en attente (id, compte rendu ensuite).
+    nettoyage_job: Option<nettoyage::TacheNettoyage>,
+    nettoyages_en_attente: Vec<(String, bool)>,
+    /// Fiche d'une rencontre : transcription brute plutôt que nettoyée.
+    vue_brute: bool,
 }
 
 impl TourDeTableApp {
@@ -121,9 +127,13 @@ impl TourDeTableApp {
             detecteur: Default::default(),
             proposition: None,
             bandeau: None,
+            nettoyage_job: None,
+            nettoyages_en_attente: Vec::new(),
+            vue_brute: false,
             cfg,
         };
         app.reprendre_rencontres_interrompues();
+        app.reprendre_nettoyages();
         app.push_settings();
         app.load_model();
         app
@@ -303,6 +313,7 @@ impl TourDeTableApp {
                 Err(e) => self.notify(e, true),
             }
         }
+        self.pump_nettoyage();
     }
 
     /// Énoncés de l'import en cours revenus de Whisper : le fil de l'import envoie le bloc suivant.
@@ -406,6 +417,7 @@ impl eframe::App for TourDeTableApp {
             || self.summary_job.is_some()
             || self.import_job.is_some()
             || self.decoupage_job.is_some()
+            || self.nettoyage_en_cours()
             || ecoute
         {
             ctx.request_repaint_after(Duration::from_millis(80));

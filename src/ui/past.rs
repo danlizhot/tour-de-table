@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 
 use eframe::egui::{self, Align, Layout, RichText, Ui};
 
-use super::widgets::{download_bar, markdown, short_model, transcript};
+use super::widgets::{download_bar, markdown, short_model, transcript, transcript_nettoye};
 use super::{TourDeTableApp, View};
 use crate::audio::blocs;
 use crate::config;
@@ -20,12 +20,12 @@ impl TourDeTableApp {
         }
         if !models::installed(models::LLM_RECOMMENDED) {
             self.notify(
-                "Transcription terminée. Pour la rédaction automatique du compte rendu, installez d'abord le modèle de rédaction (bouton ci-dessous).",
+                "Transcription terminée et nettoyée. Pour la rédaction automatique du compte rendu, installez d'abord le modèle de rédaction (bouton ci-dessous).",
                 false,
             );
             return;
         }
-        self.notify("Transcription terminée : rédaction du compte rendu à partir de l'ordre du jour…", false);
+        self.notify("Transcription nettoyée : rédaction du compte rendu à partir de l'ordre du jour…", false);
         self.summarize(idx);
     }
 
@@ -39,7 +39,7 @@ impl TourDeTableApp {
         let date = m.started_at.format("%Y-%m-%d à %H h %M").to_string();
         let duration = clock(m.duration_s * 1000);
         let agenda = m.agenda.as_ref().map(|a| a.text.clone());
-        let transcript = m.plain_text();
+        let transcript = m.texte_compte_rendu();
         std::thread::spawn(move || {
             let req = crate::summary::Request {
                 moteur: &moteur,
@@ -186,8 +186,9 @@ impl TourDeTableApp {
                         "Ajoutez un ordre du jour pour obtenir un compte rendu point par point"
                     };
                     if ui
-                        .small_button(label)
+                        .add_enabled(!self.nettoyage_en_cours(), egui::Button::new(label).small())
                         .on_hover_text(format!("{hover}\nModèle local : {}", config::moteur().nom()))
+                        .on_disabled_hover_text("Attendez la fin du nettoyage de la transcription")
                         .clicked()
                     {
                         action = Some("summary");
@@ -204,10 +205,17 @@ impl TourDeTableApp {
             }
         });
         ui.add_space(8.0);
-        transcript(ui, &self.meetings[idx], false);
+        self.barre_nettoyage(ui, idx);
+        let m = &self.meetings[idx];
+        match m.nettoyage.as_ref().filter(|_| !self.vue_brute) {
+            Some(n) => transcript_nettoye(ui, m, n),
+            None => transcript(ui, m, false),
+        }
 
         match action {
             Some("delete") => {
+                let id = self.meetings[idx].id.clone();
+                self.arreter_nettoyage(&id);
                 let m = self.meetings.remove(idx);
                 match storage::delete(&m) {
                     Ok(()) => self.notify("Rencontre déplacée dans la corbeille de Tour de table.", false),
