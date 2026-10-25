@@ -40,7 +40,7 @@ fn main() {
     }
     if args.get(1).is_some_and(|a| a == "--compte-rendu") {
         let (Some(agenda), Some(source)) = (args.get(2), args.get(3)) else {
-            eprintln!("Usage : tourdetable --compte-rendu ordre-du-jour.docx (transcription.txt | enregistrement.wav | rencontre.json) [--palier 8|16]");
+            eprintln!("Usage : tourdetable --compte-rendu ordre-du-jour.docx (transcription.txt | enregistrement.wav | rencontre.json) [--palier 8|16] [--modele fichier.gguf]");
             std::process::exit(2);
         };
         // Mesure sur un autre palier de mémoire que celui du poste.
@@ -49,7 +49,9 @@ fn main() {
             Some("16") => Some(models::Palier::Seize),
             _ => None,
         };
-        if let Err(e) = cli::compte_rendu(agenda, source, palier) {
+        // Essai d'un autre modèle de rédaction (mesure seulement).
+        let modele = args.iter().position(|a| a == "--modele").and_then(|i| args.get(i + 1)).map(String::as_str);
+        if let Err(e) = cli::compte_rendu(agenda, source, palier, modele) {
             eprintln!("Erreur : {e:#}");
             std::process::exit(1);
         }

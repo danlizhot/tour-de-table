@@ -104,7 +104,12 @@ fn rediger(charge: &mut Option<Charge>, r: &Requete) -> Result<String> {
         messages.push(LlamaChatMessage::new("system".into(), r.systeme.clone())?);
     }
     messages.push(LlamaChatMessage::new("user".into(), r.invite.clone())?);
-    let texte_invite = modele.apply_chat_template(&gabarit, &messages, true)?;
+    let mut texte_invite = modele.apply_chat_template(&gabarit, &messages, true)?;
+    // Modèles qui réfléchissent par défaut (Qwen3.5, Granite 4.2) : un bloc de réflexion vide,
+    // comme le produit leur gabarit avec `enable_thinking=False`, fait répondre directement.
+    if gabarit.to_str().is_ok_and(|g| g.contains("enable_thinking")) {
+        texte_invite.push_str("<think>\n\n</think>\n\n");
+    }
 
     let vocab = modele.vocab();
     let jetons = vocab.tokenize(texte_invite.as_bytes(), false, true);

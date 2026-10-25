@@ -86,7 +86,8 @@ fn importer(engine: &Engine, path: &Path, dir: &Path, meeting: &mut Meeting) -> 
                     done += handled;
                     passes += 1;
                     for s in segments {
-                        println!("[{}] {}", crate::storage::clock(s.start_ms), s.text);
+                        // Sur la sortie d'erreur : la sortie standard reste au compte rendu.
+                        eprintln!("[{}] {}", crate::storage::clock(s.start_ms), s.text);
                         meeting.insert(s);
                     }
                 }
@@ -132,12 +133,16 @@ fn nettoyer(m: &mut Meeting) -> Result<()> {
 }
 
 /// `source` : enregistrement (transcrit puis nettoyé), `rencontre.json` (nettoyé à nouveau, pour
-/// mesurer) ou transcription en texte. `palier` : mesure sur un autre palier que celui du poste.
-pub fn compte_rendu(agenda_path: &str, source: &str, palier: Option<crate::models::Palier>) -> Result<()> {
+/// mesurer) ou transcription en texte. `palier` et `modele` : mesure sur un autre palier ou avec
+/// un autre modèle de rédaction que ceux du poste.
+pub fn compte_rendu(agenda_path: &str, source: &str, palier: Option<crate::models::Palier>, modele: Option<&str>) -> Result<()> {
     if let Some(p) = palier {
         crate::models::forcer_palier(p);
     }
-    let moteur = config::moteur();
+    let mut moteur = config::moteur();
+    if let Some(m) = modele {
+        moteur.modele = std::path::PathBuf::from(m);
+    }
     eprintln!("Palier {} : {}", crate::models::palier().nom(), moteur.nom());
     let agenda = crate::agenda::read(Path::new(agenda_path))?;
     eprintln!("Ordre du jour lu ({} caractères) :\n{agenda}\n", agenda.chars().count());
@@ -158,22 +163,24 @@ pub fn compte_rendu(agenda_path: &str, source: &str, palier: Option<crate::model
     } else {
         None
     };
-    let (transcript, duration, points, hors_point) = match rencontre {
-        Some(mut m) => {
+    let mut rencontre = rencontre;
+    let (transcript, duration, points, hors_point) = match rencontre.as_mut() {
+        Some(m) => {
             let t = Instant::now();
-            nettoyer(&mut m)?;
+            nettoyer(m)?;
             duree_nettoyage = Some(t.elapsed().as_secs_f32());
-            let (points, hors_point) = crate::summary::points_de(&m);
+            let (points, hors_point) = crate::summary::points_de(m);
             (m.texte_compte_rendu(), crate::storage::clock(m.duration_s * 1000), points, hors_point)
         }
         None => (std::fs::read_to_string(source).with_context(|| format!("Lecture de {source}"))?, "non précisée".into(), Vec::new(), String::new()),
     };
     let t = Instant::now();
-    // Titre : première ligne de l'ordre du jour (souvent le nom de l'instance).
+    // Titre : première ligne de l'ordre du jour (souvent le nom de l'instance), sauf un en-tête
+    // de page de PDF (« Page 1 sur 1 »).
     let title = agenda
         .lines()
         .map(str::trim)
-        .find(|l| !l.is_empty())
+        .find(|l| !l.is_empty() && !(l.starts_with("Page ") && l.contains(" sur ")))
         .map(|l| {
             let l = l.strip_suffix("Ordre du jour").or_else(|| l.strip_suffix("ordre du jour")).unwrap_or(l);
             l.trim_end_matches(|c: char| c == '–' || c == '-' || c == ':' || c.is_whitespace()).to_string()
@@ -194,6 +201,12 @@ pub fn compte_rendu(agenda_path: &str, source: &str, palier: Option<crate::model
     };
     let cr = crate::summary::compte_rendu(&req)?;
     println!("{cr}");
+    // Comme dans l'application : le compte rendu est enregistré avec la rencontre (compte-rendu.md).
+    if let Some(m) = rencontre.as_mut() {
+        m.summary = Some(cr.clone());
+        m.save()?;
+        m.export_all()?;
+    }
     let duree_cr = t.elapsed().as_secs_f32();
     let mode = if par_point { "par point" } else { "en un appel" };
     eprintln!("Compte rendu ({mode}) rédigé en {duree_cr:.0} s par {}", moteur.nom());

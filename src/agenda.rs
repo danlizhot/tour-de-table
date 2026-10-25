@@ -226,7 +226,9 @@ pub fn points(text: &str) -> Vec<Point> {
                 pile.push(cle);
             }
         }
-        out.push(Point { numero: String::new(), titre: titre.to_string(), niveau: pile.len().min(9) as u8, detail: String::new() });
+        // Espaces multiples d'un PDF justifié (« Tour  de  table ») réduits à une seule.
+        let titre = titre.split_whitespace().collect::<Vec<_>>().join(" ");
+        out.push(Point { numero: String::new(), titre, niveau: pile.len().min(9) as u8, detail: String::new() });
     }
     renumeroter(&mut out);
     out
@@ -396,6 +398,8 @@ mod tests {
     fn points_pas_de_faux_positifs() {
         assert!(points("Ordre du jour\n2026-10-30\nM. Tremblay préside.\n19 h 00 au bureau\n1-800-555-1234\n1,5 M$ investis").is_empty());
         assert!(points("Point de presse demain").is_empty());
+        // PDF justifié : espaces multiples réduits.
+        assert_eq!(resume(&points("1. Tour  de  table\n7.    Retour sur la rencontre RH")), vec![p("1", "Tour de table", 1), p("2", "Retour sur la rencontre RH", 1)]);
     }
 
     #[test]
