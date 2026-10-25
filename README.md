@@ -69,6 +69,13 @@ saisir à la main.
 
 * **Formats** : Word (`.docx`), PDF texte, `.txt`, `.md`. La numérotation automatique des listes
   Word est reconstituée (1., 2., 2.1…). Un PDF numérisé en image n'a pas de texte lisible.
+* **Points** : l'ordre du jour devient une liste de points (« 1. », « 1) », « Point 1 : », « I. »,
+  « a) », puces, sous-points). « Modifier les points » permet d'en ajouter, d'en renommer, d'en
+  supprimer ou de les réordonner, avant ou pendant la rencontre.
+* **Découpage par point** : « Débuter le point » (qui démarre l'enregistrement au besoin) marque
+  le point en cours ; on peut revenir sur un point déjà traité ou passer « Hors point ».
+  Raccourcis : Ctrl + flèche droite ou gauche (point suivant ou précédent), Ctrl + H (hors point),
+  Cmd sur macOS. La transcription et les exports portent un intertitre par point.
 * **Avant la rencontre**, les sujets et les noms de l'ordre du jour sont ajoutés à l'invite de
   Whisper, ce qui améliore la reconnaissance des noms propres et du jargon.
 * **« Rédiger le compte rendu »** suit l'ordre du jour point par point, avec la même numérotation.

@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -32,6 +32,9 @@ pub struct Recorder {
     pub mic_level: Arc<Level>,
     pub sys_level: Arc<Level>,
     pub started: Instant,
+    /// Échantillons alignés transmis au découpage en énoncés : même horloge que
+    /// `Utterance::start`, donc que `Segment::start_ms`. Écrit par le fil audio seulement.
+    pub echantillons: Arc<AtomicU64>,
     /// Sources réellement ouvertes et avertissements (source manquante, etc.).
     pub active: Vec<Source>,
     pub warnings: Vec<String>,
@@ -51,12 +54,13 @@ impl Recorder {
         let stop = Arc::new(AtomicBool::new(false));
         let mic_level = Arc::new(Level::default());
         let sys_level = Arc::new(Level::default());
+        let echantillons = Arc::new(AtomicU64::new(0));
         let (ready_tx, ready_rx) = crossbeam_channel::bounded(1);
 
         let thread = {
-            let (stop, mic_level, sys_level) = (stop.clone(), mic_level.clone(), sys_level.clone());
+            let (stop, mic_level, sys_level, ech) = (stop.clone(), mic_level.clone(), sys_level.clone(), echantillons.clone());
             std::thread::Builder::new().name("audio".into()).spawn(move || {
-                run(opts, out, stop, mic_level, sys_level, ready_tx);
+                run(opts, out, stop, mic_level, sys_level, ech, ready_tx);
             })?
         };
 
@@ -74,9 +78,15 @@ impl Recorder {
             mic_level,
             sys_level,
             started: Instant::now(),
+            echantillons,
             active,
             warnings,
         })
+    }
+
+    /// Position courante sur l'horloge des segments, en millisecondes.
+    pub fn position_ms(&self) -> u64 {
+        position_ms(&self.echantillons)
     }
 
     /// Arrête la capture ; les derniers énoncés sont envoyés avant le retour.
@@ -88,12 +98,17 @@ impl Recorder {
     }
 }
 
+pub fn position_ms(echantillons: &AtomicU64) -> u64 {
+    echantillons.load(Ordering::Relaxed) * 1000 / SAMPLE_RATE as u64
+}
+
 fn run(
     opts: Options,
     out: Sender<Utterance>,
     stop: Arc<AtomicBool>,
     mic_level: Arc<Level>,
     sys_level: Arc<Level>,
+    echantillons: Arc<AtomicU64>,
     ready: Sender<(Vec<Source>, Vec<String>)>,
 ) {
     let (tx, rx) = crossbeam_channel::bounded::<audio::Chunk>(512);
@@ -224,6 +239,10 @@ fn run(
                 feed(Source::Mixte, &sum, &mut segmenters, &mut utterances);
             }
         }
+
+        // Ce qui a été transmis aux découpeurs (le reste attend le mixage).
+        let transmis = tracks.values().map(|t| t.aligner.written - t.mix_buf.len() as u64).max().unwrap_or(0);
+        echantillons.store(transmis, Ordering::Relaxed);
 
         if stopping {
             for seg in segmenters.values_mut() {

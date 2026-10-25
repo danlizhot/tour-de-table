@@ -51,7 +51,14 @@ impl TourDeTableApp {
             if let Some(m) = self.live.as_mut() {
                 m.duration_s = rec.started.elapsed().as_secs();
             }
+            let echantillons = rec.echantillons.clone();
             rec.stop();
+            // Fin de la période en cours : après le dernier échantillon transmis.
+            if let Some(m) = self.live.as_mut() {
+                m.fermer_periode(crate::recorder::position_ms(&echantillons));
+                let _ = m.save();
+            }
+            self.edit_points = false;
             self.finishing = true;
         }
     }

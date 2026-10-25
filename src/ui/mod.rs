@@ -65,6 +65,8 @@ pub struct TourDeTableApp {
     draft_agenda: Option<Agenda>,
     /// Fichier audio en cours de décodage (nom affiché, résultat : énoncés et durée).
     import_job: Option<(String, Receiver<Result<(Vec<Utterance>, u64), String>>)>,
+    /// Éditeur des points de l'ordre du jour ouvert (« Modifier les points »).
+    edit_points: bool,
 }
 
 impl TourDeTableApp {
@@ -93,6 +95,7 @@ impl TourDeTableApp {
             notices: Vec::new(),
             draft_agenda: None,
             import_job: None,
+            edit_points: false,
             cfg,
         };
         app.push_settings();
@@ -341,6 +344,7 @@ impl eframe::App for TourDeTableApp {
         });
         egui::Panel::left("history").resizable(true).default_size(240.0).show(ui, |ui| self.side_list(ui));
         if matches!(self.view, View::Live) {
+            self.raccourcis_points(&ctx);
             egui::Panel::bottom("controls").show(ui, |ui| self.controls(ui));
         }
         egui::CentralPanel::default_margins().show(ui, |ui| {
@@ -384,7 +388,11 @@ impl Drop for TourDeTableApp {
             if let Some(m) = self.live.as_mut() {
                 m.duration_s = rec.started.elapsed().as_secs();
             }
+            let echantillons = rec.echantillons.clone();
             rec.stop();
+            if let Some(m) = self.live.as_mut() {
+                m.fermer_periode(crate::recorder::position_ms(&echantillons));
+            }
         }
         if let Some(m) = &self.live {
             if !m.segments.is_empty() {

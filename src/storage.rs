@@ -14,6 +14,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
+use crate::agenda::Point;
 use crate::stt::Segment;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -33,6 +34,9 @@ pub struct Meeting {
     pub summary: Option<String>,
     #[serde(default)]
     pub agenda: Option<Agenda>,
+    /// Découpage de la rencontre par point de l'ordre du jour, dans l'ordre chronologique.
+    #[serde(default)]
+    pub periodes: Vec<Periode>,
 }
 
 /// Ordre du jour déposé avant ou après la rencontre.
@@ -41,6 +45,39 @@ pub struct Agenda {
     /// Nom du document d'origine (ou « Saisi à la main »).
     pub file: String,
     pub text: String,
+    /// Points reconnus dans `text` à l'attachement, modifiables par l'utilisateur.
+    #[serde(default)]
+    pub points: Vec<Point>,
+}
+
+impl Agenda {
+    pub fn new(file: String, text: String) -> Self {
+        let points = crate::agenda::points(&text);
+        Self { file, text, points }
+    }
+}
+
+/// Intervalle de la rencontre consacré à un point. Les horodatages sont sur l'horloge des
+/// segments (`Segment::start_ms`, échantillons alignés du recorder).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Periode {
+    /// Indice dans `Agenda::points` ; `None` : hors point.
+    pub point: Option<usize>,
+    pub debut_ms: u64,
+    /// `None` tant que la période est en cours.
+    #[serde(default)]
+    pub fin_ms: Option<u64>,
+    #[serde(default)]
+    pub declenchement: Declenchement,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub enum Declenchement {
+    /// Bouton ou raccourci.
+    #[default]
+    Manuel,
+    /// Détecté dans la parole.
+    Auto,
 }
 
 /// Titre donné à une rencontre qu'on n'a pas encore nommée.
@@ -69,6 +106,7 @@ impl Meeting {
             segments: Vec::new(),
             summary: None,
             agenda: None,
+            periodes: Vec::new(),
         }
     }
 
@@ -108,10 +146,92 @@ impl Meeting {
         v.join(" ")
     }
 
-    /// Regroupe les segments consécutifs d'une même source en paragraphes.
-    fn paragraphs(&self) -> Vec<(u64, crate::audio::Source, String)> {
-        let mut out: Vec<(u64, crate::audio::Source, String)> = Vec::new();
+    /// Point de la période en cours, s'il y en a une.
+    pub fn point_actif(&self) -> Option<usize> {
+        self.periodes.last().filter(|p| p.fin_ms.is_none()).and_then(|p| p.point)
+    }
+
+    /// Ferme la période en cours et, pour `Some(point)`, en ouvre une nouvelle à `ms`.
+    /// Revenir sur un point déjà traité ouvre une nouvelle période.
+    pub fn debuter_point(&mut self, point: Option<usize>, ms: u64, declenchement: Declenchement) {
+        if point.is_some() && point == self.point_actif() {
+            return;
+        }
+        self.fermer_periode(ms);
+        if point.is_some() {
+            self.periodes.push(Periode { point, debut_ms: ms, fin_ms: None, declenchement });
+        }
+    }
+
+    pub fn fermer_periode(&mut self, ms: u64) {
+        if let Some(p) = self.periodes.last_mut().filter(|p| p.fin_ms.is_none()) {
+            p.fin_ms = Some(ms.max(p.debut_ms));
+        }
+    }
+
+    /// Point dont la période contient `start_ms` (la plus récente, si elles se chevauchent).
+    pub fn point_de(&self, start_ms: u64) -> Option<usize> {
+        self.periodes
+            .iter()
+            .rev()
+            .find(|p| p.debut_ms <= start_ms && p.fin_ms.is_none_or(|f| start_ms < f))
+            .and_then(|p| p.point)
+    }
+
+    /// Temps passé sur un point, période en cours comprise (jusqu'à `maintenant_ms`).
+    pub fn duree_point(&self, point: usize, maintenant_ms: u64) -> u64 {
+        self.periodes
+            .iter()
+            .filter(|p| p.point == Some(point))
+            .map(|p| p.fin_ms.unwrap_or(maintenant_ms).saturating_sub(p.debut_ms))
+            .sum()
+    }
+
+    /// Segments regroupés par suites consécutives d'un même point, dans l'ordre chronologique :
+    /// un point repris plus tard forme un nouveau groupe.
+    pub fn segments_par_point(&self) -> Vec<(Option<usize>, Vec<&Segment>)> {
+        let mut out: Vec<(Option<usize>, Vec<&Segment>)> = Vec::new();
         for s in &self.segments {
+            let point = self.point_de(s.start_ms);
+            match out.last_mut() {
+                Some((p, v)) if *p == point => v.push(s),
+                _ => out.push((point, vec![s])),
+            }
+        }
+        out
+    }
+
+    /// Intertitre d'un point : « 2.1. Budget », ou « Hors point ».
+    pub fn intertitre(&self, point: Option<usize>) -> String {
+        match point {
+            None => "Hors point".into(),
+            Some(i) => match self.agenda.as_ref().and_then(|a| a.points.get(i)) {
+                Some(p) => format!("{}. {}", p.numero, p.titre),
+                None => format!("Point {}", i + 1),
+            },
+        }
+    }
+
+    /// Adapte les périodes à une modification des points : `f` donne le nouvel indice d'un
+    /// point, ou `None` s'il a été supprimé (ses périodes passent hors point).
+    pub fn renumeroter_periodes(&mut self, f: impl Fn(usize) -> Option<usize>) {
+        for p in &mut self.periodes {
+            p.point = p.point.and_then(&f);
+        }
+    }
+
+    /// Groupes à intertitrer (aucun tant que la rencontre n'est pas découpée par point).
+    fn groupes(&self) -> Vec<(Option<String>, Vec<&Segment>)> {
+        if self.periodes.is_empty() {
+            return vec![(None, self.segments.iter().collect())];
+        }
+        self.segments_par_point().into_iter().map(|(p, v)| (Some(self.intertitre(p)), v)).collect()
+    }
+
+    /// Regroupe les segments consécutifs d'une même source en paragraphes.
+    fn paragraphs(segments: &[&Segment]) -> Vec<(u64, crate::audio::Source, String)> {
+        let mut out: Vec<(u64, crate::audio::Source, String)> = Vec::new();
+        for s in segments {
             match out.last_mut() {
                 Some((_, src, text)) if *src == s.source => {
                     text.push(' ');
@@ -124,11 +244,14 @@ impl Meeting {
     }
 
     pub fn plain_text(&self) -> String {
-        self.paragraphs()
-            .iter()
-            .map(|(t, src, text)| format!("[{}] {} : {text}", clock(*t), src.label()))
-            .collect::<Vec<_>>()
-            .join("\n\n")
+        let mut blocs = Vec::new();
+        for (titre, segs) in self.groupes() {
+            if let Some(t) = titre {
+                blocs.push(format!("— {t} —"));
+            }
+            blocs.extend(Self::paragraphs(&segs).iter().map(|(t, src, text)| format!("[{}] {} : {text}", clock(*t), src.label())));
+        }
+        blocs.join("\n\n")
     }
 
     pub fn to_markdown(&self) -> String {
@@ -147,24 +270,34 @@ impl Meeting {
             let _ = write!(md, "## {heading}\n\n{sum}\n\n");
         }
         md.push_str("## Transcription\n\n");
-        for (t, src, text) in self.paragraphs() {
-            let _ = write!(md, "[{}] **{}** : {text}\n\n", clock(t), src.label());
+        for (titre, segs) in self.groupes() {
+            if let Some(t) = titre {
+                let _ = write!(md, "### {t}\n\n");
+            }
+            for (t, src, text) in Self::paragraphs(&segs) {
+                let _ = write!(md, "[{}] **{}** : {text}\n\n", clock(t), src.label());
+            }
         }
         md
     }
 
+    /// Sous-titres ; le premier sous-titre de chaque point porte son intertitre sur une ligne.
     pub fn to_srt(&self) -> String {
         let mut out = String::new();
-        for (i, s) in self.segments.iter().enumerate() {
-            let _ = write!(
-                out,
-                "{}\n{} --> {}\n{} : {}\n\n",
-                i + 1,
-                srt_time(s.start_ms),
-                srt_time(s.end_ms.max(s.start_ms + 500)),
-                s.source.label(),
-                s.text
-            );
+        let mut i = 0;
+        for (titre, segs) in self.groupes() {
+            for (j, s) in segs.iter().enumerate() {
+                i += 1;
+                let tete = titre.as_ref().filter(|_| j == 0).map(|t| format!("[{t}]\n")).unwrap_or_default();
+                let _ = write!(
+                    out,
+                    "{i}\n{} --> {}\n{tete}{} : {}\n\n",
+                    srt_time(s.start_ms),
+                    srt_time(s.end_ms.max(s.start_ms + 500)),
+                    s.source.label(),
+                    s.text
+                );
+            }
         }
         out
     }
@@ -383,6 +516,70 @@ mod tests {
         assert!(m.to_srt().starts_with("1\n00:00:01,000 --> 00:00:02,000\nSalle : Bon ben"));
     }
 
+    fn rencontre_avec_points() -> Meeting {
+        let mut m = Meeting::new("test.bin");
+        m.agenda = Some(Agenda::new("od.docx".into(), "Ordre du jour\n1. Ouverture\n2. Budget\n3. Varia".into()));
+        m
+    }
+
+    #[test]
+    fn segment_attribue_a_sa_periode() {
+        let mut m = rencontre_avec_points();
+        m.insert(seg(500, Source::Salle, "Bon, on attend Julie."));
+        m.debuter_point(Some(0), 1000, Declenchement::Manuel);
+        m.insert(seg(1000, Source::Salle, "Bienvenue."));
+        m.insert(seg(3000, Source::Salle, "On passe au budget?"));
+        m.debuter_point(Some(1), 4000, Declenchement::Manuel);
+        // Recliquer sur le point actif ne crée pas de période.
+        m.debuter_point(Some(1), 4500, Declenchement::Manuel);
+        m.insert(seg(4000, Source::Distance, "Le budget est équilibré."));
+        assert_eq!(m.periodes.len(), 2);
+        assert_eq!(m.periodes[0].fin_ms, Some(4000));
+        assert_eq!([500, 1000, 3999, 4000, 99_000].map(|t| m.point_de(t)), [None, Some(0), Some(0), Some(1), Some(1)]);
+        assert_eq!(m.point_actif(), Some(1));
+        let groupes: Vec<_> = m.segments_par_point().into_iter().map(|(p, v)| (p, v.len())).collect();
+        assert_eq!(groupes, vec![(None, 1), (Some(0), 2), (Some(1), 1)]);
+        assert_eq!(m.duree_point(1, 10_000), 6000);
+    }
+
+    #[test]
+    fn retour_sur_un_point_et_hors_point() {
+        let mut m = rencontre_avec_points();
+        m.debuter_point(Some(0), 0, Declenchement::Manuel);
+        m.debuter_point(Some(1), 2000, Declenchement::Manuel);
+        m.debuter_point(None, 5000, Declenchement::Manuel); // Hors point
+        assert_eq!(m.point_actif(), None);
+        m.debuter_point(Some(0), 8000, Declenchement::Manuel); // retour sur l'ouverture
+        m.fermer_periode(9000);
+        for (t, texte) in [(100, "Ouverture."), (2100, "Budget."), (6000, "Pause café."), (8100, "Retour à l'ouverture.")] {
+            m.insert(seg(t, Source::Salle, texte));
+        }
+        assert_eq!(m.periodes.len(), 3);
+        assert_eq!(m.duree_point(0, 20_000), 3000);
+        assert_eq!(m.point_de(6000), None);
+        assert_eq!(m.point_de(9500), None);
+        let ordre: Vec<_> = m.segments_par_point().into_iter().map(|(p, _)| p).collect();
+        assert_eq!(ordre, vec![Some(0), Some(1), None, Some(0)]);
+        assert_eq!(
+            m.plain_text(),
+            "— 1. Ouverture —\n\n[00:00] Salle : Ouverture.\n\n— 2. Budget —\n\n[00:02] Salle : Budget.\n\n\
+             — Hors point —\n\n[00:06] Salle : Pause café.\n\n— 1. Ouverture —\n\n[00:08] Salle : Retour à l'ouverture."
+        );
+        let md = m.to_markdown();
+        assert!(md.contains("## Transcription\n\n### 1. Ouverture\n\n[00:00] **Salle** : Ouverture.\n\n### 2. Budget\n\n"));
+        assert!(m.to_srt().starts_with("1\n00:00:00,100 --> 00:00:01,100\n[1. Ouverture]\nSalle : Ouverture.\n\n2\n"));
+        assert!(m.to_srt().contains("3\n00:00:06,000 --> 00:00:07,000\n[Hors point]\nSalle : Pause café."));
+
+        // Suppression du budget : ses périodes passent hors point, la suite est renumérotée.
+        m.renumeroter_periodes(|i| match i {
+            1 => None,
+            i if i > 1 => Some(i - 1),
+            i => Some(i),
+        });
+        assert_eq!(m.point_de(2100), None);
+        assert_eq!(m.point_de(100), Some(0));
+    }
+
     /// Dossier temporaire vide, propre au test : le vrai dossier Musique n'est jamais touché.
     fn temporaire(nom: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("tourdetable-test-{}-{nom}", std::process::id()));
@@ -484,6 +681,8 @@ mod tests {
     fn ancien_format_sans_dossier() {
         let m: Meeting = serde_json::from_str(ANCIEN_FORMAT).unwrap();
         assert_eq!(m.dossier, "");
+        assert!(m.periodes.is_empty());
+        assert_eq!(m.point_de(1000), None);
         // Jamais la racine elle-même.
         assert_eq!(m.dir_dans(Path::new("/racine")), Path::new("/racine/2026-10-30_09-15-00"));
 
@@ -494,6 +693,21 @@ mod tests {
         assert_eq!(v[0].dossier, "ailleurs");
         assert_eq!(v[0].dir_dans(&racine), racine.join("ailleurs"));
         let _ = std::fs::remove_dir_all(&racine);
+    }
+
+    #[test]
+    fn ancien_format_ordre_du_jour_sans_points() {
+        let json = ANCIEN_FORMAT.replace(
+            r#""segments": [],"#,
+            r#""segments": [{"start_ms": 1000, "end_ms": 2000, "source": "Salle", "text": "Bonjour."}],
+  "agenda": {"file": "od.txt", "text": "1. Ouverture"},"#,
+        );
+        let m: Meeting = serde_json::from_str(&json).unwrap();
+        assert_eq!(m.agenda.as_ref().unwrap().points, vec![]);
+        assert!(m.periodes.is_empty());
+        // Sans périodes, les exports restent comme avant (aucun intertitre).
+        assert_eq!(m.plain_text(), "[00:01] Salle : Bonjour.");
+        assert_eq!(serde_json::from_str::<Periode>(r#"{"point": 2, "debut_ms": 10}"#).unwrap().declenchement, Declenchement::Manuel);
     }
 
     #[test]

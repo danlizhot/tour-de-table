@@ -27,7 +27,19 @@ fn source_color(s: Source) -> Color32 {
 pub(super) fn transcript(ui: &mut Ui, m: &Meeting, follow: bool) {
     egui::ScrollArea::vertical().auto_shrink(false).stick_to_bottom(follow).show(ui, |ui| {
         let mut last: Option<Source> = None;
-        for s in &m.segments {
+        // Intertitre à chaque changement de point, une fois la rencontre découpée.
+        let mut point = None;
+        for (i, s) in m.segments.iter().enumerate() {
+            if !m.periodes.is_empty() {
+                let p = m.point_de(s.start_ms);
+                if i == 0 || p != point {
+                    point = p;
+                    last = None;
+                    ui.add_space(12.0);
+                    ui.label(RichText::new(m.intertitre(p)).strong().size(16.5).color(if p.is_some() { BLEU_CLAIR } else { Color32::GRAY }));
+                    ui.separator();
+                }
+            }
             if last != Some(s.source) {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
