@@ -1,8 +1,9 @@
 //! Paramètres persistants de Tour de table (fichier JSON dans le dossier de config de l'OS).
 
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
-use directories::ProjectDirs;
+use directories::{ProjectDirs, UserDirs};
 use serde::{Deserialize, Serialize};
 
 /// Façon de combiner les deux sources audio.
@@ -101,8 +102,31 @@ pub fn models_dir() -> PathBuf {
     data_dir().join("modeles")
 }
 
+/// Rencontres : dans le dossier Musique de l'utilisateur (localisé : « Musique » sous Windows en
+/// français, `~/Music` sous macOS, `XDG_MUSIC_DIR` sous Linux), à la vue de tous ses logiciels.
+/// Les modèles, la configuration, le journal et la corbeille restent dans `data_dir()`.
 pub fn meetings_dir() -> PathBuf {
+    static DOSSIER: OnceLock<PathBuf> = OnceLock::new();
+    DOSSIER
+        .get_or_init(|| match UserDirs::new() {
+            Some(u) => u.audio_dir().map_or_else(|| u.home_dir().join("Music"), PathBuf::from).join("Tour de table"),
+            None => old_meetings_dir(),
+        })
+        .clone()
+}
+
+/// Emplacement des rencontres jusqu'à la version 0.1.1.
+fn old_meetings_dir() -> PathBuf {
     data_dir().join("rencontres")
+}
+
+/// Déplace les rencontres de l'ancien emplacement vers le dossier Musique. Relancée à chaque
+/// démarrage : une rencontre qui n'a pas pu être déplacée est retentée la fois suivante.
+pub fn migrate_meetings() {
+    let (old, new) = (old_meetings_dir(), meetings_dir());
+    if old != new {
+        crate::storage::migrer(&old, &new);
+    }
 }
 
 fn config_path() -> PathBuf {

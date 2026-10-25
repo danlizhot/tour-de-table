@@ -17,11 +17,15 @@ sont conservées et ce qui peut, ou non, quitter votre appareil.
 | Donnée | Usage | Où elle est conservée |
 |---|---|---|
 | Son du micro et son de l'ordinateur (Teams, Zoom…) | Transcription, réécoute et découpage par point de l'ordre du jour | Fichier WAV dans le dossier de la rencontre, sur votre ordinateur |
-| Transcriptions et titres des rencontres | Affichage, exports, comptes rendus | Dossier de données de l'application, sur votre ordinateur |
+| Transcriptions et titres des rencontres | Affichage, exports, comptes rendus | Dossier « Tour de table » de votre dossier Musique, sur votre ordinateur (une rencontre par dossier) |
 | Enregistrements importés (MP4, M4A, MP3…) | Transcription | Lus sur place, jamais copiés ni envoyés |
 | Ordres du jour déposés (Word, PDF, texte) | Guider la transcription, rédiger le compte rendu | Le texte extrait est enregistré avec la rencontre |
 | Comptes rendus et résumés | Affichage et exports | Avec la rencontre |
-| Paramètres (périphériques, mode de captation, lexique) | Fonctionnement de l'application | Fichier de configuration local |
+| Paramètres (périphériques, mode de captation, lexique) | Fonctionnement de l'application | Dossier de l'application, sur votre ordinateur, avec les modèles et le journal |
+
+Si votre dossier Musique est synchronisé par un service infonuagique (OneDrive, iCloud Drive…),
+ce service copie aussi vos rencontres, selon ses propres conditions. Tour de table, lui, n'envoie
+rien.
 
 La reconnaissance vocale (Whisper) s'exécute sur votre processeur ou votre carte graphique.
 Aucun service infonuagique de transcription n'est utilisé.
@@ -44,8 +48,9 @@ L'application ne fait aucune autre connexion.
 
 Vos rencontres restent sur votre ordinateur jusqu'à ce que vous les supprimiez. Le bouton
 « Supprimer » déplace une rencontre dans le dossier « corbeille » de l'application, d'où vous
-pouvez la récupérer ou l'effacer définitivement. Désinstaller la version du Microsoft Store
-supprime toutes ses données (rencontres, modèles et paramètres).
+pouvez la récupérer ou l'effacer définitivement. Désinstaller l'application supprime ses modèles,
+ses paramètres et sa corbeille (version du Microsoft Store), mais **pas vos rencontres** : elles
+restent dans Musique/Tour de table, où vous pouvez les effacer vous-même.
 
 ## Votre responsabilité lors de l'enregistrement
 

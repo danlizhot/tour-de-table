@@ -88,12 +88,9 @@ impl TourDeTableApp {
             return;
         }
         let name = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let mut meeting = Meeting::new(models::RECOMMENDED);
-        meeting.title = name.clone();
         // Date de l'enregistrement plutôt que celle de l'import, si connue.
-        if let Ok(modified) = path.metadata().and_then(|m| m.modified()) {
-            meeting.started_at = modified.into();
-        }
+        let started_at = path.metadata().and_then(|m| m.modified()).map_or_else(|_| chrono::Local::now(), Into::into);
+        let mut meeting = Meeting::nouvelle(models::RECOMMENDED, Some(name.clone()), started_at);
         meeting.agenda = self.draft_agenda.take();
         let _ = meeting.save();
         self.live = Some(meeting);

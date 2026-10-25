@@ -30,7 +30,8 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   historique), `live.rs` (rencontre en cours, import, contrôles), `past.rs` (fiche d'une
   rencontre, compte rendu), `agenda.rs` (ordre du jour), `settings.rs` (Paramètres),
   `widgets.rs` (couleurs, composants, logo). Garder chaque fichier sous ~700 lignes.
-* `storage.rs` : une rencontre = un dossier avec `rencontre.json`, sauvegardé après chaque
+* `storage.rs` : une rencontre = un dossier de Musique/Tour de table (nom fixé à la création,
+  champ `dossier`) avec `rencontre.json`, sauvegardé après chaque
   segment (écriture atomique `.tmp` + `rename`).
 * `summary.rs` : compte rendu par le programme auxiliaire.
 * `quebec.rs` : invite québécoise, typographie OQLF, lexique, filtre d'hallucinations.

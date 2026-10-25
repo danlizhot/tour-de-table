@@ -21,6 +21,7 @@ fn main() {
     diagnostic::init();
     whisper_rs::install_logging_hooks();
     config::migrate_from_noter();
+    config::migrate_meetings();
 
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).is_some_and(|a| a == "--transcrire") {

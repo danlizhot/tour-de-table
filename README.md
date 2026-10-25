@@ -146,14 +146,17 @@ tourdetable --transcrire enregistrement.m4a                       # MP4, M4A, MP
 tourdetable --compte-rendu ordre-du-jour.docx enregistrement.mp4   # ou transcription.txt
 ```
 
-Emplacement des données (l'application s'appelait auparavant « Noter » : ses données sont
-déplacées automatiquement au premier lancement) :
+Emplacement des données. Les rencontres sont dans le dossier Musique, une par dossier nommé
+d'après sa date et son titre (`2026-10-30-rencontre-ca-mensuel`, ou `2026-10-30-rencontre`
+sans titre) ; renommer une rencontre ne renomme pas son dossier. Les modèles, la configuration,
+le journal et la corbeille restent dans le dossier de l'application. Les rencontres des versions
+précédentes (et celles de « Noter », l'ancien nom) y sont déplacées automatiquement au lancement.
 
-| Système | Dossier |
-|---|---|
-| Windows | `%APPDATA%\TourDeTable\TourDeTable\data\` |
-| macOS | `~/Library/Application Support/ca.TourDeTable.TourDeTable/` |
-| Linux | `~/.local/share/tourdetable/` |
+| Système | Rencontres | Modèles, paramètres, journal, corbeille |
+|---|---|---|
+| Windows | `Musique\Tour de table\` | `%APPDATA%\TourDeTable\TourDeTable\data\` |
+| macOS | `~/Music/Tour de table/` | `~/Library/Application Support/ca.TourDeTable.TourDeTable/` |
+| Linux | `$XDG_MUSIC_DIR/Tour de table/` (souvent `~/Musique`) | `~/.local/share/tourdetable/` |
 
 ## Dépannage
 
