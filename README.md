@@ -204,7 +204,12 @@ modification, régénérez la page avec
 ```
 src/
   main.rs        point d'entrée (interface ou --transcrire)
-  app.rs         interface egui, logo vectoriel
+  ui/mod.rs      interface egui : état, boucle, barre du haut, historique
+  ui/live.rs     rencontre en cours, import, contrôles
+  ui/past.rs     fiche d'une rencontre, compte rendu
+  ui/agenda.rs   ordre du jour
+  ui/settings.rs Paramètres
+  ui/widgets.rs  composants, couleurs, logo vectoriel
   audio/mod.rs   capture micro + loopback par plateforme
   audio/dsp.rs   mono, rééchantillonnage 16 kHz (FIR), détection de voix, découpage
   recorder.rs    session : alignement horloge, mixage, WAV

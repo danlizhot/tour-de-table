@@ -3,7 +3,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod agenda;
-mod app;
 mod audio;
 mod cli;
 mod config;
@@ -14,6 +13,7 @@ mod recorder;
 mod storage;
 mod stt;
 mod summary;
+mod ui;
 
 use eframe::Renderer;
 
@@ -122,7 +122,7 @@ fn run_gui(renderer: Renderer) -> eframe::Result {
     eframe::run_native(
         "Tour de table",
         options,
-        Box::new(|cc| Ok(Box::new(app::TourDeTableApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(ui::TourDeTableApp::new(cc)))),
     )
 }
 
