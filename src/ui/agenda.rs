@@ -231,23 +231,44 @@ impl TourDeTableApp {
                 }
             });
             let Some(a) = &slot else { return };
-            if editer {
-                ui.add_space(4.0);
-                if let Some(a) = self.agenda_slot().as_mut() {
-                    let (e, r) = editeur(ui, a, !a_des_periodes);
-                    (edition, renomme) = (e, r);
-                }
-                if !a.points.is_empty() && ui.small_button("Terminé").clicked() {
-                    self.edit_points = false;
-                }
-            } else {
-                ui.add_space(2.0);
-                for (i, p) in a.points.iter().enumerate() {
-                    let duree = durees.get(i).copied().flatten();
-                    if let Some(clic) = ligne_point(ui, i, p, actif == Some(i), duree, peut_debuter) {
-                        debuter = Some(Some(clic));
+            // Un long ordre du jour défile plutôt que de cacher la transcription.
+            let hauteur = ui.ctx().content_rect().height() * 0.4;
+            if editer && a.points.is_empty() {
+                ui.label(RichText::new("Aucun point reconnu dans l'ordre du jour : ajoutez-les ici pour découper la rencontre par point.").weak());
+            }
+            egui::ScrollArea::vertical().id_salt("points").max_height(hauteur).auto_shrink([false, true]).show(ui, |ui| {
+                if editer {
+                    ui.add_space(4.0);
+                    if let Some(a) = self.agenda_slot().as_mut() {
+                        (edition, renomme) = editeur(ui, a);
+                    }
+                } else {
+                    ui.add_space(2.0);
+                    for (i, p) in a.points.iter().enumerate() {
+                        let duree = durees.get(i).copied().flatten();
+                        if let Some(clic) = ligne_point(ui, i, p, actif == Some(i), duree, peut_debuter) {
+                            debuter = Some(Some(clic));
+                        }
                     }
                 }
+            });
+            // Hors de la zone qui défile : toujours visibles.
+            if editer {
+                ui.horizontal(|ui| {
+                    if ui.small_button("Ajouter un point").clicked() {
+                        edition = Some(Edition::Ajouter);
+                        ui.data_mut(|d| d.insert_temp(egui::Id::unique(NOUVEAU_POINT), true));
+                    }
+                    if !a_des_periodes
+                        && !a.text.trim().is_empty()
+                        && ui.small_button("Relire le texte").on_hover_text("Reconnaît à nouveau les points dans le texte de l'ordre du jour").clicked()
+                    {
+                        edition = Some(Edition::Analyser);
+                    }
+                    if !a.points.is_empty() && ui.small_button("Terminé").clicked() {
+                        self.edit_points = false;
+                    }
+                });
             }
             egui::CollapsingHeader::new("Voir et modifier le texte").id_salt("agenda_text").show(ui, |ui| {
                 if let Some(a) = self.agenda_slot().as_mut() {
@@ -298,6 +319,9 @@ impl TourDeTableApp {
         }
     }
 }
+
+/// Clé (mémoire egui) du point qui vient d'être ajouté dans l'éditeur.
+const NOUVEAU_POINT: &str = "nouveau_point";
 
 /// Les polices intégrées n'ont pas de flèches.
 const RACCOURCIS: &str = if cfg!(target_os = "macos") {
@@ -355,14 +379,13 @@ fn ligne_point(ui: &mut Ui, i: usize, p: &Point, actif: bool, duree: Option<u64>
     clic
 }
 
-/// Éditeur des points : renommer, ajouter, supprimer, réordonner. Retourne la modification
+/// Lignes de l'éditeur des points : renommer, supprimer, réordonner. Retourne la modification
 /// demandée et si un titre a été renommé (perte du focus).
-fn editeur(ui: &mut Ui, a: &mut Agenda, peut_analyser: bool) -> (Option<Edition>, bool) {
+fn editeur(ui: &mut Ui, a: &mut Agenda) -> (Option<Edition>, bool) {
     let mut edition = None;
     let mut renomme = false;
-    if a.points.is_empty() {
-        ui.label(RichText::new("Aucun point reconnu dans l'ordre du jour : ajoutez-les ici pour découper la rencontre par point.").weak());
-    }
+    // Point qui vient d'être ajouté : on y place le curseur.
+    let nouveau = ui.data_mut(|d| d.remove_temp::<bool>(egui::Id::unique(NOUVEAU_POINT))).unwrap_or(false);
     let n = a.points.len();
     for (i, p) in a.points.iter_mut().enumerate() {
         ui.horizontal(|ui| {
@@ -378,20 +401,14 @@ fn editeur(ui: &mut Ui, a: &mut Agenda, peut_analyser: bool) -> (Option<Edition>
                 if ui.add_enabled(i > 0, egui::Button::new("Monter").small()).clicked() {
                     edition = Some(Edition::Monter(i));
                 }
-                renomme |= ui.add(egui::TextEdit::singleline(&mut p.titre).desired_width(f32::INFINITY)).lost_focus();
+                let champ = ui.add(egui::TextEdit::singleline(&mut p.titre).desired_width(f32::INFINITY));
+                if nouveau && i + 1 == n {
+                    champ.request_focus();
+                    champ.scroll_to_me(None);
+                }
+                renomme |= champ.lost_focus();
             });
         });
     }
-    ui.horizontal(|ui| {
-        if ui.small_button("Ajouter un point").clicked() {
-            edition = Some(Edition::Ajouter);
-        }
-        if peut_analyser
-            && !a.text.trim().is_empty()
-            && ui.small_button("Relire le texte").on_hover_text("Reconnaît à nouveau les points dans le texte de l'ordre du jour").clicked()
-        {
-            edition = Some(Edition::Analyser);
-        }
-    });
     (edition, renomme)
 }
