@@ -194,7 +194,7 @@ impl TourDeTableApp {
         ui.add_space(6.0);
         let recording = self.recorder.is_some();
         ui.horizontal(|ui| {
-            let can_start = matches!(self.model, ModelState::Ready(_) | ModelState::EnPause) && !self.finishing;
+            let can_start = matches!(self.model, ModelState::Ready) && !self.finishing;
             let resp = record_button(ui, recording, recording || can_start);
             if resp.clicked() {
                 if recording {

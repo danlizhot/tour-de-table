@@ -31,7 +31,6 @@ impl TourDeTableApp {
     /// Rédige le compte rendu dans un fil ; `reprendre` réutilise les résumés de points déjà
     /// enregistrés (resume.md) d'un compte rendu interrompu.
     pub(super) fn summarize(&mut self, idx: usize, reprendre: bool) {
-        self.liberer_whisper();
         self.passer_en_arriere_plan("Le compte rendu se rédige en arrière-plan : Tour de table réapparaîtra dès qu'il sera prêt.");
         let m = &self.meetings[idx];
         let (tx, rx) = crossbeam_channel::bounded(1);

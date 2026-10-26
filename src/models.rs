@@ -1,6 +1,6 @@
 //! Catalogue et téléchargement des modèles : Whisper (format ggml de whisper.cpp) et rédaction
-//! (GGUF, llama.cpp). Le modèle de rédaction est choisi d'après la mémoire vive, sans choix
-//! offert à l'utilisateur. Les deux sont installés automatiquement au premier démarrage
+//! (GGUF, llama.cpp). Le même modèle de rédaction sur tous les postes, sans choix offert à
+//! l'utilisateur. Les deux sont installés automatiquement au premier démarrage
 //! (`ui/installation.rs`) : l'application est distribuée sans aucun modèle.
 
 use std::io::{Read, Write};
@@ -19,7 +19,7 @@ pub struct ModelInfo {
 }
 
 /// Le seul modèle Whisper : multilingue (les modèles « .en » ne savent pas le
-/// français), quantifié en 5 bits, ~1,2 Go de RAM en transcription, convient dès 8 Go.
+/// français), quantifié en 5 bits, ~1,2 Go de RAM en transcription.
 pub const WHISPER: ModelInfo = ModelInfo { file: RECOMMENDED, label: "Large v3 Turbo (q5)" };
 
 /// Taille exacte et SHA-256 de chaque fichier téléchargé, vérifiés à la fin du téléchargement.
@@ -35,41 +35,31 @@ const EMPREINTES: &[Empreinte] = &[Empreinte {
     sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
 }];
 
-/// Palier de mémoire vive : avec 8 Go, Whisper est déchargé pendant la rédaction.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Palier {
-    /// 8 Go et moins : Whisper est déchargé pendant la rédaction.
-    Huit,
-    /// 16 Go et plus.
-    Seize,
-}
-
 const GIO: u64 = 1 << 30;
 
-impl Palier {
-    /// Un poste « de 16 Go » en déclare un peu moins (mémoire réservée au système ou à la carte
-    /// graphique intégrée) : les seuils sont donc sous les tailles nominales.
-    pub fn selon_ram(octets: u64) -> Self {
-        match octets {
-            o if o >= 14 * GIO => Palier::Seize,
-            _ => Palier::Huit,
-        }
-    }
+/// Mémoire vive minimale : 16 Go. Un poste « de 16 Go » en déclare un peu moins (mémoire
+/// réservée au système ou à la carte graphique intégrée) : le seuil est donc sous la taille
+/// nominale.
+const MEMOIRE_MINIMALE: u64 = 14 * GIO;
 
-    pub fn nom(self) -> &'static str {
-        match self {
-            Palier::Huit => "8 Go",
-            Palier::Seize => "16 Go",
-        }
-    }
+fn memoire_suffisante(octets: u64) -> bool {
+    octets >= MEMOIRE_MINIMALE
+}
+
+/// Mémoire vive du poste en Gio si elle est sous le minimum de 16 Go, calculée au lancement.
+pub fn memoire_insuffisante() -> Option<f64> {
+    let ram = ram_totale();
+    log::info!("Mémoire vive : {:.1} Gio", ram as f64 / GIO as f64);
+    (!memoire_suffisante(ram)).then_some(ram as f64 / GIO as f64)
 }
 
 /// Modèle de langue du compte rendu (GGUF Q4_K_M, llama.cpp), le même sur tous les postes.
-/// Licence Apache 2.0 : utilisable sans restriction par un organisme. Qwen3.5 4B (architecture
-/// hybride, attention linéaire « Gated DeltaNet ») lit les longues transcriptions vite : sur une
-/// vraie rencontre de 27 min (processeur seul), 13 min de compte rendu contre 29 pour Qwen3 4B
-/// Instruct 2507. Il réfléchit par défaut : le programme de rédaction le fait répondre
-/// directement. Ministral 3 8B était plus lent encore ; Qwen3 30B-A3B demandait 18,6 Go.
+/// Licence Apache 2.0 : utilisable sans restriction par un organisme. Qwen3.5 9B (architecture
+/// hybride, attention linéaire « Gated DeltaNet ») lit les longues transcriptions vite pour sa
+/// taille. Qwen3.5 4B, plus rapide (13 min de compte rendu pour une rencontre de 27 min, processeur
+/// seul), inventait trop de sujets : d'où le minimum de 16 Go. Il réfléchit par défaut : le
+/// programme de rédaction le fait répondre directement. Ministral 3 8B était plus lent ; Qwen3
+/// 30B-A3B demandait 18,6 Go.
 pub struct LlmInfo {
     pub file: &'static str,
     pub label: &'static str,
@@ -83,35 +73,26 @@ pub struct LlmInfo {
 
 pub const LLM_CATALOG: &[LlmInfo] = &[
     LlmInfo {
-        file: "Qwen3.5-4B-Q4_K_M.gguf",
-        label: "Qwen3.5 4B",
-        url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf",
-        octets: 2_740_937_888,
-        sha256: "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        ram_mb: 3300,
+        file: "Qwen3.5-9B-Q4_K_M.gguf",
+        label: "Qwen3.5 9B",
+        url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf",
+        octets: 5_680_522_464,
+        sha256: "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
+        ram_mb: 6600,
     },
+];
+
+/// Modèles de rédaction des versions précédentes, supprimés une fois le modèle actuel installé.
+const ANCIENS_MODELES_REDACTION: &[&str] = &[
+    "Qwen3.5-4B-Q4_K_M.gguf",
+    "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+    "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
+    "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
+    "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
 ];
 
 pub fn llm_info(file: &str) -> Option<&'static LlmInfo> {
     LLM_CATALOG.iter().find(|m| m.file == file)
-}
-
-static PALIER: OnceLock<Palier> = OnceLock::new();
-
-/// Palier de ce poste, calculé une fois par lancement d'après la mémoire vive totale.
-pub fn palier() -> Palier {
-    *PALIER.get_or_init(|| {
-        let ram = ram_totale();
-        let p = Palier::selon_ram(ram);
-        log::info!("Mémoire vive : {:.1} Gio, palier {}", ram as f64 / GIO as f64, p.nom());
-        p
-    })
-}
-
-/// Mesure du nettoyage et du compte rendu sur un autre palier que celui du poste (ligne de
-/// commande seulement). Sans effet si le palier a déjà été calculé.
-pub fn forcer_palier(p: Palier) {
-    let _ = PALIER.set(p);
 }
 
 /// Modèle de rédaction.
@@ -124,15 +105,16 @@ fn ram_totale() -> u64 {
     System::new_with_specifics(RefreshKind::nothing().with_memory(MemoryRefreshKind::nothing().with_ram())).total_memory()
 }
 
-/// Modèles de rédaction d'un autre palier encore présents (mémoire ajoutée ou retirée depuis
-/// leur téléchargement), avec leurs fichiers `.part` et `.verifie` : à supprimer une fois le
-/// modèle du palier actuel installé et vérifié.
+/// Modèles de rédaction remplacés encore présents, avec leurs fichiers `.part` et `.verifie` : à
+/// supprimer une fois le modèle actuel installé et vérifié.
 pub fn modeles_redaction_obsoletes() -> Vec<PathBuf> {
     let actuel = modele_redaction().file;
     LLM_CATALOG
         .iter()
-        .filter(|m| m.file != actuel)
-        .flat_map(|m| [path(m.file), partiel(m.file), marque(m.file)])
+        .map(|m| m.file)
+        .chain(ANCIENS_MODELES_REDACTION.iter().copied())
+        .filter(|f| *f != actuel)
+        .flat_map(|f| [path(f), partiel(f), marque(f)])
         .filter(|p| p.exists())
         .collect()
 }
@@ -403,18 +385,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn palier_selon_la_ram() {
-        assert_eq!(Palier::selon_ram(4 * GIO), Palier::Huit);
+    fn memoire_minimale() {
         // Poste de 8 Go : ~7,6 Gio déclarés.
-        assert_eq!(Palier::selon_ram(7 * GIO + GIO / 2), Palier::Huit);
-        assert_eq!(Palier::selon_ram(14 * GIO - 1), Palier::Huit);
+        assert!(!memoire_suffisante(7 * GIO + GIO / 2));
+        assert!(!memoire_suffisante(14 * GIO - 1));
         // Poste de 16 Go : ~15,3 Gio, parfois moins avec une carte graphique intégrée.
-        assert_eq!(Palier::selon_ram(14 * GIO), Palier::Seize);
-        assert_eq!(Palier::selon_ram(15 * GIO + GIO / 3), Palier::Seize);
-        // Poste de 32 Go et plus.
-        assert_eq!(Palier::selon_ram(31 * GIO), Palier::Seize);
-        assert_eq!(Palier::selon_ram(128 * GIO), Palier::Seize);
-        assert_eq!(modele_redaction().file, "Qwen3.5-4B-Q4_K_M.gguf");
+        assert!(memoire_suffisante(14 * GIO));
+        assert!(memoire_suffisante(15 * GIO + GIO / 3));
+        assert!(memoire_suffisante(128 * GIO));
+        assert_eq!(modele_redaction().file, "Qwen3.5-9B-Q4_K_M.gguf");
+        assert!(!ANCIENS_MODELES_REDACTION.contains(&modele_redaction().file));
     }
 
     #[test]

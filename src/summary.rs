@@ -90,7 +90,7 @@ const CHUNK_CHARS: usize = 24_000;
 
 const NON_ABORDE: &str = "Point non abordé ou reporté.";
 
-/// Longueur maximale d'une réponse, en jetons. La rédaction (environ 2 à 5 jetons par seconde
+/// Longueur maximale d'une réponse, en jetons. La rédaction (quelques jetons par seconde
 /// sur processeur seul) prend l'essentiel du temps d'un compte rendu : chaque point est court.
 const JETONS_POINT: usize = 600;
 /// Tour de table : un paragraphe par personne, souvent une dizaine.
@@ -734,7 +734,7 @@ impl Session {
     /// est alors inutilisable.
     pub fn rediger(&mut self, prompt: &str, max_jetons: usize, progress: Option<&AtomicUsize>, annuler: Option<&AtomicBool>) -> Result<String> {
         // Contexte de travail : invite (≈ 3 caractères par jeton en français) + réponse.
-        // Plafonné à 12 k jetons pour rester raisonnable sur un poste de 8 Go.
+        // Plafonné à 12 k jetons pour garder la mémoire du contexte raisonnable.
         let contexte = (prompt.chars().count() / 3 + max_jetons + 256).clamp(4096, 12288);
         let requete = json!({
             "modele": self.modele,

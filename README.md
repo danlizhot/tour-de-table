@@ -30,12 +30,13 @@ Inspiré de [Meetily](https://github.com/Zackriya-Solutions/meetily), réécrit 
 * L'écosystème couvre déjà tout le nécessaire : `cpal` pour l'audio (WASAPI loopback sous Windows,
   « process tap » sous macOS), `whisper-rs` et `egui`.
 
-## Mémoire : conçu pour 8 Go, optimisé pour 16 Go
+## Mémoire : 16 Go minimum
 
 Tour de table n'offre **aucun choix de modèle** : il utilise toujours **Whisper Large v3 Turbo q5**
 (574 Mo à télécharger, ~1,2 Go de RAM en transcription, mesuré : 0,9 à 1,15 Go), le meilleur
-rapport précision/vitesse sur l'accent québécois, et qui convient dès 8 Go. Rien à régler pour
-déployer l'application dans une organisation.
+rapport précision/vitesse sur l'accent québécois. Rien à régler pour déployer l'application dans
+une organisation. **16 Go de mémoire vive sont nécessaires** pour le compte rendu : sous ce seuil,
+Tour de table l'indique au démarrage.
 
 * Modèle **quantifié en 5 bits** : environ 3× moins de mémoire, avec une perte de précision minime.
 * Il reste en mémoire entre les rencontres (démarrage instantané).
@@ -131,17 +132,18 @@ saisir à la main.
 
 **Modèle de langue intégré : rien à installer.** Le programme auxiliaire `tourdetable-redaction`,
 livré avec l'application, fait tourner llama.cpp sur l'ordinateur, avec un seul chargement du
-modèle pour tout le compte rendu. Le modèle, le même sur tous les postes, est **Qwen3.5 4B**
-(licence Apache 2.0, 2,7 Go à télécharger, ~3,3 Go de mémoire pendant la rédaction). Il réfléchit
+modèle pour tout le compte rendu. Le modèle, le même sur tous les postes, est **Qwen3.5 9B**
+(licence Apache 2.0, 5,7 Go à télécharger, ~6,6 Go de mémoire pendant la rédaction). Qwen3.5 4B,
+deux fois plus rapide, inventait trop de sujets dans les comptes rendus. Il réfléchit
 par défaut avant de répondre : Tour de table désactive cette réflexion, trop lente sur un
 ordinateur sans carte graphique.
 
 Chaque téléchargement reprend là où il s'était arrêté, et sa taille et son SHA-256 sont vérifiés ;
 un fichier endommagé est supprimé et téléchargé une seconde fois. À chaque démarrage, la taille
-des modèles est contrôlée : s'il en manque un (ou si la mémoire vive du poste a changé de palier),
+des modèles est contrôlée : s'il en manque un (ou si une nouvelle version a changé de modèle),
 l'écran d'installation revient pour ce qui manque seulement.
 La transcription doit être terminée avant la rédaction : les deux modèles ne calculent jamais en
-même temps. Avec 8 Go, Whisper est même déchargé pendant la rédaction et rechargé ensuite.
+même temps.
 
 ## Sources audio
 
@@ -164,7 +166,7 @@ source sur l'horloge pour garder des horodatages justes.
 ## Utilisation
 
 1. Lancez Tour de table. Au premier démarrage, il installe tout seul ses deux modèles, sans rien
-   demander : reconnaissance de la parole (574 Mo), puis rédaction des comptes rendus (2,7 Go).
+   demander : reconnaissance de la parole (574 Mo), puis rédaction des comptes rendus (5,7 Go).
    L'écran « Installation… » montre l'avancement et le temps restant. C'est la seule connexion
    Internet, et elle n'a lieu qu'une fois (Hugging Face). Vous pouvez fermer l'application en
    cours de route : l'installation reprend là où elle s'était arrêtée au démarrage suivant.
@@ -248,7 +250,7 @@ supprimé, et l'écran d'installation tente de le télécharger.
 | Fichier | Octets | SHA-256 | Source |
 |---|---|---|---|
 | `ggml-large-v3-turbo-q5_0.bin` | 574 041 195 | `394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2` | https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin |
-| `Qwen3.5-4B-Q4_K_M.gguf` | 2 740 937 888 | `00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4` | https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf |
+| `Qwen3.5-9B-Q4_K_M.gguf` | 5 680 522 464 | `03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8` | https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf |
 
 | Système | Dossier des modèles (pour chaque utilisateur) |
 |---|---|

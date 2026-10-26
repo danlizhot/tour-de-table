@@ -1,5 +1,5 @@
 //! Installation des modèles, sans aucun choix ni clic : au premier démarrage, et ensuite pour
-//! ce qui manque seulement (modèle effacé, palier de mémoire vive changé). Plein écran tant que
+//! ce qui manque seulement (modèle effacé, modèle remplacé par une nouvelle version). Plein écran tant que
 //! quelque chose doit être téléchargé ; les modèles le sont l'un après l'autre, dans un fil, et
 //! une fermeture de l'application en cours de route reprend au démarrage suivant (`.part`).
 //!
@@ -61,8 +61,8 @@ pub(super) struct Installation {
 }
 
 impl Installation {
-    /// Modèles manquants ou à vérifier ; `None` si tout est prêt. Les modèles de rédaction d'un
-    /// autre palier ne sont supprimés qu'une fois le modèle actuel installé et vérifié.
+    /// Modèles manquants ou à vérifier ; `None` si tout est prêt. Les anciens modèles de
+    /// rédaction ne sont supprimés qu'une fois le modèle actuel installé et vérifié.
     pub(super) fn au_demarrage() -> Option<Self> {
         let lignes: Vec<Ligne> = models::requis()
             .into_iter()

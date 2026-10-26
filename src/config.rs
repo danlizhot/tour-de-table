@@ -19,6 +19,16 @@ pub enum CaptureMode {
     Mixe,
 }
 
+/// Apparence de la fenêtre.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Theme {
+    /// Celle du système d'exploitation.
+    #[default]
+    Systeme,
+    Clair,
+    Fonce,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -35,6 +45,7 @@ pub struct Config {
     pub glossary: String,
     /// Passer seul au point dont l'annonce est entendue ; sinon, son bouton est mis en évidence.
     pub passage_auto: bool,
+    pub theme: Theme,
 
     // Anciens choix, lus seulement pour journaliser la bascule sur les choix
     // automatiques ; ils disparaissent du fichier au prochain enregistrement.
@@ -58,6 +69,7 @@ impl Default for Config {
             mode: CaptureMode::Separe,
             glossary: String::new(),
             passage_auto: false,
+            theme: Theme::Systeme,
             ancien_modele: None,
             ancien_moteur: None,
             ancien_modele_redaction: None,
@@ -88,7 +100,7 @@ pub fn model_path() -> PathBuf {
     models_dir().join(crate::models::RECOMMENDED)
 }
 
-/// Moteur de rédaction (nettoyage et compte rendu) : le modèle du palier de mémoire vive.
+/// Moteur de rédaction (nettoyage et compte rendu).
 pub fn moteur() -> crate::summary::Moteur {
     crate::summary::Moteur { modele: models_dir().join(crate::models::modele_redaction().file), fils: threads() }
 }

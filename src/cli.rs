@@ -151,12 +151,9 @@ fn nettoyer(m: &mut Meeting) -> Result<()> {
 }
 
 /// `source` : enregistrement (transcrit puis nettoyé), `rencontre.json` (nettoyé à nouveau, pour
-/// mesurer) ou transcription en texte. `palier` et `modele` : mesure sur un autre palier ou avec
-/// un autre modèle de rédaction que ceux du poste.
-pub fn compte_rendu(agenda_path: &str, source: &str, palier: Option<crate::models::Palier>, modele: Option<&str>) -> Result<()> {
-    if let Some(p) = palier {
-        crate::models::forcer_palier(p);
-    }
+/// mesurer) ou transcription en texte. `modele` : mesure avec un autre modèle de
+/// rédaction que celui de l'application.
+pub fn compte_rendu(agenda_path: &str, source: &str, modele: Option<&str>) -> Result<()> {
     let mut requis = Vec::new();
     if modele.is_none() {
         requis.push(crate::models::modele_redaction().file);
@@ -169,7 +166,7 @@ pub fn compte_rendu(agenda_path: &str, source: &str, palier: Option<crate::model
     if let Some(m) = modele {
         moteur.modele = std::path::PathBuf::from(m);
     }
-    eprintln!("Palier {} : {}", crate::models::palier().nom(), moteur.nom());
+    eprintln!("Modèle de rédaction : {}", moteur.nom());
     let agenda = crate::agenda::read(Path::new(agenda_path))?;
     eprintln!("Ordre du jour lu ({} caractères) :\n{agenda}\n", agenda.chars().count());
 

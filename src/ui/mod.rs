@@ -17,23 +17,21 @@ use crossbeam_channel::{Receiver, Sender};
 use eframe::egui::{self, Align, Color32, CornerRadius, Layout, RichText, Sense, Ui, Vec2};
 
 use crate::audio::{self, DeviceInfo, dsp::Utterance};
-use crate::config::{self, Config};
+use crate::config::{self, Config, Theme};
 use crate::models;
 use crate::quebec::Glossary;
 use crate::recorder::Recorder;
 use crate::storage::{self, Agenda, Meeting, clock};
 use crate::stt::{Engine, Reply, Request, Settings};
-use widgets::{ROUGE, SALLE, draw_logo, short_model, style};
+use widgets::{ROUGE, SALLE, draw_logo, style, theme_button};
 
 enum ModelState {
     Missing,
     /// Modèles copiés à l'avance dont l'empreinte est vérifiée avant le premier chargement.
     Verification,
     Loading,
-    Ready(String),
+    Ready,
     Failed(String),
-    /// Déchargé pendant la rédaction (palier 8 Go) ; rechargé à la fin ou dès qu'on enregistre.
-    EnPause,
 }
 
 enum View {
@@ -143,9 +141,28 @@ impl TourDeTableApp {
         };
         app.reprendre_rencontres_interrompues();
         app.reprendre_nettoyages();
+        app.appliquer_theme();
         app.push_settings();
         app.load_model();
+        if let Some(gio) = models::memoire_insuffisante() {
+            app.notify(
+                format!(
+                    "Cet ordinateur a {} Go de mémoire vive : Tour de table demande au moins 16 Go. \
+                     La rédaction du compte rendu risque d'être très lente ou d'échouer.",
+                    format!("{gio:.1}").replace('.', ",")
+                ),
+                true,
+            );
+        }
         app
+    }
+
+    fn appliquer_theme(&self) {
+        self.ctx.set_theme(match self.cfg.theme {
+            Theme::Systeme => egui::ThemePreference::System,
+            Theme::Clair => egui::ThemePreference::Light,
+            Theme::Fonce => egui::ThemePreference::Dark,
+        });
     }
 
     pub(super) fn push_settings(&self) {
@@ -260,14 +277,14 @@ impl TourDeTableApp {
         while let Ok(u) = self.utt_rx.try_recv() {
             let context = self.live.as_ref().map(|m| m.recent_text()).unwrap_or_default();
             // En chargement : la requête `Load` précède, le fil Whisper les traite dans l'ordre.
-            if matches!(self.model, ModelState::Ready(_) | ModelState::Loading) {
+            if matches!(self.model, ModelState::Ready | ModelState::Loading) {
                 self.in_flight += 1;
                 let _ = self.engine.tx.send(Request::Transcribe { utterance: u, context });
             }
         }
         while let Ok(reply) = self.engine.rx.try_recv() {
             match reply {
-                Reply::Loaded(Ok(name)) => self.model = ModelState::Ready(name),
+                Reply::Loaded(Ok(_)) => self.model = ModelState::Ready,
                 Reply::Loaded(Err(e)) => {
                     self.notify(format!("Modèle : {e}"), true);
                     self.model = ModelState::Failed(e);
@@ -329,37 +346,11 @@ impl TourDeTableApp {
             self.rappeler();
         }
         self.pump_nettoyage();
-        self.recharger_whisper();
-    }
-
-    /// Palier 8 Go : Whisper est déchargé avant de lancer le programme de rédaction, pour que
-    /// les deux modèles ne se partagent pas la mémoire.
-    pub(super) fn liberer_whisper(&mut self) {
-        if models::palier() == models::Palier::Huit
-            && matches!(self.model, ModelState::Ready(_))
-            && self.recorder.is_none()
-            && !self.finishing
-            && self.import_job.is_none()
-        {
-            log::info!("Palier 8 Go : Whisper déchargé pendant la rédaction");
-            let _ = self.engine.tx.send(Request::Unload);
-            self.model = ModelState::EnPause;
-        }
-    }
-
-    /// Whisper en pause et plus aucune rédaction : il est rechargé.
-    fn recharger_whisper(&mut self) {
-        if matches!(self.model, ModelState::EnPause) && self.summary_job.is_none() && !self.nettoyage_en_cours() {
-            self.load_model();
-        }
     }
 
     /// Enregistrement ou import qui démarre : Whisper doit être chargé (ou en chargement).
     pub(super) fn whisper_disponible(&mut self) -> bool {
-        if matches!(self.model, ModelState::EnPause) {
-            self.load_model();
-        }
-        matches!(self.model, ModelState::Ready(_) | ModelState::Loading)
+        matches!(self.model, ModelState::Ready | ModelState::Loading)
     }
 
     /// Énoncés de l'import en cours revenus de Whisper : le fil de l'import envoie le bloc suivant.
@@ -407,20 +398,22 @@ impl TourDeTableApp {
                 ui.label(RichText::new("Tout le monde parle, rien ne se perd.").small().weak());
             });
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.button("Paramètres").clicked() {
-                    self.show_settings = !self.show_settings;
-                    if self.show_settings {
-                        self.mics = audio::list_microphones();
-                        self.system_sources = audio::list_system_sources();
-                    }
+                if theme_button(ui, self.cfg.theme).clicked() {
+                    self.cfg.theme = match self.cfg.theme {
+                        Theme::Systeme => Theme::Clair,
+                        Theme::Clair => Theme::Fonce,
+                        Theme::Fonce => Theme::Systeme,
+                    };
+                    self.appliquer_theme();
+                    self.cfg.save();
                 }
+                // Le modèle est choisi et installé seul : on ne parle de lui que s'il n'est pas prêt.
                 let (txt, color) = match &self.model {
-                    ModelState::Missing => ("Aucun modèle installé".to_string(), ROUGE),
-                    ModelState::Loading => ("Chargement du modèle…".to_string(), Color32::from_rgb(0xD9, 0x77, 0x06)),
-                    ModelState::Verification => ("Vérification des modèles…".to_string(), Color32::from_rgb(0xD9, 0x77, 0x06)),
-                    ModelState::Ready(n) => (format!("Modèle : {}", short_model(n)), SALLE),
-                    ModelState::Failed(_) => ("Modèle en erreur".to_string(), ROUGE),
-                    ModelState::EnPause => ("Modèle en pause pendant la rédaction".to_string(), Color32::from_rgb(0xD9, 0x77, 0x06)),
+                    ModelState::Ready => return,
+                    ModelState::Missing => ("Aucun modèle installé", ROUGE),
+                    ModelState::Loading => ("Chargement du modèle…", Color32::from_rgb(0xD9, 0x77, 0x06)),
+                    ModelState::Verification => ("Vérification des modèles…", Color32::from_rgb(0xD9, 0x77, 0x06)),
+                    ModelState::Failed(_) => ("Modèle en erreur", ROUGE),
                 };
                 let chip = ui.label(RichText::new(txt).color(color).small());
                 if let ModelState::Failed(e) = &self.model {
@@ -433,6 +426,18 @@ impl TourDeTableApp {
     }
 
     fn side_list(&mut self, ui: &mut Ui) {
+        // Paramètres au bas de la colonne, comme le compte dans les applications de messagerie.
+        egui::Panel::bottom("pied").show_separator_line(false).show(ui, |ui| {
+            ui.add_space(4.0);
+            if ui.add(egui::Button::new("Paramètres").min_size(Vec2::new(ui.available_width(), 30.0))).clicked() {
+                self.show_settings = !self.show_settings;
+                if self.show_settings {
+                    self.mics = audio::list_microphones();
+                    self.system_sources = audio::list_system_sources();
+                }
+            }
+            ui.add_space(6.0);
+        });
         ui.add_space(6.0);
         let live_label = if self.recorder.is_some() { "Rencontre en cours" } else { "+ Nouvelle rencontre" };
         let selected = matches!(self.view, View::Live);
