@@ -149,17 +149,36 @@ Ne recopie pas le lieu ou l'heure de cette rencontre-ci.\n";
 
 const PRESENCES_A_VERIFIER: &str = "*Liste établie d'après les personnes qui prennent la parole : à vérifier.*";
 
-/// Forme d'un point selon son titre.
-fn forme_du_point(titre: &str) -> &'static str {
-    let t = titre.to_lowercase();
-    if t.contains("tour de table") {
-        POINT_TOUR_DE_TABLE
-    } else if t.contains("varia") || t.contains("divers") || t.contains("affaires nouvelles") {
-        POINT_VARIA
-    } else if est_prochaine_rencontre(&t) {
-        POINT_PROCHAINE
-    } else {
-        POINT_ORDINAIRE
+/// Forme d'un point, reconnue à son titre.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Forme {
+    Ordinaire,
+    TourDeTable,
+    Varia,
+    Prochaine,
+}
+
+impl Forme {
+    fn du_point(titre: &str) -> Self {
+        let t = titre.to_lowercase();
+        if t.contains("tour de table") {
+            Forme::TourDeTable
+        } else if t.contains("varia") || t.contains("divers") || t.contains("affaires nouvelles") {
+            Forme::Varia
+        } else if est_prochaine_rencontre(&t) {
+            Forme::Prochaine
+        } else {
+            Forme::Ordinaire
+        }
+    }
+
+    fn consigne(self) -> &'static str {
+        match self {
+            Forme::Ordinaire => POINT_ORDINAIRE,
+            Forme::TourDeTable => POINT_TOUR_DE_TABLE,
+            Forme::Varia => POINT_VARIA,
+            Forme::Prochaine => POINT_PROCHAINE,
+        }
     }
 }
 
@@ -452,9 +471,9 @@ fn assembler(r: &Request, sections: &str, titres: &[&str], hors_point: &str, red
 /// Résumé d'un point : repris de son resume.md s'il correspond toujours à sa transcription,
 /// sinon rédigé (en condensant d'abord un point trop long) puis enregistré.
 fn resume_du_point(r: &Request, p: &PointCr, transcription: &str, rediger: &mut Redacteur) -> Result<String> {
-    let forme = forme_du_point(&p.titre);
+    let forme = Forme::du_point(&p.titre);
     // Les consignes font partie de l'empreinte : un résumé d'une forme antérieure est refait.
-    let entete = format!("<!-- tourdetable {} -->", empreinte(&format!("{}\n{forme}{FORME}\n{transcription}", p.titre)));
+    let entete = format!("<!-- tourdetable {} -->", empreinte(&format!("{}\n{}{FORME}\n{transcription}", p.titre, forme.consigne())));
     if r.reprendre
         && let Some(chemin) = &p.resume
         && let Ok(texte) = std::fs::read_to_string(chemin)
@@ -464,18 +483,18 @@ fn resume_du_point(r: &Request, p: &PointCr, transcription: &str, rediger: &mut 
         return Ok(corps.trim().to_string());
     }
     let source = if transcription.chars().count() > CHUNK_CHARS {
-        let precision = if std::ptr::eq(forme, POINT_TOUR_DE_TABLE) { NOTES_TOUR_DE_TABLE } else { "" };
+        let precision = if forme == Forme::TourDeTable { NOTES_TOUR_DE_TABLE } else { "" };
         condense(transcription, None, precision, rediger)?
     } else {
         transcription.to_string()
     };
     let mut prompt = PAR_POINT.replace("{point}", &p.titre);
-    prompt.push_str(forme);
+    prompt.push_str(forme.consigne());
     prompt.push_str(FORME);
     prompt.push_str(STYLE);
     prompt.push_str("\n\n=== TRANSCRIPTION DU POINT ===\n");
     prompt.push_str(&source);
-    let jetons = if std::ptr::eq(forme, POINT_TOUR_DE_TABLE) { JETONS_TOUR_DE_TABLE } else { JETONS_POINT };
+    let jetons = if forme == Forme::TourDeTable { JETONS_TOUR_DE_TABLE } else { JETONS_POINT };
     let reponse = generate(rediger, &prompt, jetons)?;
     let corps = sans_repetitions(&sans_titre(&reponse));
     // « Point non abordé ou reporté. » accompagné d'explications : la formule seule.
@@ -1002,10 +1021,10 @@ mod tests {
 
     #[test]
     fn formes_et_sections() {
-        assert!(std::ptr::eq(forme_du_point("2. Tour de table"), POINT_TOUR_DE_TABLE));
-        assert!(std::ptr::eq(forme_du_point("10. Varia"), POINT_VARIA));
-        assert!(std::ptr::eq(forme_du_point("11. Prochaine rencontre"), POINT_PROCHAINE));
-        assert!(std::ptr::eq(forme_du_point("8. Télétravail"), POINT_ORDINAIRE));
+        assert_eq!(Forme::du_point("2. Tour de table"), Forme::TourDeTable);
+        assert_eq!(Forme::du_point("10. Varia"), Forme::Varia);
+        assert_eq!(Forme::du_point("11. Prochaine rencontre"), Forme::Prochaine);
+        assert_eq!(Forme::du_point("8. Télétravail"), Forme::Ordinaire);
         let fin = sections_de_fin("Préambule\n## Présences\n- A\n## Autre\nB\n## Levée de la séance\nC");
         assert_eq!(fin, Fin { presences: "- A".into(), levee: "C".into(), ..Fin::default() });
         assert_eq!(sections_de_fin("Rien à signaler."), Fin::default());
