@@ -3,6 +3,7 @@
 use eframe::egui::{self, Color32, CornerRadius, Pos2, RichText, Sense, Ui, Vec2};
 
 use crate::audio::{DeviceInfo, Source};
+use crate::config::Theme;
 use crate::models;
 use crate::storage::{Meeting, clock};
 
@@ -181,6 +182,44 @@ pub(super) fn record_button(ui: &mut Ui, recording: bool, enabled: bool) -> egui
     } else {
         resp
     }
+}
+
+/// Bouton carré du thème, avec son icône dessinée (la police par défaut d'egui n'a pas ces
+/// symboles) : soleil, lune ou écran pour le système.
+pub(super) fn theme_button(ui: &mut Ui, theme: Theme) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(30.0), Sense::click());
+    let v = ui.style().interact(&resp);
+    let p = ui.painter();
+    p.rect_filled(rect, CornerRadius::same(7), v.weak_bg_fill);
+    let c = rect.center();
+    let trait_ = egui::Stroke::new(1.5, v.fg_stroke.color);
+    match theme {
+        Theme::Clair => {
+            p.circle_stroke(c, 4.0, trait_);
+            for i in 0..8 {
+                let a = i as f32 * std::f32::consts::FRAC_PI_4;
+                let d = Vec2::new(a.cos(), a.sin());
+                p.line_segment([c + d * 6.5, c + d * 9.0], trait_);
+            }
+        }
+        Theme::Fonce => {
+            // Croissant : un disque, entamé par un disque de la couleur du bouton.
+            p.circle_filled(c, 7.5, v.fg_stroke.color);
+            p.circle_filled(c + Vec2::new(4.0, -3.5), 6.5, v.weak_bg_fill);
+        }
+        Theme::Systeme => {
+            let ecran = egui::Rect::from_center_size(c - Vec2::new(0.0, 2.0), Vec2::new(16.0, 11.0));
+            p.rect_stroke(ecran, CornerRadius::same(2), trait_, egui::StrokeKind::Middle);
+            p.line_segment([c + Vec2::new(0.0, 3.5), c + Vec2::new(0.0, 6.5)], trait_);
+            p.line_segment([c + Vec2::new(-4.0, 7.0), c + Vec2::new(4.0, 7.0)], trait_);
+        }
+    }
+    let nom = match theme {
+        Theme::Clair => "clair",
+        Theme::Fonce => "foncé",
+        Theme::Systeme => "celui du système",
+    };
+    resp.on_hover_text(format!("Thème : {nom}. Cliquer pour changer."))
 }
 
 pub(super) fn short_model(file: &str) -> String {

@@ -53,9 +53,10 @@ séparé, livré à côté de `tourdetable`, qui reçoit une requête JSON par l
 programme ouvert pour toute une série (nettoyage, compte rendu par point).
 
 L'application est livrée sans modèle : `ui/installation.rs` les télécharge sans aucun clic
-(aucune autre interface de téléchargement). Modèle de rédaction : Qwen3.5 4B sur tous les postes (`models::modele_redaction`),
-jamais choisi par l'utilisateur. Avec 8 Go de mémoire vive (`models::palier`), Whisper est
-déchargé (`stt::Request::Unload`) pendant la rédaction.
+(aucune autre interface de téléchargement). Modèle de rédaction : Qwen3.5 9B sur tous les postes (`models::modele_redaction`),
+jamais choisi par l'utilisateur. **16 Go de mémoire vive minimum** : en dessous, un avertissement
+s'affiche au démarrage (`models::memoire_insuffisante`). Un modèle remplacé va dans
+`ANCIENS_MODELES_REDACTION` pour être supprimé des postes.
 
 **Ne JAMAIS ajouter `llama-cpp-2` (ni rien qui lie llama.cpp/ggml) aux dépendances du crate
 principal.** Toute fonction qui a besoin d'un modèle de langue passe par ce programme.

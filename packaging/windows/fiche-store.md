@@ -44,11 +44,10 @@ Importez un enregistrement existant (Teams, Zoom, téléphone : MP4, M4A, MP3, W
 transcrire et en tirer le compte rendu.
 
 **Léger et rapide**
-Application native d'environ 25 Mo. Fonctionne avec 8 Go de mémoire ; 16 Go sont conseillés pour
-la rédaction des comptes rendus.
+Application native d'environ 25 Mo. Demande 16 Go de mémoire.
 
 Rien d'autre à installer : au premier démarrage, Tour de table télécharge tout seul, une seule
-fois, ses modèles de reconnaissance vocale (574 Mo) et de rédaction (2,7 Go), soit 3,3 Go.
+fois, ses modèles de reconnaissance vocale (574 Mo) et de rédaction (5,7 Go), soit 6,3 Go.
 
 ## Fonctionnalités (jusqu'à 20, ≤ 200 caractères chacune)
 
@@ -80,8 +79,8 @@ Version 0.1.1
 ## Configuration requise
 
 * Windows 10 (version 1809) ou plus récent, 64 bits
-* Mémoire : 8 Go minimum, 16 Go conseillés
-* Espace disque : 4 Go (3,3 Go de modèles téléchargés au premier démarrage)
+* Mémoire : 16 Go minimum
+* Espace disque : 8 Go (6,3 Go de modèles téléchargés au premier démarrage)
 * Connexion Internet au premier démarrage seulement
 * Micro
 
