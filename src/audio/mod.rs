@@ -5,8 +5,11 @@
 //! * Linux : micro via ALSA/PulseAudio, son système via la source « monitor »
 //!   de PulseAudio/PipeWire (`parec`).
 
+pub mod blocs;
 pub mod dsp;
+pub mod frontieres;
 pub mod import;
+pub mod lecture;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -214,8 +217,10 @@ mod linux {
                         break;
                     }
                     let samples: Vec<f32> = buf[..n - n % 4]
-                        .chunks_exact(4)
-                        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .map(|&b| f32::from_le_bytes(b))
                         .collect();
                     level.set(dsp::peak(&samples));
                     if tx.send(Chunk { source: Source::Distance, samples }).is_err() {

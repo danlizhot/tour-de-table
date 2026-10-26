@@ -1,8 +1,9 @@
 //! Paramètres persistants de Tour de table (fichier JSON dans le dossier de config de l'OS).
 
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
-use directories::ProjectDirs;
+use directories::{ProjectDirs, UserDirs};
 use serde::{Deserialize, Serialize};
 
 /// Façon de combiner les deux sources audio.
@@ -18,15 +19,6 @@ pub enum CaptureMode {
     Mixe,
 }
 
-/// Qui rédige les comptes rendus.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum LlmBackend {
-    /// Modèle de langue intégré (llama.cpp), téléchargé une fois : rien à installer.
-    Integre,
-    /// Serveur Ollama (option avancée, pour qui l'utilise déjà).
-    Ollama,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -38,51 +30,67 @@ pub struct Config {
     /// source « monitor » PulseAudio/PipeWire (Linux) ; `None` = défaut.
     pub system_device: Option<String>,
     pub mode: CaptureMode,
-    /// Nom de fichier du modèle ggml dans le dossier des modèles.
-    pub model: String,
-    pub threads: usize,
-    pub beam_size: u8,
-    pub use_gpu: bool,
-    /// Sensibilité de la détection de voix, 0.0 (peu sensible) à 1.0 (très sensible).
-    pub vad_sensitivity: f32,
     /// Lexique : un terme par ligne (noms propres, acronymes, jargon) ou
     /// une correction `mauvais => bon`.
     pub glossary: String,
-    pub save_audio: bool,
-    pub llm_backend: LlmBackend,
-    /// Rédiger le compte rendu dès la fin de la transcription quand un ordre du
-    /// jour est joint (rencontre en direct ou enregistrement importé).
-    pub auto_compte_rendu: bool,
-    /// Fichier GGUF du modèle de rédaction intégré, dans le dossier des modèles.
-    pub llm_model: String,
-    pub ollama_url: String,
-    pub ollama_model: String,
+    /// Passer seul au point dont l'annonce est entendue ; sinon, son bouton est mis en évidence.
+    pub passage_auto: bool,
+
+    // Anciens choix, lus seulement pour journaliser la bascule sur les choix
+    // automatiques ; ils disparaissent du fichier au prochain enregistrement.
+    // Les autres anciens champs (fils, faisceau, GPU, sensibilité, audio,
+    // compte rendu automatique, Ollama…) sont simplement ignorés.
+    #[serde(skip_serializing, rename = "model")]
+    ancien_modele: Option<String>,
+    #[serde(skip_serializing, rename = "llm_backend")]
+    ancien_moteur: Option<String>,
+    #[serde(skip_serializing, rename = "llm_model")]
+    ancien_modele_redaction: Option<String>,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
         Self {
             capture_mic: true,
             capture_system: true,
             mic_device: None,
             system_device: None,
             mode: CaptureMode::Separe,
-            model: crate::models::RECOMMENDED.to_string(),
-            // whisper.cpp plafonne vite au-delà de 8 fils ; on laisse de la marge à l'UI et à l'audio.
-            threads: cores.saturating_sub(2).clamp(1, 8),
-            beam_size: 5,
-            use_gpu: cfg!(any(feature = "metal", feature = "vulkan", feature = "cuda")),
-            vad_sensitivity: 0.5,
             glossary: String::new(),
-            save_audio: true,
-            llm_backend: LlmBackend::Integre,
-            auto_compte_rendu: true,
-            llm_model: crate::models::LLM_RECOMMENDED.to_string(),
-            ollama_url: "http://localhost:11434".into(),
-            ollama_model: "llama3.2".into(),
+            passage_auto: false,
+            ancien_modele: None,
+            ancien_moteur: None,
+            ancien_modele_redaction: None,
         }
     }
+}
+
+// ─────────── Réglages automatiques (aucun choix offert à l'utilisateur) ───────────
+
+/// Fils de calcul : tous les cœurs moins deux (marge pour l'interface et
+/// l'audio), au plus 8, car whisper.cpp plafonne vite au-delà.
+pub fn threads() -> usize {
+    let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
+    cores.saturating_sub(2).clamp(1, 8)
+}
+
+/// Taille du faisceau de Whisper.
+pub const BEAM_SIZE: u8 = 5;
+
+/// Accélération GPU dès que l'exécutable est compilé avec un moteur GPU.
+pub const USE_GPU: bool = cfg!(any(feature = "metal", feature = "vulkan", feature = "cuda"));
+
+/// Sensibilité de la détection de voix, 0.0 (peu sensible) à 1.0 (très sensible).
+pub const VAD_SENSITIVITY: f32 = 0.5;
+
+/// Modèle Whisper, toujours le même.
+pub fn model_path() -> PathBuf {
+    models_dir().join(crate::models::RECOMMENDED)
+}
+
+/// Moteur de rédaction (nettoyage et compte rendu) : le modèle du palier de mémoire vive.
+pub fn moteur() -> crate::summary::Moteur {
+    crate::summary::Moteur { modele: models_dir().join(crate::models::modele_redaction().file), fils: threads() }
 }
 
 fn dirs() -> ProjectDirs {
@@ -97,8 +105,31 @@ pub fn models_dir() -> PathBuf {
     data_dir().join("modeles")
 }
 
+/// Rencontres : dans le dossier Musique de l'utilisateur (localisé : « Musique » sous Windows en
+/// français, `~/Music` sous macOS, `XDG_MUSIC_DIR` sous Linux), à la vue de tous ses logiciels.
+/// Les modèles, la configuration, le journal et la corbeille restent dans `data_dir()`.
 pub fn meetings_dir() -> PathBuf {
+    static DOSSIER: OnceLock<PathBuf> = OnceLock::new();
+    DOSSIER
+        .get_or_init(|| match UserDirs::new() {
+            Some(u) => u.audio_dir().map_or_else(|| u.home_dir().join("Music"), PathBuf::from).join("Tour de table"),
+            None => old_meetings_dir(),
+        })
+        .clone()
+}
+
+/// Emplacement des rencontres jusqu'à la version 0.1.1.
+fn old_meetings_dir() -> PathBuf {
     data_dir().join("rencontres")
+}
+
+/// Déplace les rencontres de l'ancien emplacement vers le dossier Musique. Relancée à chaque
+/// démarrage : une rencontre qui n'a pas pu être déplacée est retentée la fois suivante.
+pub fn migrate_meetings() {
+    let (old, new) = (old_meetings_dir(), meetings_dir());
+    if old != new {
+        crate::storage::migrer(&old, &new);
+    }
 }
 
 fn config_path() -> PathBuf {
@@ -140,10 +171,35 @@ pub fn migrate_from_noter() {
 
 impl Config {
     pub fn load() -> Self {
-        std::fs::read_to_string(config_path())
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        std::fs::read_to_string(config_path()).ok().map(|s| Self::from_json(&s)).unwrap_or_default()
+    }
+
+    /// Lit la configuration ; un fichier illisible redonne les valeurs par défaut.
+    fn from_json(json: &str) -> Self {
+        let mut cfg: Self = serde_json::from_str(json).unwrap_or_else(|e| {
+            log::warn!("Configuration illisible, valeurs par défaut : {e}");
+            Self::default()
+        });
+        for note in cfg.oublier_anciens_choix() {
+            log::info!("{note}");
+        }
+        cfg
+    }
+
+    /// Retire les anciens choix de modèle et décrit ceux qui différaient des choix automatiques.
+    fn oublier_anciens_choix(&mut self) -> Vec<String> {
+        let mut notes = Vec::new();
+        if let Some(m) = self.ancien_modele.take().filter(|m| m != crate::models::RECOMMENDED) {
+            notes.push(format!("Modèle Whisper « {m} » remplacé par {}", crate::models::RECOMMENDED));
+        }
+        if self.ancien_moteur.take().is_some_and(|b| b == "Ollama") {
+            notes.push("Rédaction par Ollama retirée : modèle intégré utilisé".to_string());
+        }
+        let redaction = crate::models::modele_redaction().file;
+        if let Some(m) = self.ancien_modele_redaction.take().filter(|m| m != redaction) {
+            notes.push(format!("Modèle de rédaction « {m} » remplacé par {redaction}"));
+        }
+        notes
     }
 
     pub fn save(&self) {
@@ -160,22 +216,87 @@ impl Config {
             Err(e) => log::warn!("Sérialisation de la configuration : {e}"),
         }
     }
+}
 
-    pub fn model_path(&self) -> PathBuf {
-        models_dir().join(&self.model)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Fichier complet d'une version qui offrait encore tous les choix.
+    const ANCIENNE: &str = r#"{
+  "capture_mic": true,
+  "capture_system": false,
+  "mic_device": "Jabra Speak 510",
+  "system_device": null,
+  "mode": "Mixe",
+  "model": "ggml-medium-q5_0.bin",
+  "threads": 3,
+  "beam_size": 2,
+  "use_gpu": true,
+  "vad_sensitivity": 0.9,
+  "glossary": "Hydro-Québec\nMRC => MRC",
+  "save_audio": false,
+  "llm_backend": "Ollama",
+  "auto_compte_rendu": false,
+  "llm_model": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+  "ollama_url": "http://localhost:11434",
+  "ollama_model": "llama3.2"
+}"#;
+
+    #[test]
+    fn charge_une_ancienne_configuration_complete() {
+        let mut cfg: Config = serde_json::from_str(ANCIENNE).expect("ancienne configuration lisible");
+        assert!(cfg.capture_mic && !cfg.capture_system);
+        assert_eq!(cfg.mic_device.as_deref(), Some("Jabra Speak 510"));
+        assert_eq!(cfg.system_device, None);
+        assert_eq!(cfg.mode, CaptureMode::Mixe);
+        assert_eq!(cfg.glossary, "Hydro-Québec\nMRC => MRC");
+
+        let notes = cfg.oublier_anciens_choix();
+        assert_eq!(notes.len(), 3, "{notes:?}");
+        assert!(notes[0].contains("ggml-medium-q5_0.bin"));
+        assert!(notes[1].contains("Ollama"));
+        assert!(notes[2].contains("Qwen2.5-7B"));
+
+        // Les anciens champs ne sont plus réécrits.
+        let json = serde_json::to_string(&cfg).unwrap();
+        for champ in ["model", "threads", "beam_size", "use_gpu", "vad_sensitivity", "save_audio", "llm_backend", "ollama"] {
+            assert!(!json.contains(champ), "{champ} encore présent : {json}");
+        }
+        let relu: Config = serde_json::from_str(&json).unwrap();
+        assert_eq!(relu.mode, CaptureMode::Mixe);
+        assert_eq!(relu.mic_device.as_deref(), Some("Jabra Speak 510"));
     }
 
-    /// Moteur de rédaction des comptes rendus selon les paramètres.
-    pub fn moteur(&self) -> crate::summary::Moteur {
-        match self.llm_backend {
-            LlmBackend::Integre => crate::summary::Moteur::Integre {
-                modele: models_dir().join(&self.llm_model),
-                fils: self.threads,
-            },
-            LlmBackend::Ollama => crate::summary::Moteur::Ollama {
-                url: self.ollama_url.clone(),
-                modele: self.ollama_model.clone(),
-            },
-        }
+    #[test]
+    fn anciens_choix_identiques_aux_choix_automatiques_sans_message() {
+        let json = format!(
+            r#"{{"model": "{}", "llm_backend": "Integre", "llm_model": "{}"}}"#,
+            crate::models::RECOMMENDED,
+            crate::models::modele_redaction().file
+        );
+        let mut cfg: Config = serde_json::from_str(&json).unwrap();
+        assert!(cfg.oublier_anciens_choix().is_empty());
+    }
+
+    #[test]
+    fn fichier_illisible_ou_vide() {
+        assert_eq!(Config::from_json("pas du JSON").mode, CaptureMode::Separe);
+        let cfg = Config::from_json("{}");
+        assert!(cfg.capture_mic && cfg.capture_system && cfg.mic_device.is_none());
+    }
+
+    #[test]
+    fn valeurs_automatiques() {
+        let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
+        assert_eq!(threads(), cores.saturating_sub(2).clamp(1, 8));
+        assert!((1..=8).contains(&threads()));
+        assert_eq!(BEAM_SIZE, 5);
+        assert_eq!(VAD_SENSITIVITY, 0.5);
+        assert_eq!(USE_GPU, cfg!(any(feature = "metal", feature = "vulkan", feature = "cuda")));
+        assert!(model_path().ends_with(crate::models::RECOMMENDED));
+        let moteur = moteur();
+        assert!(moteur.modele.ends_with(crate::models::modele_redaction().file));
+        assert_eq!(moteur.fils, threads());
     }
 }

@@ -1,0 +1,90 @@
+# Hésitations retirées par le nettoyage de la transcription (passe 1), lues par
+# src/nettoyage.rs à la compilation. Majuscules et ponctuation collée au mot sont sans
+# importance. Une expression par ligne ; chaque section commence par [nom].
+#
+# Ne jamais ajouter ici un québécisme porteur de sens (« tsé », « pantoute », « correct »,
+# « pis », « là »…) : ils sont dans quebec::BASE_PROMPT exprès, pour que Whisper les garde.
+
+[hesitation]
+# Mot isolé retiré partout dans la phrase.
+euh
+euhm
+heu
+hum
+hmm
+mmh
+
+[debut]
+# Retiré seulement en début de phrase.
+bon ben
+
+[entre-virgules]
+# Retiré seulement isolé entre virgules, ou en début de phrase suivi d'une virgule :
+# « que, genre, le budget » → « que le budget », mais « ce genre de dossier » reste.
+genre
+en fait
+disons
+comme
+bref
+admettons
+je veux dire
+j'veux dire
+voyez-vous
+quoi
+
+[interjection]
+# Phrase faite seulement de ces mots (cinq au plus) : retirée, sauf si elle répond à une
+# question ou à une proposition (vote, approbation). « non » et « correct » n'y sont pas exprès.
+ok
+okay
+oké
+oui
+ouais
+ouin
+d'accord
+parfait
+merci
+exact
+exactement
+super
+ah
+oh
+c'est
+ça
+très
+bien
+voilà
+effectivement
+génial
+certainement
+tout
+à
+fait
+
+[indice-decision]
+# Une phrase qui en contient un (début de mot) appelle une réponse qui compte.
+propos
+vote
+voter
+adopt
+approuv
+appui
+seconde
+objection
+consensus
+résolution
+entérin
+unanim
+accept
+on y va
+d'accord?
+est-ce qu'on
+
+[double-permis]
+# Mots dont le doublement est correct en français : jamais réduits à une occurrence.
+nous
+vous
+oui
+non
+si
+très

@@ -1,0 +1,138 @@
+# Expressions du découpage automatique par point (français québécois parlé), lues par
+# src/decoupage.rs à la compilation. Accents, majuscules, apostrophes et traits d'union sont
+# sans importance : tout est normalisé (« On s'en va » = « on s en va »).
+# Une expression par ligne ; chaque section commence par [nom].
+
+[annonce]
+# Annonce forte, suivie d'un numéro (« on passe au point 4 ») ; doit finir par « point ».
+# Sans « point », elle reconnaît aussi l'ordinal (« on passe au troisième point »).
+on passe au point
+on passe maintenant au point
+passons au point
+on s en va au point
+on s en va sur le point
+on s en va avec le point
+on tombe au point
+on tombe sur le point
+on tombe dans le point
+on revient au point
+on retourne au point
+on revient sur le point
+rendu au point
+rendus au point
+rendue au point
+on arrive au point
+on enchaine avec le point
+on continue avec le point
+on commence le point
+on attaque le point
+on ouvre le point
+
+[annonce-faible]
+# Annonce plus vague, doit aussi finir par « point ».
+au point
+le point
+on a le point
+
+[suivant]
+# Annonce sans numéro : le point qui suit le point actif.
+point suivant
+prochain point
+on passe au suivant
+on passe au prochain
+on passe a l autre point
+on s en va au suivant
+on tombe au suivant
+
+[titre]
+# expression = mots cherchés dans le titre des points (séparés par |).
+varia = varia|divers|affaires
+on tombe dans le varia = varia|divers
+affaires nouvelles = affaires|varia|divers
+levee de l assemblee = levee|cloture|fermeture
+levee de la seance = levee|cloture|fermeture
+on leve la seance = levee|cloture|fermeture
+on leve l assemblee = levee|cloture|fermeture
+on ferme la seance = levee|cloture|fermeture
+fin de la rencontre = levee|cloture|fermeture|fin
+periode de questions = questions
+periode de question = questions
+
+[introduction]
+# Introduisent un sujet : renforcent la mention du titre d'un point.
+on passe a
+on passe au
+on passe aux
+on passe maintenant
+passons a
+passons au
+on s en va avec
+on s en va sur
+on s en va dans
+on tombe dans
+on tombe sur
+on enchaine avec
+on continue avec
+parlons de
+parlons du
+on arrive a
+on arrive au
+on est rendu a
+on est rendu au
+on est rendus a
+on est rendus au
+on est rendus dans
+on est rendu dans
+on attaque
+
+[passe]
+# Mention d'un point au passé ou au futur : ce n'est pas un changement maintenant.
+comme on disait
+comme je disais
+comme on a dit
+comme j ai dit
+comme mentionne
+tel que mentionne
+on en a parle
+on a parle
+on a vu
+on a discute
+on a adopte
+on a vote
+on avait
+qu on a vu
+tantot
+tout a l heure
+plus tot
+plus tard
+on reviendra
+on y reviendra
+on va revenir
+on va y revenir
+on en reparlera
+on va en reparler
+on mettra
+on va le mettre
+on garde ca pour
+
+[restriction]
+# Juste après « point » : on ne parle pas de l'ordre du jour.
+important
+importante
+que
+qu
+de vue
+c est tout
+faible
+fort
+positif
+negatif
+commun
+precis
+sensible
+majeur
+
+[vides]
+# Mots ignorés dans les titres.
+le la les l de du des d un une et a au aux en pour sur par avec dans ou the
+point points sujet

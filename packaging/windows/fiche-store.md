@@ -30,7 +30,7 @@ les noms de vos organismes, de vos partenaires et de vos projets.
 
 **De l'ordre du jour au compte rendu**
 Déposez l'ordre du jour (Word, PDF ou texte), avant ou après la rencontre. Tour de table rédige
-le compte rendu point par point : discussion, décisions, suivis avec responsables et échéances. Joint d'avance, l'ordre du jour donne le compte rendu automatiquement, dès la fin de la
+le compte rendu point par point, dans la forme habituelle des organismes, prêt à relire dans Word. Joint d'avance, l'ordre du jour donne le compte rendu automatiquement, dès la fin de la
 transcription.
 Les chiffres qui n'apparaissent pas dans la transcription sont signalés pour vérification.
 
@@ -47,9 +47,8 @@ transcrire et en tirer le compte rendu.
 Application native d'environ 25 Mo. Fonctionne avec 8 Go de mémoire ; 16 Go sont conseillés pour
 la rédaction des comptes rendus.
 
-Rien d'autre à installer : au premier usage, Tour de table télécharge une seule fois son modèle de
-reconnaissance vocale (574 Mo) et, si vous rédigez des comptes rendus, son modèle de rédaction
-(2,5 Go, ou 4,7 Go pour la version la plus précise).
+Rien d'autre à installer : au premier démarrage, Tour de table télécharge tout seul, une seule
+fois, ses modèles de reconnaissance vocale (574 Mo) et de rédaction (2,7 Go), soit 3,3 Go.
 
 ## Fonctionnalités (jusqu'à 20, ≤ 200 caractères chacune)
 
@@ -57,7 +56,7 @@ reconnaissance vocale (574 Mo) et, si vous rédigez des comptes rendus, son mod�
 2. Capture simultanée du micro de la salle et du son de Teams, Zoom, Meet ou Webex
 3. Interventions identifiées « Salle » ou « À distance »
 4. Ordre du jour Word, PDF ou texte, déposé avant ou après la rencontre
-5. Compte rendu point par point : décisions, suivis, responsables et échéances
+5. Compte rendu point par point, présences et levée de la séance, exporté en Word
 6. Signalement des chiffres absents de la transcription
 7. Lexique personnalisé pour vos noms propres et acronymes
 8. Typographie de l'OQLF : 14 h 30, 2 500 $
@@ -82,8 +81,8 @@ Version 0.1.1
 
 * Windows 10 (version 1809) ou plus récent, 64 bits
 * Mémoire : 8 Go minimum, 16 Go conseillés
-* Espace disque : 1 Go pour la reconnaissance vocale, 3 à 5 Go de plus pour la rédaction des
-  comptes rendus
+* Espace disque : 4 Go (3,3 Go de modèles téléchargés au premier démarrage)
+* Connexion Internet au premier démarrage seulement
 * Micro
 
 ## Autres renseignements demandés par le Partner Center

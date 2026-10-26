@@ -3,24 +3,29 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod agenda;
-mod app;
 mod audio;
 mod cli;
 mod config;
+mod decoupage;
 mod diagnostic;
+mod docx;
 mod models;
+mod nettoyage;
 mod quebec;
 mod recorder;
 mod storage;
 mod stt;
 mod summary;
+mod ui;
 
 use eframe::Renderer;
+
 
 fn main() {
     diagnostic::init();
     whisper_rs::install_logging_hooks();
     config::migrate_from_noter();
+    config::migrate_meetings();
 
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).is_some_and(|a| a == "--transcrire") {
@@ -36,10 +41,18 @@ fn main() {
     }
     if args.get(1).is_some_and(|a| a == "--compte-rendu") {
         let (Some(agenda), Some(source)) = (args.get(2), args.get(3)) else {
-            eprintln!("Usage : tourdetable --compte-rendu ordre-du-jour.docx (transcription.txt | enregistrement.wav)");
+            eprintln!("Usage : tourdetable --compte-rendu ordre-du-jour.docx (transcription.txt | enregistrement.wav | rencontre.json) [--palier 8|16] [--modele fichier.gguf]");
             std::process::exit(2);
         };
-        if let Err(e) = cli::compte_rendu(agenda, source) {
+        // Mesure sur un autre palier de mémoire que celui du poste.
+        let palier = match args.iter().position(|a| a == "--palier").and_then(|i| args.get(i + 1)).map(String::as_str) {
+            Some("8") => Some(models::Palier::Huit),
+            Some("16") => Some(models::Palier::Seize),
+            _ => None,
+        };
+        // Essai d'un autre modèle de rédaction (mesure seulement).
+        let modele = args.iter().position(|a| a == "--modele").and_then(|i| args.get(i + 1)).map(String::as_str);
+        if let Err(e) = cli::compte_rendu(agenda, source, palier, modele) {
             eprintln!("Erreur : {e:#}");
             std::process::exit(1);
         }
@@ -122,7 +135,7 @@ fn run_gui(renderer: Renderer) -> eframe::Result {
     eframe::run_native(
         "Tour de table",
         options,
-        Box::new(|cc| Ok(Box::new(app::TourDeTableApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(ui::TourDeTableApp::new(cc)))),
     )
 }
 
@@ -157,5 +170,64 @@ fn wgpu_options() -> egui_wgpu::WgpuConfiguration {
             ..WgpuSetupCreateNew::without_display_handle()
         }),
         ..Default::default()
+    }
+}
+
+/// Tests : allocations du fil courant, pour vérifier qu'un traitement garde une mémoire bornée.
+#[cfg(test)]
+pub mod memoire {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::cell::Cell;
+
+    thread_local! {
+        static ACTUEL: Cell<usize> = const { Cell::new(0) };
+        static POINTE: Cell<usize> = const { Cell::new(0) };
+    }
+
+    fn plus(n: usize) {
+        let _ = ACTUEL.try_with(|a| {
+            let v = a.get() + n;
+            a.set(v);
+            let _ = POINTE.try_with(|p| p.set(p.get().max(v)));
+        });
+    }
+
+    fn moins(n: usize) {
+        let _ = ACTUEL.try_with(|a| a.set(a.get().saturating_sub(n)));
+    }
+
+    struct Compteur;
+
+    unsafe impl GlobalAlloc for Compteur {
+        unsafe fn alloc(&self, l: Layout) -> *mut u8 {
+            let p = unsafe { System.alloc(l) };
+            if !p.is_null() {
+                plus(l.size());
+            }
+            p
+        }
+        unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
+            unsafe { System.dealloc(p, l) };
+            moins(l.size());
+        }
+        unsafe fn realloc(&self, p: *mut u8, l: Layout, taille: usize) -> *mut u8 {
+            let q = unsafe { System.realloc(p, l, taille) };
+            if !q.is_null() {
+                moins(l.size());
+                plus(taille);
+            }
+            q
+        }
+    }
+
+    #[global_allocator]
+    static COMPTEUR: Compteur = Compteur;
+
+    /// Mémoire allouée au plus fort de `f` par le fil courant, au-delà de ce qu'il tenait avant.
+    pub fn pointe<R>(f: impl FnOnce() -> R) -> (R, usize) {
+        let base = ACTUEL.with(Cell::get);
+        POINTE.with(|p| p.set(base));
+        let r = f();
+        (r, POINTE.with(Cell::get) - base)
     }
 }

@@ -30,6 +30,8 @@ pub struct Settings {
 
 pub enum Request {
     Load { path: PathBuf, use_gpu: bool },
+    /// Libère la mémoire du modèle (palier 8 Go, pendant la rédaction) ; `Load` le recharge.
+    Unload,
     Transcribe { utterance: Utterance, context: String },
     Configure(Settings),
 }
@@ -85,6 +87,10 @@ fn worker(rx: Receiver<Request>, tx: Sender<Reply>, wake: impl Fn()) {
         let reply = match req {
             Request::Configure(s) => {
                 settings = s;
+                continue;
+            }
+            Request::Unload => {
+                model = None;
                 continue;
             }
             Request::Load { path, use_gpu } => {
