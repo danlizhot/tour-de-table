@@ -107,6 +107,8 @@ pub(super) fn markdown(ui: &mut Ui, md: &str) {
             if !t.chars().all(|c| matches!(c, '|' | '-' | ':' | ' ')) {
                 ui.label(RichText::new(t.replace("**", "")).monospace().size(12.5));
             }
+        } else if let Some(note) = t.strip_prefix('*').and_then(|n| n.strip_suffix('*')).filter(|n| !n.starts_with('*') && !n.is_empty()) {
+            ui.label(RichText::new(note).italics().weak());
         } else if t.is_empty() {
             ui.add_space(2.0);
         } else {

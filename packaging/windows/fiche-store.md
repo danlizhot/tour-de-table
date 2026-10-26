@@ -30,7 +30,7 @@ les noms de vos organismes, de vos partenaires et de vos projets.
 
 **De l'ordre du jour au compte rendu**
 Déposez l'ordre du jour (Word, PDF ou texte), avant ou après la rencontre. Tour de table rédige
-le compte rendu point par point : discussion, décisions, suivis avec responsables et échéances. Joint d'avance, l'ordre du jour donne le compte rendu automatiquement, dès la fin de la
+le compte rendu point par point, dans la forme habituelle des organismes, prêt à relire dans Word. Joint d'avance, l'ordre du jour donne le compte rendu automatiquement, dès la fin de la
 transcription.
 Les chiffres qui n'apparaissent pas dans la transcription sont signalés pour vérification.
 
@@ -56,7 +56,7 @@ fois, ses modèles de reconnaissance vocale (574 Mo) et de rédaction (2,7 Go), 
 2. Capture simultanée du micro de la salle et du son de Teams, Zoom, Meet ou Webex
 3. Interventions identifiées « Salle » ou « À distance »
 4. Ordre du jour Word, PDF ou texte, déposé avant ou après la rencontre
-5. Compte rendu point par point : décisions, suivis, responsables et échéances
+5. Compte rendu point par point, présences et levée de la séance, exporté en Word
 6. Signalement des chiffres absents de la transcription
 7. Lexique personnalisé pour vos noms propres et acronymes
 8. Typographie de l'OQLF : 14 h 30, 2 500 $

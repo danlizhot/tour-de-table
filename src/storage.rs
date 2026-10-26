@@ -331,6 +331,17 @@ impl Meeting {
         (!lignes.is_empty()).then(|| lignes.join("\n\n"))
     }
 
+    /// Échanges hors point entre le début du premier point et la fin du dernier : ce qui précède
+    /// (installation, conversations d'avant la rencontre) et ce qui suit n'est pas au compte rendu.
+    pub fn texte_hors_point_pendant(&self) -> Option<String> {
+        let points = self.periodes.iter().filter(|p| p.point.is_some());
+        let debut = points.clone().map(|p| p.debut_ms).min()?;
+        let fin = points.map(|p| p.fin_ms.unwrap_or(u64::MAX)).max()?;
+        let lignes: Vec<String> =
+            self.paragraphes_du_point(None).into_iter().filter(|(t, _, _)| (debut..fin).contains(t)).map(|(_, _, text)| text).collect();
+        (!lignes.is_empty()).then(|| lignes.join("\n\n"))
+    }
+
     /// Dossier d'un point (audio, transcription.md, resume.md).
     pub fn dossier_du_point(&self, point: Option<usize>) -> PathBuf {
         let titres: Vec<String> = self.agenda.iter().flat_map(|a| a.points.iter().map(|p| p.titre.clone())).collect();
@@ -430,6 +441,7 @@ impl Meeting {
         }
         if let Some(sum) = &self.summary {
             std::fs::write(dir.join("compte-rendu.md"), sum)?;
+            crate::docx::ecrire(sum, &dir.join("compte-rendu.docx"))?;
         }
         Ok(dir)
     }

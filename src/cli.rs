@@ -213,11 +213,14 @@ pub fn compte_rendu(agenda_path: &str, source: &str, palier: Option<crate::model
         })
         .unwrap_or_else(|| std::path::Path::new(source).file_stem().unwrap_or_default().to_string_lossy().into_owned());
     let par_point = !points.is_empty();
+    let debut = rencontre.as_ref().map_or_else(chrono::Local::now, |m| m.started_at);
+    let (date, heure) = (crate::summary::date_longue(&debut), rencontre.as_ref().map(|_| crate::summary::heure(&debut)).unwrap_or_default());
     let req = crate::summary::Request {
         moteur: &moteur,
         avancement: None,
         title: &title,
-        date: &chrono::Local::now().format("%Y-%m-%d").to_string(),
+        date: &date,
+        heure: &heure,
         duration: &duration,
         agenda: Some(&agenda),
         transcript: &transcript,

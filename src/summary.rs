@@ -7,11 +7,17 @@
 //! Avec un ordre du jour, le compte rendu suit ses points dans l'ordre ;
 //! sans ordre du jour, on produit un résumé structuré.
 //!
+//! Forme du compte rendu, d'après de vrais comptes rendus d'organisme : en-tête (titre, date,
+//! heure), présences, puis chaque point de l'ordre du jour avec son numéro, rédigé au présent
+//! et à la troisième personne (phrase d'introduction, puces, « Il est convenu… »), et la levée
+//! de la séance. Le tour de table donne un paragraphe par personne, le varia un sous-titre par
+//! sujet.
+//!
 //! Rencontre découpée par point : un appel par point, avec seulement sa transcription
 //! (nettoyée si elle existe), enregistré dans `resume.md` de son dossier pour reprendre un
-//! compte rendu interrompu ; puis un dernier appel court pour les sujets hors point et la
-//! prochaine rencontre. Le tableau des suivis réunit ceux de tous les points, sans passer par
-//! le modèle. Toute la série se fait avec un seul chargement du modèle (`Session`).
+//! compte rendu interrompu ; puis un dernier appel court, à partir des points rédigés et des
+//! échanges hors point, pour les présences, les sujets hors ordre du jour et la levée de la
+//! séance. Toute la série se fait avec un seul chargement du modèle (`Session`).
 
 use std::io::{BufRead, BufReader, Lines, Write};
 use std::path::PathBuf;
@@ -49,30 +55,33 @@ const SANS_ORDRE_DU_JOUR: &str = "Tu es secrétaire de réunion. À partir de la
 ## Suivis\n\
 Les suivis sont un tableau à trois colonnes : Action | Responsable | Échéance.\n";
 
+/// Forme commune à tous les points : celle des comptes rendus d'organisme.
+const FORME: &str = "Écris comme dans un compte rendu officiel : au présent, à la troisième personne, \
+ton neutre et factuel (« La direction présente… », « Les participants échangent sur… », « Il est convenu que… »). \
+La transcription ne dit pas qui parle : nomme une personne seulement quand son nom est dit avec ce qu'elle fait \
+(« Mme » ou « M. » suivi du nom de famille s'il est connu, sinon le prénom) ; pour la personne qui anime, écris \
+« la direction », et pour les autres « un participant » ou « une participante ». Jamais « je », « on » ni « Salle ». \
+Les noms entre crochets des exemples ne sont que des modèles : n'emploie que des noms entendus dans la transcription. Aucun tableau, aucune rubrique « Discussion », « Décisions » ou « Suivis », \
+aucune étiquette du genre « Projet : » ou « Statut : ».\n";
+
 const AVEC_ORDRE_DU_JOUR: &str = "Tu es secrétaire de réunion. Rédige le compte rendu de la rencontre \
 en suivant l'ordre du jour fourni, point par point et dans le même ordre, avec la même numérotation.\n\
-Pour chaque point : un titre de niveau 3, puis **Discussion** (l'essentiel en quelques phrases), \
-**Décisions** et **Suivis** (qui fait quoi, pour quand).\n\
+Pour chaque point : un titre de niveau 2 (« ## 3. Titre »), une phrase d'introduction, puis une liste à puces \
+des éléments principaux, et s'il y a lieu une phrase sur ce qui est convenu ou reste à suivre.\n\
 Règles :\n\
 - Si un point entier n'a pas été discuté, écris seulement « Point non abordé ou reporté. » sous son titre.\n\
-- S'il a été discuté sans décision ou sans suivi, écris « Aucune » ou « Aucun » dans la rubrique vide.\n\
-- Une proposition adoptée, votée ou acceptée par le groupe est une décision : écris « Il est résolu de… ».\n\
-- Chaque fois qu'une personne accepte ou se voit confier une tâche (« je m'en occupe », \
-« tu t'en occupes? Correct »), c'est un suivi.\n\
-- Le tableau des suivis reprend TOUS les suivis de tous les points, sans exception. Pour l'échéance, \
-reprends le délai tel qu'il a été dit (« d'ici la fin novembre », « pour le 15 décembre »).\n\
+- Pour un tour de table, une ligne en gras par personne (« **[Prénom Nom]** »), suivie de 2 à 4 puces courtes \
+qui commencent par un verbe (« Poursuit… », « Prépare… »). Seulement des personnes, jamais un groupe (« les comptables »).\n\
+- Si la transcription s'arrête avant un point, écris « Point non abordé ou reporté. » : n'invente rien.\n\
 - L'ordre du jour sert uniquement à structurer : les faits (lieu, heure, montants, noms) viennent \
 de la transcription seulement. Ne recopie pas le lieu ou l'heure de cette rencontre pour la prochaine.\n\
 Structure du document :\n\
-# Compte rendu — {titre}\n\
-**Date** : {date} · **Durée** : {duree}\n\
-## Points de l'ordre du jour\n\
-## Sujets hors ordre du jour\n\
-## Tableau des suivis\n\
-## Prochaine rencontre\n\
-Le tableau des suivis a trois colonnes : Action | Responsable | Échéance. \
-Si la transcription annonce la date ou l'heure de la prochaine rencontre, écris-les sous « Prochaine rencontre » ; \
-sinon, omets cette section. Omets « Sujets hors ordre du jour » si tout a été couvert par l'ordre du jour.\n";
+# Compte rendu\n\
+**{titre}**\n\
+**Date** : {date}{heure}\n\
+## Présences (liste à puces, prénom et nom, des personnes qui prennent la parole ; jamais un groupe)\n\
+## 1. … (chaque point de l'ordre du jour)\n\
+## Levée de la séance (un court paragraphe qui résume l'esprit de la rencontre)\n";
 
 /// Au-delà, la transcription (ou celle d'un point) est d'abord condensée par tranches : les
 /// petits modèles locaux perdent le fil sur des contextes trop longs, et la mémoire du contexte
@@ -84,32 +93,141 @@ const NON_ABORDE: &str = "Point non abordé ou reporté.";
 /// Longueur maximale d'une réponse, en jetons. La rédaction (environ 2 à 5 jetons par seconde
 /// sur processeur seul) prend l'essentiel du temps d'un compte rendu : chaque point est court.
 const JETONS_POINT: usize = 600;
-const JETONS_ASSEMBLAGE: usize = 600;
+/// Tour de table : un paragraphe par personne, souvent une dizaine.
+const JETONS_TOUR_DE_TABLE: usize = 1200;
+const JETONS_ASSEMBLAGE: usize = 900;
 const JETONS_NOTES: usize = 1200;
 const JETONS_DOCUMENT: usize = 3072;
 
 const PAR_POINT: &str = "Tu es secrétaire de réunion. Voici la transcription d'un seul point de l'ordre du jour : \
-« {point} ». Rédige uniquement ce point, sans titre, en trois rubriques dans cet ordre :\n\
-**Discussion** : l'essentiel en 120 mots au plus, sans liste ni redite.\n\
-**Décisions** : une ligne courte par décision. Une proposition adoptée, votée ou acceptée par le groupe est une \
-décision : écris « Il est résolu de… ». S'il n'y en a pas, écris « Aucune ».\n\
-**Suivis** : un tableau à trois colonnes, Action | Responsable | Échéance, une ligne courte par tâche, sans doublon. \
-Chaque fois qu'une \
-personne accepte ou se voit confier une tâche (« je m'en occupe », « tu t'en occupes? Correct »), c'est un suivi. \
-Le responsable est la personne nommée ; si personne n'est nommé, écris « non précisé » (jamais « je » ni « Salle »). \
-Reprends l'échéance telle qu'elle a été dite (« d'ici la fin novembre », « pour le 15 décembre »), sinon « non précisée ». \
-S'il n'y en a pas, écris « Aucun » au lieu du tableau.\n\
-Si la date, l'heure ou le lieu de la prochaine rencontre sont annoncés, mentionne-les dans la discussion.\n";
+« {point} ». Rédige uniquement ce point, sans titre.\n";
+
+/// Point ordinaire : introduction, puces, conclusion.
+const POINT_ORDINAIRE: &str = "Forme : une phrase d'introduction (« La direction présente… », « Les participants \
+échangent sur… »), puis une liste à puces de 3 à 6 éléments principaux, une idée courte par puce, puis, s'il y a lieu, \
+une phrase sur ce qui est convenu ou reste à suivre (« Il est convenu que… », « La direction indique qu'aucune décision \
+n'a encore été prise. »). Un point très bref peut tenir en une ou deux phrases, sans liste. 150 mots au plus.\n";
+
+/// Tour de table : un paragraphe par personne.
+const POINT_TOUR_DE_TABLE: &str = "Forme : pour chaque personne qui prend la parole, dans l'ordre, son prénom et son nom \
+en gras sur une ligne (« **[Prénom Nom]** »), puis 2 à 4 puces courtes sur ses dossiers et ses travaux en cours, \
+qui commencent par un verbe (« Poursuit les travaux… », « Prépare… »). Seulement des personnes, jamais un groupe \
+(« les comptables »). Si le prénom d'une personne n'a pas été dit, écris « **Participant(e)** » : n'invente \
+aucun nom. Pas de phrase d'introduction. 50 mots au plus par personne.\n";
+
+/// Notes d'un long tour de table : qui parle doit survivre à la condensation.
+const NOTES_TOUR_DE_TABLE: &str = "C'est un tour de table : fais une note par prise de parole, dans l'ordre, qui \
+commence par le prénom de la personne s'il est dit (« Sophie : », souvent annoncé par la personne précédente : « à \
+toi, Karim »), sinon par « Personne suivante : ». N'invente aucun nom. ";
+
+/// Varia : un sous-titre par sujet.
+const POINT_VARIA: &str = "Forme : pour chaque sujet distinct, un sous-titre en gras sur une ligne (« **[Sujet]** »), puis une ou deux phrases, ou une phrase suivie de puces. 200 mots au plus.\n";
+
+/// Prochaine rencontre : des puces seulement.
+const POINT_PROCHAINE: &str = "Forme : 1 à 3 puces seulement : la date, l'heure ou le moment annoncé pour la prochaine \
+rencontre, et les autres rencontres prévues d'ici là. Ne recopie pas le lieu ou l'heure de cette rencontre-ci.\n";
 
 const ASSEMBLAGE: &str = "Tu es secrétaire de réunion. Les points de l'ordre du jour sont déjà rédigés (ci-dessous). \
-Rédige seulement les deux sections suivantes, en Markdown, dans cet ordre :\n\
+Rédige seulement les sections suivantes, en Markdown, dans cet ordre :\n\
+## Présences\n\
+Une liste à puces, prénom et nom, des personnes qui ont participé à la rencontre : celles qui prennent la parole \
+ou présentent leurs dossiers dans les points rédigés. N'ajoute pas une personne seulement mentionnée (absente, \
+partenaire externe), ni un groupe (« les comptables »).\n\
+## Levée de la séance\n\
+Un paragraphe de 2 ou 3 phrases : la rencontre se termine, l'esprit des échanges et les principaux sujets qui \
+se poursuivront.\n\
+{prochaine}\
 ## Sujets hors ordre du jour\n\
-Les sujets discutés dans les échanges hors des points (transcription ci-dessous), avec leurs décisions et leurs suivis \
-(tableau Action | Responsable | Échéance). Omets cette section s'il n'y en a pas.\n\
-## Prochaine rencontre\n\
+Les sujets de travail discutés dans les échanges hors des points (transcription ci-dessous), en quelques puces \
+courtes. Omets cette section s'il n'y en a pas ou si ce ne sont que des échanges personnels.\n\
+Ne répète pas les points déjà rédigés.\n";
+
+/// Section demandée à l'assemblage quand l'ordre du jour n'a pas de point « Prochaine rencontre ».
+const ASSEMBLAGE_PROCHAINE: &str = "## Prochaine rencontre\n\
 La date, l'heure et le lieu de la prochaine rencontre s'ils ont été annoncés ; sinon, omets cette section. \
-Ne recopie pas le lieu ou l'heure de cette rencontre-ci.\n\
-Sois bref. Ne répète pas les points déjà rédigés et ne fais pas de tableau récapitulatif.\n";
+Ne recopie pas le lieu ou l'heure de cette rencontre-ci.\n";
+
+const PRESENCES_A_VERIFIER: &str = "*Liste établie d'après les personnes qui prennent la parole : à vérifier.*";
+
+/// Forme d'un point selon son titre.
+fn forme_du_point(titre: &str) -> &'static str {
+    let t = titre.to_lowercase();
+    if t.contains("tour de table") {
+        POINT_TOUR_DE_TABLE
+    } else if t.contains("varia") || t.contains("divers") || t.contains("affaires nouvelles") {
+        POINT_VARIA
+    } else if est_prochaine_rencontre(&t) {
+        POINT_PROCHAINE
+    } else {
+        POINT_ORDINAIRE
+    }
+}
+
+fn est_prochaine_rencontre(titre: &str) -> bool {
+    let t = titre.to_lowercase();
+    t.contains("prochaine") && (t.contains("rencontre") || t.contains("réunion") || t.contains("séance"))
+}
+
+const MOIS: [&str; 12] = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+
+/// « 1er », « 2 »…
+fn jour_du_mois(jour: u32) -> String {
+    if jour == 1 { "1er".to_string() } else { jour.to_string() }
+}
+
+/// « 8 octobre 2026 ».
+pub fn date_longue(d: &chrono::DateTime<chrono::Local>) -> String {
+    use chrono::Datelike;
+    format!("{} {} {}", jour_du_mois(d.day()), MOIS[d.month0() as usize], d.year())
+}
+
+/// Date et heure annoncées dans l'en-tête de l'ordre du jour (« 8 OCTOBRE 2026, 11h00 ») :
+/// plus sûres que le début d'un enregistrement importé, souvent la date de la copie du fichier.
+fn date_et_heure_de(agenda: &str) -> (Option<String>, Option<String>) {
+    let entete: Vec<String> = agenda.lines().map(str::trim).filter(|l| !l.is_empty()).take(6).map(str::to_lowercase).collect();
+    let mut date = None;
+    let mut heure = None;
+    for ligne in &entete {
+        let mots: Vec<&str> = ligne.split(|c: char| c.is_whitespace() || c == ',').filter(|m| !m.is_empty()).collect();
+        for (i, mot) in mots.iter().enumerate() {
+            // Le texte d'un PDF coupe parfois un mot en deux (« AVR IL ») : on essaie aussi le mot suivant.
+            let mois_en = |n: usize| {
+                let mot: String = mots[i..(i + n).min(mots.len())].concat();
+                MOIS.iter().find(|m| **m == mot).map(|m| (*m, n))
+            };
+            if date.is_none()
+                && let Some((mois, n)) = mois_en(1).or_else(|| mois_en(2))
+                && let Some(jour) = i.checked_sub(1).and_then(|j| mots[j].trim_end_matches("er").parse::<u32>().ok()).filter(|j| (1..=31).contains(j))
+                && let Some(annee) = mots.get(i + n).filter(|a| a.len() == 4 && a.chars().all(|c| c.is_ascii_digit()))
+            {
+                date = Some(format!("{} {mois} {annee}", jour_du_mois(jour)));
+            }
+            // « 11h00 », « 11h », « 11 h 00 » ou « 10 h30 ».
+            let chiffres = |m: &&&str| m.len() == 2 && m.chars().all(|c| c.is_ascii_digit());
+            let mot = match mots.get(i + 1) {
+                Some(&"h") if mot.chars().all(|c| c.is_ascii_digit()) => format!("{mot}h{}", mots.get(i + 2).filter(chiffres).unwrap_or(&"")),
+                Some(suivant) if mot.chars().all(|c| c.is_ascii_digit()) && suivant.strip_prefix('h').is_some_and(|m| chiffres(&&m)) => {
+                    format!("{mot}{suivant}")
+                }
+                _ => mot.to_string(),
+            };
+            if heure.is_none()
+                && let Some((h, m)) = mot.split_once('h')
+                && let Ok(h) = h.parse::<u32>()
+                && h < 24
+                && (m.is_empty() || (m.len() == 2 && m.parse::<u32>().is_ok_and(|m| m < 60)))
+            {
+                heure = Some(format!("{h} h {}", if m.is_empty() { "00" } else { m }));
+            }
+        }
+    }
+    (date, heure)
+}
+
+/// « 11 h 00 ».
+pub fn heure(d: &chrono::DateTime<chrono::Local>) -> String {
+    d.format("%-H h %M").to_string()
+}
 
 /// Avancement d'un compte rendu, lu par l'interface.
 #[derive(Default)]
@@ -136,7 +254,10 @@ pub struct Request<'a> {
     pub moteur: &'a Moteur,
     pub avancement: Option<&'a Avancement>,
     pub title: &'a str,
+    /// « 8 octobre 2026 ».
     pub date: &'a str,
+    /// « 11 h 00 », vide si inconnue.
+    pub heure: &'a str,
     pub duration: &'a str,
     pub agenda: Option<&'a str>,
     pub transcript: &'a str,
@@ -161,7 +282,7 @@ pub fn points_de(m: &crate::storage::Meeting) -> (Vec<PointCr>, String) {
             resume: Some(m.dossier_du_point(Some(i)).join("resume.md")),
         })
         .collect();
-    (points, m.texte_du_point(None).unwrap_or_default())
+    (points, m.texte_hors_point_pendant().unwrap_or_default())
 }
 
 pub fn compte_rendu(r: &Request) -> Result<String> {
@@ -203,16 +324,18 @@ type Redacteur<'a> = dyn FnMut(&str, usize) -> Result<String> + 'a;
 /// par tranches si elle est longue).
 fn en_un_appel(r: &Request, rediger: &mut Redacteur) -> Result<String> {
     let transcript = if r.transcript.chars().count() > CHUNK_CHARS {
-        condense(r.transcript, r.agenda, rediger)?
+        condense(r.transcript, r.agenda, "", rediger)?
     } else {
         r.transcript.to_string()
     };
 
     let mut prompt = match r.agenda {
-        Some(_) => AVEC_ORDRE_DU_JOUR
-            .replace("{titre}", r.title)
-            .replace("{date}", r.date)
-            .replace("{duree}", r.duration),
+        Some(_) => {
+            let (date, heure) = date_et_heure(r);
+            let mut p = AVEC_ORDRE_DU_JOUR.replace("{titre}", r.title).replace("{date}", &date).replace("{heure}", &mention_heure(&heure));
+            p.push_str(FORME);
+            p
+        }
         None => SANS_ORDRE_DU_JOUR.to_string(),
     };
     prompt.push_str(STYLE);
@@ -225,8 +348,19 @@ fn en_un_appel(r: &Request, rediger: &mut Redacteur) -> Result<String> {
     generate(rediger, &prompt, JETONS_DOCUMENT)
 }
 
-/// Étape 1 : un appel par point ; étape 2 : sujets hors point et prochaine rencontre. Le
-/// tableau des suivis reprend toutes les lignes des tableaux de suivis rédigés.
+/// Date et heure de l'en-tête : celles de l'ordre du jour s'il les annonce, sinon celles du
+/// début de la rencontre.
+fn date_et_heure(r: &Request) -> (String, String) {
+    let (date, heure) = r.agenda.map(date_et_heure_de).unwrap_or_default();
+    (date.unwrap_or_else(|| r.date.to_string()), heure.unwrap_or_else(|| r.heure.to_string()))
+}
+
+fn mention_heure(heure: &str) -> String {
+    if heure.is_empty() { String::new() } else { format!(" · **Heure** : {heure}") }
+}
+
+/// Étape 1 : un appel par point ; étape 2 : présences, sujets hors point et levée de la séance,
+/// à partir des points rédigés.
 fn par_point(r: &Request, rediger: &mut Redacteur) -> Result<String> {
     let n = r.points.len();
     let etape = |i: usize| {
@@ -236,53 +370,81 @@ fn par_point(r: &Request, rediger: &mut Redacteur) -> Result<String> {
         }
     };
     let mut sections = Vec::with_capacity(n);
-    let mut suivis = Vec::new();
     for (i, p) in r.points.iter().enumerate() {
         etape(i + 1);
         let corps = match p.transcription.as_deref().filter(|t| !t.trim().is_empty()) {
             None => NON_ABORDE.to_string(),
             Some(t) => resume_du_point(r, p, t, rediger)?,
         };
-        suivis.extend(lignes_de_tableau(&corps));
-        sections.push(format!("### {}\n\n{corps}", p.titre));
+        sections.push(format!("## {}\n\n{corps}", p.titre));
     }
-    let sections = sections.join("\n\n");
-
     etape(n + 1);
     let hors_point = if r.hors_point.chars().count() > CHUNK_CHARS {
-        condense(&r.hors_point, None, rediger)?
+        condense(&r.hors_point, None, "", rediger)?
     } else {
         r.hors_point.clone()
     };
-    let mut prompt = String::from(ASSEMBLAGE);
+    let titres: Vec<&str> = r.points.iter().map(|p| p.titre.as_str()).collect();
+    assembler(r, &sections.join("\n\n"), &titres, &hors_point, rediger)
+}
+
+/// Le titre est ajouté par Tour de table : on retire celui que le modèle aurait mis.
+fn sans_titre(reponse: &str) -> String {
+    reponse.lines().skip_while(|l| l.trim().is_empty() || l.trim_start().starts_with('#')).collect::<Vec<_>>().join("\n")
+}
+
+/// Réponse qui boucle : une ligne identique à une précédente, ou un paragraphe d'une personne
+/// déjà présentée (« **Julie** » une seconde fois au tour de table), est retiré avec ce qui le suit
+/// jusqu'à la personne suivante.
+fn sans_repetitions(md: &str) -> String {
+    let mut vues = std::collections::HashSet::new();
+    let mut personnes = std::collections::HashSet::new();
+    let mut sauter = false;
+    let mut garde = Vec::new();
+    for ligne in md.lines() {
+        let t = ligne.trim();
+        let nom = t.strip_prefix("**").and_then(|r| r.split_once("**")).map(|(n, _)| n.trim().to_lowercase());
+        if let Some(nom) = &nom {
+            // Plusieurs « Participant(e) » anonymes ne sont pas une boucle.
+            sauter = !nom.starts_with("participant") && !personnes.insert(nom.clone());
+        }
+        if sauter || (nom.is_none() && !t.is_empty() && !vues.insert(t.to_string())) {
+            continue;
+        }
+        garde.push(ligne);
+    }
+    garde.join("\n")
+}
+
+/// Étape finale : présences, sujets hors ordre du jour et levée de la séance, puis le document.
+fn assembler(r: &Request, sections: &str, titres: &[&str], hors_point: &str, rediger: &mut Redacteur) -> Result<String> {
+    let point_prochaine = titres.iter().any(|t| est_prochaine_rencontre(t));
+    let mut prompt = ASSEMBLAGE.replace("{prochaine}", if point_prochaine { "" } else { ASSEMBLAGE_PROCHAINE });
+    prompt.push_str(FORME);
     prompt.push_str(STYLE);
     prompt.push_str("\n\n=== POINTS RÉDIGÉS ===\n");
-    prompt.push_str(&sections);
+    prompt.push_str(sections);
     prompt.push_str("\n\n=== ÉCHANGES HORS DES POINTS ===\n");
-    prompt.push_str(if hors_point.trim().is_empty() { "(aucun)" } else { &hors_point });
-    let fin = generate(rediger, &prompt, JETONS_ASSEMBLAGE)?;
-    let (sujets, prochaine) = sections_de_fin(&reparer_tableaux(&fin));
-    suivis.extend(lignes_de_tableau(&sujets));
+    prompt.push_str(if hors_point.trim().is_empty() { "(aucun)" } else { hors_point });
+    let fin = sections_de_fin(&generate(rediger, &prompt, JETONS_ASSEMBLAGE)?);
 
-    let mut doc = format!(
-        "# Compte rendu — {}\n**Date** : {} · **Durée** : {}\n\n## Points de l'ordre du jour\n\n{sections}\n\n",
-        r.title, r.date, r.duration
-    );
-    if !sujets.is_empty() {
-        doc.push_str(&format!("## Sujets hors ordre du jour\n\n{sujets}\n\n"));
+    let (date, heure) = date_et_heure(r);
+    let titre = r.title.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut doc = format!("# Compte rendu\n\n**{titre}**\n\n**Date** : {date}{}\n\n", mention_heure(&heure));
+    let presences = liste_des_presences(&fin.presences);
+    if !presences.is_empty() {
+        doc.push_str(&format!("## Présences\n\n{presences}\n\n{PRESENCES_A_VERIFIER}\n\n"));
     }
-    doc.push_str("## Tableau des suivis\n\n");
-    if suivis.is_empty() {
-        doc.push_str("Aucun suivi.\n");
-    } else {
-        doc.push_str("| Action | Responsable | Échéance |\n|---|---|---|\n");
-        for l in &suivis {
-            doc.push_str(l);
-            doc.push('\n');
-        }
+    doc.push_str(sections);
+    doc.push_str("\n\n");
+    if !fin.sujets.is_empty() {
+        doc.push_str(&format!("## Sujets hors ordre du jour\n\n{}\n\n", fin.sujets));
     }
-    if !prochaine.is_empty() {
-        doc.push_str(&format!("\n## Prochaine rencontre\n\n{prochaine}\n"));
+    if !point_prochaine && !fin.prochaine.is_empty() {
+        doc.push_str(&format!("## Prochaine rencontre\n\n{}\n\n", fin.prochaine));
+    }
+    if !fin.levee.is_empty() {
+        doc.push_str(&format!("## Levée de la séance\n\n{}\n", fin.levee));
     }
     Ok(doc.trim_end().to_string())
 }
@@ -290,7 +452,9 @@ fn par_point(r: &Request, rediger: &mut Redacteur) -> Result<String> {
 /// Résumé d'un point : repris de son resume.md s'il correspond toujours à sa transcription,
 /// sinon rédigé (en condensant d'abord un point trop long) puis enregistré.
 fn resume_du_point(r: &Request, p: &PointCr, transcription: &str, rediger: &mut Redacteur) -> Result<String> {
-    let entete = format!("<!-- tourdetable {} -->", empreinte(&format!("{}\n{transcription}", p.titre)));
+    let forme = forme_du_point(&p.titre);
+    // Les consignes font partie de l'empreinte : un résumé d'une forme antérieure est refait.
+    let entete = format!("<!-- tourdetable {} -->", empreinte(&format!("{}\n{forme}{FORME}\n{transcription}", p.titre)));
     if r.reprendre
         && let Some(chemin) = &p.resume
         && let Ok(texte) = std::fs::read_to_string(chemin)
@@ -300,18 +464,22 @@ fn resume_du_point(r: &Request, p: &PointCr, transcription: &str, rediger: &mut 
         return Ok(corps.trim().to_string());
     }
     let source = if transcription.chars().count() > CHUNK_CHARS {
-        condense(transcription, None, rediger)?
+        let precision = if std::ptr::eq(forme, POINT_TOUR_DE_TABLE) { NOTES_TOUR_DE_TABLE } else { "" };
+        condense(transcription, None, precision, rediger)?
     } else {
         transcription.to_string()
     };
     let mut prompt = PAR_POINT.replace("{point}", &p.titre);
+    prompt.push_str(forme);
+    prompt.push_str(FORME);
     prompt.push_str(STYLE);
     prompt.push_str("\n\n=== TRANSCRIPTION DU POINT ===\n");
     prompt.push_str(&source);
-    let reponse = generate(rediger, &prompt, JETONS_POINT)?;
-    // Le titre est ajouté par Tour de table : on retire celui que le modèle aurait mis.
-    let corps = reponse.lines().skip_while(|l| l.trim().is_empty() || l.trim_start().starts_with('#')).collect::<Vec<_>>().join("\n");
-    let corps = reparer_tableaux(&corps);
+    let jetons = if std::ptr::eq(forme, POINT_TOUR_DE_TABLE) { JETONS_TOUR_DE_TABLE } else { JETONS_POINT };
+    let reponse = generate(rediger, &prompt, jetons)?;
+    let corps = sans_repetitions(&sans_titre(&reponse));
+    // « Point non abordé ou reporté. » accompagné d'explications : la formule seule.
+    let corps = if corps.contains(NON_ABORDE.trim_end_matches('.')) { NON_ABORDE.to_string() } else { corps };
     if let Some(chemin) = &p.resume {
         let ecrit = chemin.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| std::fs::write(chemin, format!("{entete}\n{corps}\n")));
         if let Err(e) = ecrit {
@@ -326,88 +494,68 @@ fn empreinte(texte: &str) -> String {
     format!("{:x}", Sha256::digest(texte.as_bytes()))[..16].to_string()
 }
 
-/// Cellules d'une ligne de tableau Markdown, avec ou sans « | » aux extrémités (certains modèles les
-/// omettent) ; `None` pour une ligne qui n'est pas un tableau.
-fn cellules(ligne: &str) -> Option<Vec<String>> {
-    let l = ligne.trim();
-    if l.matches('|').count() < 2 {
-        return None;
-    }
-    let l = l.strip_prefix('|').unwrap_or(l);
-    let l = l.strip_suffix('|').unwrap_or(l);
-    Some(l.split('|').map(|c| c.trim().to_string()).collect())
+/// Sections rédigées à l'étape 2.
+#[derive(Debug, Default, PartialEq)]
+struct Fin {
+    presences: String,
+    sujets: String,
+    prochaine: String,
+    levee: String,
 }
 
-fn est_separateur(cellules: &[String]) -> bool {
-    cellules.iter().all(|c| !c.is_empty() && c.chars().all(|ch| matches!(ch, '-' | ':' | ' ')))
-}
-
-/// Tableaux d'une réponse remis en forme (« | a | b | c | ») ; une ligne incomplète, coupée par
-/// la longueur maximale de la réponse, est retirée.
-fn reparer_tableaux(md: &str) -> String {
-    let mut lignes: Vec<String> = Vec::new();
-    let mut largeur = 0;
-    for ligne in md.lines() {
-        let Some(c) = cellules(ligne) else {
-            lignes.push(ligne.to_string());
-            largeur = 0;
+/// Présences en liste à puces, quelle que soit la forme rendue (liste, noms séparés par des
+/// virgules) : sans « Mme » ni « M. », sans groupe (« les comptables »), sans doublon.
+fn liste_des_presences(texte: &str) -> String {
+    let mut noms: Vec<String> = Vec::new();
+    for brut in texte.lines().flat_map(|l| l.split([',', ';'])) {
+        let nom = brut.trim().trim_start_matches(['-', '*', '•']).trim().trim_end_matches('.').replace("**", "");
+        let nom = nom.strip_prefix("Mme ").or_else(|| nom.strip_prefix("M. ")).unwrap_or(&nom).trim().to_string();
+        let bas = nom.to_lowercase();
+        let groupe = ["les ", "des ", "l'", "l’", "et ", "participant"].iter().any(|p| bas.starts_with(p));
+        if nom.is_empty() || groupe || nom.starts_with('*') || nom.split_whitespace().count() > 4 || noms.contains(&nom) {
             continue;
-        };
-        if est_separateur(&c) {
-            lignes.push(format!("|{}|", vec!["---"; c.len()].join("|")));
-        } else if largeur == 0 || c.len() == largeur {
-            largeur = c.len();
-            lignes.push(format!("| {} |", c.join(" | ")));
         }
+        noms.push(nom);
     }
-    // Réponse coupée en pleine ligne de tableau : « Vérifier avec » sans aucun « | ».
-    if let [.., avant, derniere] = &lignes[..]
-        && avant.starts_with('|')
-        && !derniere.trim().is_empty()
-        && !derniere.contains('|')
-        && !md.trim_end().ends_with(['.', '!', '?'])
-    {
-        lignes.pop();
-    }
-    lignes.join("\n").trim_end().to_string()
+    noms.iter().map(|n| format!("- {n}")).collect::<Vec<_>>().join("\n")
 }
 
-/// Lignes de données des tableaux Markdown (ni en-tête, ni séparateur, ni « Aucun »).
-fn lignes_de_tableau(md: &str) -> Vec<String> {
-    md.lines()
-        .filter_map(cellules)
-        .filter(|c| c.len() == 3 && !c[0].is_empty() && !est_separateur(c))
-        .filter(|c| {
-            let bas = c.join(" ").to_lowercase();
-            !(bas.contains("action") && bas.contains("responsable"))
-        })
-        .filter(|c| !c[0].trim_start_matches('*').to_lowercase().starts_with("aucun"))
-        .map(|c| format!("| {} |", c.join(" | ")))
-        .collect()
-}
-
-/// Corps des sections « Sujets hors ordre du jour » et « Prochaine rencontre » de la réponse
-/// de l'étape 2 ; toute autre section (tableau récapitulatif malgré la consigne…) est ignorée.
-fn sections_de_fin(md: &str) -> (String, String) {
-    let (mut sujets, mut prochaine) = (Vec::new(), Vec::new());
-    let mut courante: Option<&mut Vec<&str>> = None;
+/// Corps des sections de l'étape 2 ; toute autre section (point répété malgré la consigne…)
+/// est ignorée.
+fn sections_de_fin(md: &str) -> Fin {
+    let mut fin = Fin::default();
+    let mut lignes: [Vec<&str>; 4] = Default::default();
+    let mut courante = None;
     for ligne in md.lines() {
         if let Some(titre) = ligne.trim_start().strip_prefix("## ") {
             let t = titre.trim().to_lowercase();
-            courante = if t.starts_with("sujets") {
-                Some(&mut sujets)
+            courante = if t.starts_with("présences") || t.starts_with("presences") {
+                Some(0)
+            } else if t.starts_with("sujets") {
+                Some(1)
             } else if t.starts_with("prochaine") {
-                Some(&mut prochaine)
+                Some(2)
+            } else if t.starts_with("levée") || t.starts_with("levee") {
+                Some(3)
             } else {
                 None
             };
             continue;
         }
-        if let Some(v) = courante.as_mut() {
-            v.push(ligne);
+        if let Some(i) = courante {
+            lignes[i].push(ligne);
         }
     }
-    (sujets.join("\n").trim().to_string(), prochaine.join("\n").trim().to_string())
+    // Section « omise » ou vide malgré la consigne : « Cette section est omise car… », « Aucun. »
+    let [presences, sujets, prochaine, levee] = lignes.map(|l| l.join("\n").trim().to_string()).map(|t| {
+        let bas = t.to_lowercase();
+        if bas.contains("omise") || bas.starts_with("aucun") || bas.starts_with("(aucun") { String::new() } else { t }
+    });
+    fin.presences = presences;
+    fin.sujets = sujets;
+    fin.prochaine = prochaine;
+    fin.levee = levee;
+    fin
 }
 
 /// Nombres du texte, normalisés (« 2 500 », « 2500 » et « 2,5 » restent distincts
@@ -465,7 +613,7 @@ fn unverified_numbers(doc: &str, sources: &str) -> Vec<String> {
 }
 
 /// Condense chaque tranche d'une transcription en notes détaillées.
-fn condense(texte: &str, agenda: Option<&str>, rediger: &mut Redacteur) -> Result<String> {
+fn condense(texte: &str, agenda: Option<&str>, precision: &str, rediger: &mut Redacteur) -> Result<String> {
     let chars: Vec<char> = texte.chars().collect();
     let mut notes = String::new();
     let mut start = 0;
@@ -485,6 +633,7 @@ fn condense(texte: &str, agenda: Option<&str>, rediger: &mut Redacteur) -> Resul
              arguments, chiffres, noms, décisions et tâches avec responsables. Garde les horodatages \
              [mm:ss] des sujets. ",
         );
+        prompt.push_str(precision);
         prompt.push_str(STYLE);
         if let Some(agenda) = agenda {
             prompt.push_str("\n\nRattache chaque note au point de l'ordre du jour concerné :\n");
@@ -501,8 +650,25 @@ fn condense(texte: &str, agenda: Option<&str>, rediger: &mut Redacteur) -> Resul
 }
 
 fn generate(rediger: &mut Redacteur, prompt: &str, max_jetons: usize) -> Result<String> {
-    let texte = rediger(prompt, max_jetons)?;
+    let texte = sans_gabarits(&rediger(prompt, max_jetons)?);
     Ok(tidy_answer(&crate::quebec::normalize_document(texte.trim())))
+}
+
+/// Un exemple des consignes recopié tel quel (« Mme [Nom] présente… ») : « la direction ».
+fn sans_gabarits(texte: &str) -> String {
+    let mut t = texte.to_string();
+    for gabarit in ["Mme [Nom]", "M. [Nom]", "[Prénom Nom]", "[Nom]"] {
+        t = t.replace(&format!("**{gabarit}**"), "**Participant(e)**");
+        // En début de ligne ou de phrase : « La direction ».
+        for debut in ["\n", ". ", "- ", "* "] {
+            t = t.replace(&format!("{debut}{gabarit}"), &format!("{debut}La direction"));
+        }
+        if t.starts_with(gabarit) {
+            t = format!("La direction{}", &t[gabarit.len()..]);
+        }
+        t = t.replace(gabarit, "la direction");
+    }
+    t
 }
 
 /// Emplacement du programme auxiliaire : à côté de l'exécutable principal.
@@ -635,9 +801,10 @@ mod tests {
             moteur,
             avancement: None,
             title: "CA mensuel",
-            date: "2026-10-30",
+            date: "30 octobre 2026",
+            heure: "19 h 00",
             duration: "1:10:00",
-            agenda: Some("1. Ouverture\n2. Budget\n3. Varia"),
+            agenda: Some("1. Ouverture\n2. Tour de table\n3. Budget\n4. Varia"),
             transcript: "Budget de 2 500 $. Julie publie l'annonce.",
             points,
             hors_point: hors_point.to_string(),
@@ -653,19 +820,17 @@ mod tests {
     fn simule(invites: &mut Vec<String>) -> impl FnMut(&str, usize) -> Result<String> + '_ {
         |invite: &str, max_jetons: usize| {
             // Chaque point est court ; seule l'ancienne rédaction d'un coup a droit à 3 072 jetons.
-            assert!(max_jetons <= JETONS_ASSEMBLAGE.max(JETONS_POINT), "{max_jetons}");
+            assert!(max_jetons <= JETONS_TOUR_DE_TABLE, "{max_jetons}");
             invites.push(invite.to_string());
             Ok(if invite.contains("« 1. Ouverture »") {
-                "### 1. Ouverture\n**Discussion** : Ouverture à 19 h.\n**Décisions** : Aucune\n**Suivis** : Aucun".into()
-            } else if invite.contains("« 2. Budget »") {
-                "**Discussion** : Budget de 2 500 $.\n**Décisions** : Il est résolu d'adopter le budget.\n**Suivis** :\n\
-                 | Action | Responsable | Échéance |\n|---|---|---|\n| Publier l'annonce | Julie | d'ici la fin novembre |\n\
-                 | Appeler la caisse | Marc | non précisée |"
-                    .into()
+                "## 1. Ouverture\nMme Tremblay souhaite la bienvenue et ouvre la rencontre.".into()
+            } else if invite.contains("« 2. Tour de table »") {
+                "**Julie Roy**\n- Prépare l'annonce.\n**Marc Côté**\n- Poursuit le dossier de la caisse.".into()
+            } else if invite.contains("« 3. Budget »") {
+                "Mme Tremblay présente le budget.\n- Budget de 2 500 $.\nIl est convenu que Mme Roy publie l'annonce.".into()
             } else {
-                "## Sujets hors ordre du jour\nLe stationnement.\n| Action | Responsable | Échéance |\n|---|---|---|\n\
-                 | Écrire à la Ville | Lise | non précisée |\n## Tableau des suivis\n| Inventé | X | Y |\n\
-                 ## Prochaine rencontre\nLe 19 novembre à 19 h."
+                "## Présences\n- Julie Roy\n- Marc Côté\n## Sujets hors ordre du jour\nLe stationnement est discuté.\n\
+                 ## 1. Ouverture\nRépété.\n## Levée de la séance\nLa rencontre se termine dans un climat positif."
                     .into()
             })
         }
@@ -679,8 +844,9 @@ mod tests {
         };
         vec![
             p("1. Ouverture", Some("On ouvre à 19 h."), "01-ouverture"),
-            p("2. Budget", Some("Le budget est de 2 500 $. Julie publie l'annonce."), "02-budget"),
-            p("3. Varia", None, "03-varia"),
+            p("2. Tour de table", Some("Moi, Julie, je prépare l'annonce. Marc, la caisse."), "02-tour-de-table"),
+            p("3. Budget", Some("Le budget est de 2 500 $. Julie publie l'annonce."), "03-budget"),
+            p("4. Varia", None, "04-varia"),
         ]
     }
 
@@ -691,27 +857,50 @@ mod tests {
         let mut invites = Vec::new();
         let doc = rediger_compte_rendu(&r, &mut simule(&mut invites)).unwrap();
         // Un appel par point abordé, puis l'assemblage ; le point non abordé n'appelle pas le modèle.
-        assert_eq!(invites.len(), 3);
+        assert_eq!(invites.len(), 4);
         assert!(invites[0].contains("=== TRANSCRIPTION DU POINT ===\nOn ouvre à 19 h.") && !invites[0].contains("budget"));
-        assert!(invites[2].contains("=== POINTS RÉDIGÉS ===") && invites[2].contains("stationnement est plein"));
+        // Forme propre au tour de table, forme ordinaire ailleurs.
+        assert!(invites[1].contains("en gras sur une ligne") && !invites[2].contains("en gras sur une ligne"));
+        assert!(invites[2].contains("phrase d'introduction") && invites[2].contains("Il est convenu"));
+        assert!(invites[3].contains("=== POINTS RÉDIGÉS ===") && invites[3].contains("stationnement est plein"));
+        // L'ordre du jour n'a pas de point « Prochaine rencontre » : l'assemblage la demande.
+        assert!(invites[3].contains("## Prochaine rencontre"));
 
-        let ordre: Vec<usize> = ["### 1. Ouverture", "### 2. Budget", "### 3. Varia", "## Sujets hors", "## Tableau des suivis", "## Prochaine"]
-            .iter()
-            .map(|t| doc.find(t).unwrap_or_else(|| panic!("{t} absent :\n{doc}")))
-            .collect();
+        let ordre: Vec<usize> = [
+            "# Compte rendu",
+            "**CA mensuel**",
+            "## Présences",
+            "## 1. Ouverture",
+            "## 2. Tour de table",
+            "## 3. Budget",
+            "## 4. Varia",
+            "## Sujets hors",
+            "## Levée de la séance",
+        ]
+        .iter()
+        .map(|t| doc.find(t).unwrap_or_else(|| panic!("{t} absent :\n{doc}")))
+        .collect();
         assert!(ordre.windows(2).all(|w| w[0] < w[1]), "{doc}");
-        assert!(doc.starts_with("# Compte rendu — CA mensuel\n**Date** : 2026-10-30 · **Durée** : 1:10:00"));
-        assert!(doc.contains("### 3. Varia\n\nPoint non abordé ou reporté."));
-        // Le titre répété par le modèle est retiré.
+        assert!(doc.contains("**Date** : 30 octobre 2026 · **Heure** : 19 h 00"), "{doc}");
+        assert!(doc.contains("- Julie Roy\n- Marc Côté\n\n*Liste établie"), "{doc}");
+        assert!(doc.contains("## 2. Tour de table\n\n**Julie Roy**\n- Prépare l'annonce."), "{doc}");
+        assert!(doc.contains("## 4. Varia\n\nPoint non abordé ou reporté."));
+        // Le titre répété par le modèle est retiré, le point répété à l'assemblage aussi.
         assert_eq!(doc.matches("1. Ouverture").count(), 1, "{doc}");
-        // Tableau des suivis complet : tous les points et le hors point, rien d'inventé.
-        let tableau = &doc[doc.find("## Tableau des suivis").unwrap()..doc.find("## Prochaine").unwrap()];
-        for action in ["Publier l'annonce", "Appeler la caisse", "Écrire à la Ville"] {
-            assert!(tableau.contains(action), "{action} absent :\n{tableau}");
-        }
-        assert!(!doc.contains("Inventé"));
-        assert!(doc.ends_with("## Prochaine rencontre\n\nLe 19 novembre à 19 h."));
+        assert!(!doc.contains("Répété") && !doc.contains('|'), "{doc}");
+        assert!(doc.ends_with("## Levée de la séance\n\nLa rencontre se termine dans un climat positif."));
         assert!(!doc.contains("À vérifier"), "{doc}");
+    }
+
+    #[test]
+    fn point_prochaine_rencontre_dans_l_ordre_du_jour() {
+        let moteur = moteur();
+        let mut p = points(None);
+        p[3] = PointCr { titre: "4. Prochaine rencontre".into(), transcription: Some("On se revoit après les Fêtes.".into()), resume: None };
+        let mut invites = Vec::new();
+        rediger_compte_rendu(&requete(&moteur, p, "", false), &mut simule(&mut invites)).unwrap();
+        assert!(invites[3].contains("1 à 3 puces seulement"), "{}", invites[3]);
+        assert!(!invites.last().unwrap().contains("## Prochaine rencontre"));
     }
 
     #[test]
@@ -721,75 +910,107 @@ mod tests {
         let moteur = moteur();
         let mut invites = Vec::new();
         rediger_compte_rendu(&requete(&moteur, points(Some(&dir)), "", true), &mut simule(&mut invites)).unwrap();
-        assert_eq!(invites.len(), 3);
-        let resume = std::fs::read_to_string(dir.join("02-budget/resume.md")).unwrap();
-        assert!(resume.starts_with("<!-- tourdetable ") && resume.contains("| Publier l'annonce |"));
-        assert!(!dir.join("03-varia/resume.md").exists());
+        assert_eq!(invites.len(), 4);
+        let resume = std::fs::read_to_string(dir.join("03-budget/resume.md")).unwrap();
+        assert!(resume.starts_with("<!-- tourdetable ") && resume.contains("- Budget de 2 500 $."));
+        assert!(!dir.join("04-varia/resume.md").exists());
 
         // Reprise : seul l'assemblage est refait.
         invites.clear();
         let doc = rediger_compte_rendu(&requete(&moteur, points(Some(&dir)), "", true), &mut simule(&mut invites)).unwrap();
         assert_eq!(invites.len(), 1, "{invites:?}");
-        assert!(doc.contains("| Appeler la caisse | Marc |"));
+        assert!(doc.contains("Il est convenu que Mme Roy publie l'annonce."));
 
         // Transcription du point modifiée (nettoyage relancé) : il est rédigé à nouveau.
         let mut p = points(Some(&dir));
-        p[1].transcription = Some("Budget adopté.".into());
+        p[2].transcription = Some("Budget adopté.".into());
         invites.clear();
         rediger_compte_rendu(&requete(&moteur, p, "", true), &mut simule(&mut invites)).unwrap();
         assert_eq!(invites.len(), 2);
+        // Résumé d'une forme antérieure (consignes différentes) : refait.
+        let ancien = std::fs::read_to_string(dir.join("01-ouverture/resume.md")).unwrap();
+        let corps = ancien.split_once('\n').unwrap().1;
+        let entete_ancienne = format!("<!-- tourdetable {} -->", empreinte("1. Ouverture\nOn ouvre à 19 h."));
+        std::fs::write(dir.join("01-ouverture/resume.md"), format!("{entete_ancienne}\n{corps}")).unwrap();
+        invites.clear();
+        rediger_compte_rendu(&requete(&moteur, points(Some(&dir)), "", true), &mut simule(&mut invites)).unwrap();
+        assert_eq!(invites.len(), 3, "{invites:?}");
         // « Régénérer » : tout est refait.
         invites.clear();
         rediger_compte_rendu(&requete(&moteur, points(Some(&dir)), "", false), &mut simule(&mut invites)).unwrap();
-        assert_eq!(invites.len(), 3);
+        assert_eq!(invites.len(), 4);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn ancienne_rencontre_sans_periodes() {
+    fn gabarits_recopies() {
+        assert_eq!(
+            sans_gabarits("Mme [Nom] présente le point. Il est convenu que Mme [Nom] assure le suivi.\n**[Prénom Nom]**\n- Prépare."),
+            "La direction présente le point. Il est convenu que la direction assure le suivi.\n**Participant(e)**\n- Prépare."
+        );
+    }
+
+    #[test]
+    fn repetitions_retirees() {
+        let anonymes = "**Participant(e)**\n- Prépare A.\n**Participant(e)**\n- Prépare B.";
+        assert_eq!(sans_repetitions(anonymes), anonymes);
+        let md = "**Sophie**\n- Finalise le schéma.\n\n**Karim**\n- Prépare les budgets.\n\n**Sophie**\n- Autre chose.\n\n**Marc**\n- Prépare les budgets.\n- Suit le dossier.";
+        assert_eq!(sans_repetitions(md), "**Sophie**\n- Finalise le schéma.\n\n**Karim**\n- Prépare les budgets.\n\n**Marc**\n- Suit le dossier.");
+    }
+
+    #[test]
+    fn presences_et_sections_vides() {
+        let texte = "Anna, Marc Tremblay, les comptables, Mme Bérubé, Anna.\n- **Sophie Gagnon**\n- Les directeurs";
+        assert_eq!(liste_des_presences(texte), "- Anna\n- Marc Tremblay\n- Bérubé\n- Sophie Gagnon");
+        let fin = sections_de_fin("## Sujets hors ordre du jour\nCette section est omise car rien.\n## Levée de la séance\nFin.");
+        assert_eq!((fin.sujets.as_str(), fin.levee.as_str()), ("", "Fin."));
+        assert_eq!(date_et_heure_de("Page 1 sur 1\n\nRENCONTRE\n16  AVR IL     2026, 10 h30").0.as_deref(), Some("16 avril 2026"));
+    }
+
+    #[test]
+    fn rencontre_sans_decoupage() {
         let moteur = moteur();
         let mut invites = Vec::new();
         let mut appel = |i: &str, max_jetons: usize| {
             assert_eq!(max_jetons, JETONS_DOCUMENT);
             invites.push(i.to_string());
-            Ok("# Compte rendu — CA mensuel\n### 1. Ouverture\nCoût de 300 $.".to_string())
+            Ok("# Compte rendu\n## Budget\nCoût de 300 $.".to_string())
         };
         let doc = rediger_compte_rendu(&requete(&moteur, Vec::new(), "", true), &mut appel).unwrap();
         assert_eq!(invites.len(), 1);
         assert!(invites[0].contains("en suivant l'ordre du jour fourni") && invites[0].contains("=== TRANSCRIPTION ===\nBudget de 2 500 $"));
+        assert!(invites[0].contains("**Date** : 30 octobre 2026 · **Heure** : 19 h 00") && invites[0].contains("au présent"));
         // Garde-fou des chiffres conservé.
         assert!(doc.contains("> **À vérifier**") && doc.contains("300"), "{doc}");
-
-        // Rencontre d'avant le découpage : aucun point.
-        let mut m = crate::storage::Meeting::new("test.bin");
-        m.agenda = Some(crate::storage::Agenda::new("od.txt".into(), "1. Ouverture\n2. Budget".into()));
-        assert!(points_de(&m).0.is_empty());
     }
 
     #[test]
-    fn tableaux_sans_barres_et_coupes() {
-        let md = "**Suivis**\nAction | Responsable | Échéance\n--- | --- | ---\nFaire les appels | Julie | le 3 février\n\
-                  Écrire à la Ville | non précisé | non précisée\nVér";
-        let r = reparer_tableaux(md);
-        assert_eq!(
-            r,
-            "**Suivis**\n| Action | Responsable | Échéance |\n|---|---|---|\n| Faire les appels | Julie | le 3 février |\n\
-             | Écrire à la Ville | non précisé | non précisée |"
-        );
-        assert_eq!(lignes_de_tableau(&r).len(), 2);
-        // Ligne coupée après une cellule : retirée.
-        assert_eq!(reparer_tableaux("| A | B | C |\n|---|---|---|\n| x | y | z |\n| Vérifier | Ju"), "| A | B | C |\n|---|---|---|\n| x | y | z |");
+    fn date_et_heure_de_l_ordre_du_jour() {
+        let od = "RENCONTRE ÉQUIPE ADMNISTRATIF\n8 OCTOBRE 2026, 11h00\nORDRE DU JOUR\n1. Mot de bienvenue";
+        assert_eq!(date_et_heure_de(od), (Some("8 octobre 2026".into()), Some("11 h 00".into())));
+        assert_eq!(date_et_heure_de("CA du 1er décembre 2026 à 19 h 30"), (Some("1er décembre 2026".into()), Some("19 h 30".into())));
+        assert_eq!(date_et_heure_de("Réunion\n1. Achat de 4 chaises"), (None, None));
+        assert_eq!(date_et_heure_de("16 AVRIL 2026, 10 h30"), (Some("16 avril 2026".into()), Some("10 h 30".into())));
+        let moteur = moteur();
+        let mut r = requete(&moteur, Vec::new(), "", false);
+        assert_eq!(date_et_heure(&r), ("30 octobre 2026".into(), "19 h 00".into()));
+        r.agenda = Some(od);
+        assert_eq!(date_et_heure(&r), ("8 octobre 2026".into(), "11 h 00".into()));
+        let d = chrono::TimeZone::with_ymd_and_hms(&chrono::Local, 2026, 10, 8, 9, 5, 0).unwrap();
+        assert_eq!((date_longue(&d), heure(&d)), ("8 octobre 2026".into(), "9 h 05".into()));
+    }
+
+    #[test]
+    fn formes_et_sections() {
+        assert!(std::ptr::eq(forme_du_point("2. Tour de table"), POINT_TOUR_DE_TABLE));
+        assert!(std::ptr::eq(forme_du_point("10. Varia"), POINT_VARIA));
+        assert!(std::ptr::eq(forme_du_point("11. Prochaine rencontre"), POINT_PROCHAINE));
+        assert!(std::ptr::eq(forme_du_point("8. Télétravail"), POINT_ORDINAIRE));
+        let fin = sections_de_fin("Préambule\n## Présences\n- A\n## Autre\nB\n## Levée de la séance\nC");
+        assert_eq!(fin, Fin { presences: "- A".into(), levee: "C".into(), ..Fin::default() });
+        assert_eq!(sections_de_fin("Rien à signaler."), Fin::default());
         assert_eq!(tidy_answer("Il est résolu de adopter le budget."), "Il est résolu d'adopter le budget.");
         assert_eq!(tidy_answer("Il est résolu de reporter."), "Il est résolu de reporter.");
-    }
-
-    #[test]
-    fn tableaux_et_sections() {
-        let md = "| Action | Responsable | Échéance |\n|:--|--|--|\n| Publier | Julie | 15 décembre |\n| Aucun | | |\nTexte | pas un tableau";
-        assert_eq!(lignes_de_tableau(md), ["| Publier | Julie | 15 décembre |"]);
-        let (sujets, prochaine) = sections_de_fin("Préambule\n## Sujets hors ordre du jour\nA\n## Autre\nB\n## Prochaine rencontre\nC");
-        assert_eq!((sujets.as_str(), prochaine.as_str()), ("A", "C"));
-        assert_eq!(sections_de_fin("Rien à signaler."), (String::new(), String::new()));
     }
 
     #[test]

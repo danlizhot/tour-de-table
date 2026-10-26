@@ -8,6 +8,7 @@ mod cli;
 mod config;
 mod decoupage;
 mod diagnostic;
+mod docx;
 mod models;
 mod nettoyage;
 mod quebec;

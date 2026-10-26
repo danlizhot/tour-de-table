@@ -100,10 +100,17 @@ saisir à la main.
   Cmd sur macOS. La transcription et les exports portent un intertitre par point.
 * **Avant la rencontre**, les sujets et les noms de l'ordre du jour sont ajoutés à l'invite de
   Whisper, ce qui améliore la reconnaissance des noms propres et du jargon.
-* **« Rédiger le compte rendu »** suit l'ordre du jour point par point, avec la même numérotation.
-  Pour chaque point : discussion, décisions et suivis. Viennent ensuite les sujets hors ordre du
-  jour, un tableau des suivis (action, responsable, échéance) et la prochaine rencontre. Un point
-  non abordé est indiqué comme tel, et le modèle a pour consigne de ne rien inventer.
+* **« Rédiger le compte rendu »** suit la forme des comptes rendus d'organisme : en-tête (titre,
+  date et heure, reprises de l'ordre du jour s'il les annonce), présences, puis chaque point de
+  l'ordre du jour avec la même numérotation, et la levée de la séance. Chaque point est rédigé au
+  présent et à la troisième personne : une phrase d'introduction (« Mme Bérubé présente… »), les
+  éléments principaux en puces, puis ce qui est convenu (« Il est convenu que… »). Le tour de
+  table donne quelques puces par personne, le varia un sous-titre par sujet, la prochaine
+  rencontre quelques puces. Un point non abordé est indiqué comme tel, et le modèle a pour
+  consigne de ne rien inventer.
+* **Présences** : Tour de table ne reconnaît pas les voix ; la liste reprend les personnes qui
+  prennent la parole dans les points rédigés (le tour de table surtout) et porte la mention
+  « à vérifier ». Les « Mme » et « M. » sont aussi à relire.
 * Le texte est rédigé en **français québécois standard** (terminologie et typographie de l'OQLF),
   puis la typographie est vérifiée par Tour de table (« 14 h 30 », « 2 500 $ »).
 * **Garde-fou sur les chiffres** : tout montant ou nombre du compte rendu absent de la
@@ -113,13 +120,14 @@ saisir à la main.
 * Sans ordre du jour, Tour de table produit un résumé structuré.
 * **Compte rendu par point** : quand la rencontre est découpée par point, chaque point est rédigé
   à part, avec seulement sa transcription (« Compte rendu — point 3 sur 8 »), puis un dernier
-  appel ajoute les sujets hors ordre du jour et la prochaine rencontre. Le tableau des suivis
-  réunit ceux de tous les points. Chaque résumé est enregistré dans `resume.md` du dossier du
+  appel, à partir des points rédigés, ajoute les présences, les sujets hors ordre du jour et la
+  levée de la séance. Chaque résumé est enregistré dans `resume.md` du dossier du
   point : un compte rendu interrompu reprend sans tout recommencer. Un point trop long (plus
   d'environ 24 000 caractères) est d'abord condensé par tranches.
 * **Rencontres sans découpage par point** (anciennes, ou sans ordre du jour) : la transcription
   est rédigée d'un coup, condensée d'abord par tranches au-delà d'environ 45 min.
-* Exporté dans `compte-rendu.md`, et inclus dans `transcription.md`.
+* Exporté dans `compte-rendu.docx` (Word : Calibri, titres en gras, puces, prêt à relire et à
+  diffuser) et `compte-rendu.md`, et inclus dans `transcription.md`.
 
 **Modèle de langue intégré : rien à installer.** Le programme auxiliaire `tourdetable-redaction`,
 livré avec l'application, fait tourner llama.cpp sur l'ordinateur, avec un seul chargement du
@@ -185,6 +193,13 @@ hors point : le bouton « Découper par points » de la fiche ouvre plus tard le
 démarrer la rencontre), le compte rendu est rédigé dès la fin du nettoyage de la transcription
 (pour un import, après la validation du découpage par point). On peut donc
 déposer l'ordre du jour, importer l'enregistrement et revenir plus tard : tout est prêt.
+
+**En arrière-plan** : un import accompagné d'un ordre du jour, puis la rédaction du compte rendu,
+se font fenêtre réduite (un avis l'annonce quelques secondes avant). La fenêtre revient d'elle-même
+pour la vérification du découpage par point, puis quand le compte rendu est prêt, sur sa fiche,
+et l'icône est signalée dans la barre des tâches (le Dock sous macOS). Sous Linux avec Wayland,
+le système interdit à une application de se rouvrir : seule l'icône est signalée. Le bouton
+**Visualiser** de la fiche ouvre le compte rendu dans Word (`compte-rendu.docx`).
 
 **Paramètres** : seulement le micro et la sortie audio, la question sur les haut-parleurs de la
 salle et le lexique. Tout le reste (modèles, performance, détection de voix, conservation de
@@ -310,6 +325,7 @@ src/
   models.rs      modèles (Whisper, rédaction), téléchargement et vérification
   agenda.rs      lecture de l'ordre du jour (Word, PDF, texte)
   summary.rs     compte rendu par le modèle intégré (découpage des longues rencontres)
+  docx.rs        export du compte rendu en Word
   audio/import.rs  import d'enregistrements (MP4, M4A, MP3, WAV, FLAC, OGG), décodage en flux
   audio/frontieres.rs  rangement par point de l'audio d'un import (ou « Découper par points »)
   audio/lecture.rs écoute d'un extrait autour d'une frontière

@@ -148,8 +148,10 @@ fn rediger(charge: &mut Option<Charge>, r: &Requete) -> Result<String> {
     }
 
     let mut echantillonneur = LlamaSampler::chain_simple([
-        // Pas de pénalité de répétition : elle abîme les tableaux Markdown, qui
-        // répètent « | » et « --- » à chaque ligne.
+        // Légère pénalité de répétition : sur un long tour de table, un petit modèle finit par
+        // reprendre les mêmes phrases en boucle. (Le compte rendu n'a plus de tableau Markdown,
+        // que la pénalité abîmait.)
+        LlamaSampler::penalties(modele.n_vocab(), 256, 1.1, 0.0, 0.0),
         LlamaSampler::top_p(0.9, 1),
         LlamaSampler::temp(r.temperature),
         LlamaSampler::dist(1234),

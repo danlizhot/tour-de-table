@@ -81,6 +81,7 @@ impl TourDeTableApp {
         if let Some(m) = self.live.take() {
             if m.segments.is_empty() {
                 self.notify("Aucune parole détectée : rien n'a été enregistré.", false);
+                self.rappeler();
                 let _ = std::fs::remove_dir_all(m.dir());
                 return;
             }
@@ -89,6 +90,10 @@ impl TourDeTableApp {
                 if let Err(e) = m.save() {
                     self.notify(format!("Sauvegarde : {e:#}"), true);
                 }
+                if self.en_arriere_plan {
+                    self.notify("Transcription terminée : vérifiez le découpage par point, puis validez. Le compte rendu se rédigera ensuite en arrière-plan.", false);
+                }
+                self.rappeler();
                 self.ouvrir_verification(m, true);
                 return;
             }
@@ -153,6 +158,12 @@ impl TourDeTableApp {
             let _ = tx.send(result.map_err(|e| format!("{e:#}")));
         });
         self.import_job = Some((name, rx, avancement));
+        // Ordre du jour joint : rien à faire avant la vérification du découpage par point.
+        if self.live.as_ref().is_some_and(|m| m.agenda.is_some()) {
+            self.passer_en_arriere_plan(
+                "La transcription se fait en arrière-plan : Tour de table réapparaîtra pour vérifier le découpage par point, puis quand le compte rendu sera prêt.",
+            );
+        }
     }
 
     /// Où en est l'import : décodage en blocs, puis transcription bloc par bloc.

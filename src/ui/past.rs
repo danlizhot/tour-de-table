@@ -32,6 +32,7 @@ impl TourDeTableApp {
     /// enregistrés (resume.md) d'un compte rendu interrompu.
     pub(super) fn summarize(&mut self, idx: usize, reprendre: bool) {
         self.liberer_whisper();
+        self.passer_en_arriere_plan("Le compte rendu se rédige en arrière-plan : Tour de table réapparaîtra dès qu'il sera prêt.");
         let m = &self.meetings[idx];
         let (tx, rx) = crossbeam_channel::bounded(1);
         let moteur = config::moteur();
@@ -39,7 +40,8 @@ impl TourDeTableApp {
         let avancement_fil = avancement.clone();
         let (points, hors_point) = crate::summary::points_de(m);
         let title = m.title.clone();
-        let date = m.started_at.format("%Y-%m-%d à %H h %M").to_string();
+        let date = crate::summary::date_longue(&m.started_at);
+        let heure = crate::summary::heure(&m.started_at);
         let duration = clock(m.duration_s * 1000);
         let agenda = m.agenda.as_ref().map(|a| a.text.clone());
         let transcript = m.texte_compte_rendu();
@@ -49,6 +51,7 @@ impl TourDeTableApp {
                 avancement: Some(&avancement_fil),
                 title: &title,
                 date: &date,
+                heure: &heure,
                 duration: &duration,
                 agenda: agenda.as_deref(),
                 transcript: &transcript,
@@ -200,6 +203,11 @@ impl TourDeTableApp {
                     {
                         action = Some("summary");
                     }
+                    if self.meetings[idx].summary.is_some()
+                        && ui.small_button("Visualiser").on_hover_text("Ouvre le compte rendu dans Word (compte-rendu.docx)").clicked()
+                    {
+                        action = Some("visualiser");
+                    }
                     if let Some(sum) = &self.meetings[idx].summary
                         && ui.small_button("Copier").clicked()
                     {
@@ -241,6 +249,11 @@ impl TourDeTableApp {
                 let reprendre = self.meetings[idx].summary.is_none();
                 self.summarize(idx, reprendre);
             }
+            // Le .docx est réécrit à chaque export ; une rencontre rédigée avant l'export Word n'en a pas encore.
+            Some("visualiser") => match self.meetings[idx].export_all() {
+                Ok(dir) => storage::reveal(&dir.join("compte-rendu.docx")),
+                Err(e) => self.notify(format!("Export : {e:#}"), true),
+            },
             Some("decouper") => self.ouvrir_verification(self.meetings[idx].clone(), false),
             _ => {}
         }
