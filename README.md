@@ -196,11 +196,10 @@ démarrer la rencontre), le compte rendu est rédigé dès la fin du nettoyage d
 (pour un import, après la validation du découpage par point). On peut donc
 déposer l'ordre du jour, importer l'enregistrement et revenir plus tard : tout est prêt.
 
-**En arrière-plan** : un import accompagné d'un ordre du jour, puis la rédaction du compte rendu,
-se font fenêtre réduite (un avis l'annonce quelques secondes avant). La fenêtre revient d'elle-même
-pour la vérification du découpage par point, puis quand le compte rendu est prêt, sur sa fiche,
-et l'icône est signalée dans la barre des tâches (le Dock sous macOS). Sous Linux avec Wayland,
-le système interdit à une application de se rouvrir : seule l'icône est signalée. Le bouton
+**En arrière-plan** : la transcription d'un import et la rédaction du compte rendu se font
+sans bloquer l'application, qui reste ouverte. Quand il faut vérifier le découpage par point,
+puis quand le compte rendu est prêt, un avis s'affiche et l'icône est signalée dans la barre des
+tâches (le Dock sous macOS) si vous travaillez dans une autre fenêtre. Le bouton
 **Visualiser** de la fiche ouvre le compte rendu dans Word (`compte-rendu.docx`).
 
 **Paramètres** : seulement le micro et la sortie audio, la question sur les haut-parleurs de la
