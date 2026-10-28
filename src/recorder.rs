@@ -28,6 +28,8 @@ pub struct Options {
     pub dossier: PathBuf,
     /// Titres des points de l'ordre du jour, pour nommer les dossiers des blocs.
     pub points: Vec<String>,
+    /// Date de la rencontre, pour nommer le fichier audio consolidé à la fin.
+    pub date: chrono::NaiveDate,
 }
 
 /// Messages de l'interface au fil audio.
@@ -323,5 +325,16 @@ fn run(
     }
 
     drop(captures);
-    signaler(ecrivain.terminer().map(|_| ()));
+    if let Err(e) = ecrivain.terminer() {
+        signaler(Err(e));
+        return;
+    }
+    // Un seul fichier par source à la place des blocs ; dans un fil à part, car l'interface
+    // attend la fin de ce fil-ci. Interrompue, la consolidation laisse les blocs intacts.
+    let (dossier, date) = (opts.dossier.clone(), opts.date);
+    std::thread::spawn(move || {
+        if let Err(e) = crate::audio::blocs::consolider(&dossier, date) {
+            log::warn!("{e:#}");
+        }
+    });
 }

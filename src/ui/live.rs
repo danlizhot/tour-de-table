@@ -20,7 +20,8 @@ impl TourDeTableApp {
             return;
         }
         let meeting = Meeting::new(models::RECOMMENDED);
-        // L'audio est toujours conservé, en blocs rangés par point de l'ordre du jour.
+        // L'audio est toujours conservé : en blocs rangés par point de l'ordre du jour pendant la
+        // rencontre, puis en un seul fichier par source.
         let dossier = meeting.dir();
         let _ = std::fs::create_dir_all(&dossier);
         let opts = Options {
@@ -32,6 +33,7 @@ impl TourDeTableApp {
             sensitivity: config::VAD_SENSITIVITY,
             dossier,
             points: titres_points(self.draft_agenda.as_ref()),
+            date: meeting.started_at.date_naive(),
         };
         match Recorder::start(opts, self.utt_tx.clone()) {
             Ok(rec) => {

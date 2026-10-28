@@ -218,7 +218,10 @@ tourdetable --compte-rendu ordre-du-jour.docx enregistrement.mp4   # ou transcri
 
 Emplacement des données. Les rencontres sont dans le dossier Musique, une par dossier nommé
 d'après sa date et son titre (`2026-10-30-rencontre-ca-mensuel`, ou `2026-10-30-rencontre`
-sans titre) ; renommer une rencontre ne renomme pas son dossier. Les modèles, la configuration,
+sans titre) ; renommer une rencontre ne renomme pas son dossier. Pendant la rencontre, l'audio
+est écrit en blocs de 2 minutes ; à la fin, ils sont remplacés par un seul fichier,
+`AAAAMMJJ-Rencontre-Tour de table.wav` (mode « Sources séparées » : un fichier `-salle` et un
+fichier `-distance`). Les modèles, la configuration,
 le journal et la corbeille restent dans le dossier de l'application. Les rencontres des versions
 précédentes (et celles de « Noter », l'ancien nom) y sont déplacées automatiquement au lancement.
 
@@ -318,7 +321,7 @@ src/
   audio/mod.rs   capture micro + loopback par plateforme
   audio/dsp.rs   mono, rééchantillonnage 16 kHz (FIR), détection de voix, découpage
   recorder.rs    session : alignement horloge, mixage, changement de point
-  audio/blocs.rs audio en blocs de 2 min par point : index, reconstitution, réparation
+  audio/blocs.rs audio en blocs de 2 min par point, puis fichier unique : index, reconstitution, réparation
   stt.rs         fil Whisper (modèle gardé en mémoire)
   quebec.rs      invite, typographie, lexique, filtre d'hallucinations
   nettoyage.rs   nettoyage de la transcription, par règles (data/nettoyage.txt)

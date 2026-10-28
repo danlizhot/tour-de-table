@@ -3,7 +3,8 @@
 //!
 //! Les frontières validées deviennent les périodes de la rencontre ; les blocs passent de
 //! `_import/` aux dossiers des points. Un bloc qui chevauche une frontière est recoupé au
-//! silence le plus proche, et la période commence exactement à cette coupe.
+//! silence le plus proche, et la période commence exactement à cette coupe. L'audio est
+//! ensuite consolidé en un fichier par source (`blocs::consolider`).
 
 use std::path::Path;
 
@@ -110,7 +111,8 @@ struct Troncon {
 
 /// Range les blocs de `_import/` par point d'après les frontières validées : crée les périodes,
 /// déplace les blocs (en recoupant au silence ceux qui chevauchent une frontière), renumérote,
-/// réécrit `index-audio.json` puis supprime `_import/`. La rencontre reste à sauvegarder.
+/// réécrit `index-audio.json`, supprime `_import/` puis consolide l'audio. La rencontre reste à
+/// sauvegarder.
 pub fn appliquer(dir: &Path, rencontre: &mut Meeting, frontieres: &[Frontiere]) -> Result<()> {
     let travail = dir.join(TRAVAIL);
     let index = blocs::lire_index(&travail)?;
@@ -158,11 +160,12 @@ pub fn appliquer(dir: &Path, rencontre: &mut Meeting, frontieres: &[Frontiere]) 
             numeros[t] += 1;
             let (passage, rel) = &passages[t];
             std::fs::create_dir_all(dir.join(rel)).with_context(|| format!("Création de {rel}"))?;
+            // Un bloc d'un fichier consolidé est toujours réécrit : le fichier est partagé.
             let entier = a == g.decalage && b == g.fin();
             for (s, bloc) in g.blocs.iter().enumerate() {
                 let fichier = format!("{rel}/bloc-{:03}{}.wav", numeros[t], blocs::suffixe(bloc.source));
                 let chemin = dir.join(&fichier);
-                let sha256 = if entier && bloc.echantillons == g.echantillons {
+                let sha256 = if entier && bloc.echantillons == g.echantillons && bloc.position.is_none() {
                     std::fs::rename(travail.join(&bloc.fichier), &chemin).with_context(|| format!("Déplacement de {}", bloc.fichier))?;
                     bloc.sha256.clone()
                 } else {
@@ -181,6 +184,7 @@ pub fn appliquer(dir: &Path, rencontre: &mut Meeting, frontieres: &[Frontiere]) 
                     duree_ms: blocs::ms(b - a),
                     fichier,
                     sha256,
+                    position: None,
                 });
             }
             a = b;
@@ -198,6 +202,9 @@ pub fn appliquer(dir: &Path, rencontre: &mut Meeting, frontieres: &[Frontiere]) 
     blocs::ecrire_index(dir, &nouvel)?;
     std::fs::remove_dir_all(&travail).context("Suppression du dossier de travail de l'import")?;
     log::info!("Découpage par point : {} tronçons, {} blocs", troncons.len(), nouvel.blocs.len());
+    if let Err(e) = blocs::consolider(dir, rencontre.started_at.date_naive()) {
+        log::warn!("{e:#}");
+    }
     Ok(())
 }
 
@@ -211,7 +218,9 @@ fn preparer(dir: &Path) -> Result<()> {
     let index = blocs::lire_index(dir)?;
     std::fs::create_dir_all(&travail)?;
     blocs::ecrire_index(&travail, &index)?;
-    for b in &index.blocs {
+    // Les blocs d'un fichier consolidé partagent ce fichier : il n'est déplacé qu'une fois.
+    let mut deplaces = std::collections::HashSet::new();
+    for b in index.blocs.iter().filter(|b| deplaces.insert(b.fichier.as_str())) {
         let vers = travail.join(&b.fichier);
         if let Some(p) = vers.parent() {
             std::fs::create_dir_all(p)?;
@@ -220,7 +229,7 @@ fn preparer(dir: &Path) -> Result<()> {
     }
     std::fs::remove_file(dir.join(INDEX))?;
     // Dossiers devenus vides : les passages, puis les points.
-    for b in &index.blocs {
+    for b in index.blocs.iter().filter(|b| b.position.is_none()) {
         if let Some(passage) = dir.join(&b.fichier).parent() {
             let _ = std::fs::remove_dir(passage);
             if let Some(point) = passage.parent() {
@@ -379,8 +388,18 @@ mod tests {
         v
     }
 
-    fn resume(index: &Index) -> Vec<(u64, u64, &str, &str)> {
-        index.blocs.iter().map(|b| (b.decalage, b.echantillons, b.fichier.as_str(), b.sha256.as_str())).collect()
+    fn resume(index: &Index) -> Vec<(u64, u64)> {
+        index.blocs.iter().map(|b| (b.decalage, b.echantillons)).collect()
+    }
+
+    /// Blocs rangés : point, passage et numéro de chacun.
+    fn rangement(index: &Index) -> Vec<(Option<usize>, u32, u32)> {
+        index.blocs.iter().map(|b| (b.point, b.passage, b.numero)).collect()
+    }
+
+    /// Après rangement, l'audio est consolidé : un seul fichier à côté de l'index.
+    fn consolide(m: &Meeting) -> String {
+        format!("{}.wav", blocs::nom_consolide(m.started_at.date_naive()))
     }
 
     fn verifier_rangement(dir: &Path, m: &Meeting, audio: &[f32]) -> Index {
@@ -391,9 +410,11 @@ mod tests {
         let mut attendu = 0;
         for b in &index.blocs {
             assert_eq!(b.decalage, attendu, "{}", b.fichier);
-            assert_eq!(blocs::empreinte(&dir.join(&b.fichier)).unwrap(), b.sha256);
+            assert_eq!((b.fichier.as_str(), b.position), (consolide(m).as_str(), Some(b.decalage)));
+            blocs::lire_bloc(dir, b).unwrap();
             attendu += b.echantillons;
         }
+        assert_eq!(arborescence(dir), [consolide(m), "index-audio.json".into(), "source/reunion.wav".into()]);
         assert_eq!(attendu, 600 * SR);
         for p in &m.periodes {
             assert!(index.blocs.iter().any(|b| blocs::ms(b.decalage) == p.debut_ms && b.point == p.point && b.numero == 1), "{p:?}");
@@ -421,19 +442,8 @@ mod tests {
         assert_eq!(frontieres[1].extrait, ANNONCES[1].1);
 
         appliquer(&dir, &mut m, &frontieres).unwrap();
-        assert_eq!(arborescence(&dir), [
-            "00-hors-point/passage-01/bloc-001.wav",
-            "01-ouverture-de-la-seance/passage-01/bloc-001.wav",
-            "01-ouverture-de-la-seance/passage-01/bloc-002.wav",
-            "01-ouverture-de-la-seance/passage-01/bloc-003.wav",
-            "02-adoption-du-budget-2027/passage-01/bloc-001.wav",
-            "02-adoption-du-budget-2027/passage-01/bloc-002.wav",
-            "03-varia/passage-01/bloc-001.wav",
-            "03-varia/passage-01/bloc-002.wav",
-            "index-audio.json",
-            "source/reunion.wav",
-        ]);
         let index = verifier_rangement(&dir, &m, &audio);
+        assert_eq!(rangement(&index), [(None, 1, 1), (Some(0), 1, 1), (Some(0), 1, 2), (Some(0), 1, 3), (Some(1), 1, 1), (Some(1), 1, 2), (Some(2), 1, 1), (Some(2), 1, 2)]);
         // Coupes au silence juste avant chaque annonce (parole à 42, 252 et 432 s).
         let periodes: Vec<(Option<usize>, Option<u64>)> = m.periodes.iter().map(|p| (p.point, p.fin_ms)).collect();
         let debuts: Vec<u64> = m.periodes.iter().map(|p| p.debut_ms).collect();
@@ -442,8 +452,7 @@ mod tests {
             assert!((f.debut_ms - 1500..=f.debut_ms + 300).contains(d), "coupe à {d} pour la frontière {}", f.debut_ms);
             assert!(audio[(d * SR / 1000) as usize].abs() < 0.01, "coupe en pleine parole à {d}");
         }
-        // Les blocs entiers sont déplacés tels quels, les autres recoupés.
-        assert_eq!(index.blocs[2].fichier, "01-ouverture-de-la-seance/passage-01/bloc-002.wav");
+        // Les blocs entiers gardent leurs limites, les autres sont recoupés.
         assert_eq!((index.blocs[2].decalage, index.blocs[2].echantillons), (120 * SR, 120 * SR));
         assert!(m.segments.iter().filter(|s| s.text == ANNONCES[2].1).all(|s| m.point_de(s.start_ms) == Some(2)));
         let _ = std::fs::remove_dir_all(&dir);
@@ -456,28 +465,19 @@ mod tests {
         let avant = blocs::lire_index(&dir.join(TRAVAIL)).unwrap();
         appliquer(&dir, &mut m, &[]).unwrap();
         assert!(m.periodes.is_empty());
-        assert_eq!(arborescence(&dir), [
-            "00-hors-point/passage-01/bloc-001.wav",
-            "00-hors-point/passage-01/bloc-002.wav",
-            "00-hors-point/passage-01/bloc-003.wav",
-            "00-hors-point/passage-01/bloc-004.wav",
-            "00-hors-point/passage-01/bloc-005.wav",
-            "index-audio.json",
-            "source/reunion.wav",
-        ]);
         let index = verifier_rangement(&dir, &m, &audio);
-        // Simplement déplacés : mêmes blocs, mêmes empreintes.
+        // Simplement rangés hors point : mêmes blocs.
+        assert_eq!(rangement(&index), [(None, 1, 1), (None, 1, 2), (None, 1, 3), (None, 1, 4), (None, 1, 5)]);
         assert_eq!(resume(&index), resume(&avant));
 
-        // Plus tard : ordre du jour ajouté, « Découper par points ». Même résultat qu'un import
-        // découpé directement.
+        // Plus tard : ordre du jour ajouté, « Découper par points » sur l'audio consolidé. Même
+        // résultat qu'un import découpé directement.
         m.agenda = Some(agenda());
         let frontieres = crate::decoupage::detecter_hors_ligne(&m.segments, &m.agenda.as_ref().unwrap().points);
         redecouper(&dir, &mut m, &frontieres).unwrap();
         let index = verifier_rangement(&dir, &m, &audio);
         let points: Vec<Option<usize>> = index.blocs.iter().map(|b| b.point).collect();
         assert_eq!(points, [None, Some(0), Some(0), Some(0), Some(1), Some(1), Some(2), Some(2)]);
-        assert!(!dir.join("00-hors-point/passage-01/bloc-002.wav").exists());
 
         // Revoir le découpage : les frontières reviennent des périodes, une frontière retirée
         // fusionne deux points, puis on revient hors point en fin de rencontre.
@@ -486,9 +486,9 @@ mod tests {
         revues.remove(1);
         revues.push(Frontiere { point: None, debut_ms: 590_000, extrait: String::new(), raison: String::new(), declenchement: Declenchement::Manuel });
         redecouper(&dir, &mut m, &revues).unwrap();
-        verifier_rangement(&dir, &m, &audio);
+        let index = verifier_rangement(&dir, &m, &audio);
         assert_eq!(m.periodes.iter().map(|p| p.point).collect::<Vec<_>>(), [Some(0), Some(2)]);
-        assert!(dir.join("00-hors-point/passage-02/bloc-001.wav").exists());
+        assert_eq!(index.blocs.last().map(|b| (b.point, b.passage)), Some((None, 2)));
         assert_eq!(frontieres_de(&m).last().map(|f| f.point), Some(None));
         let _ = std::fs::remove_dir_all(&dir);
     }

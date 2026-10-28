@@ -11,8 +11,20 @@
 //! ```
 //!
 //! Chaque bloc est finalisé avant l'ouverture du suivant : un plantage n'abîme que les blocs
-//! ouverts, dont `reprendre` répare l'en-tête. Les rencontres d'avant ce format (salle.wav,
-//! distance.wav, reunion.wav pour toute la rencontre) restent telles quelles.
+//! ouverts, dont `reprendre` répare l'en-tête.
+//!
+//! Une fois la rencontre terminée (et après chaque rangement par point), `consolider` remplace
+//! les blocs par un seul fichier par source, et l'index garde la place de chaque bloc :
+//!
+//! ```text
+//! <rencontre>/
+//!   20261028-Rencontre-Tour de table.wav            mode mixé
+//!   20261028-Rencontre-Tour de table-salle.wav      mode séparé : un fichier par source
+//!   index-audio.json                                points, passages et position des blocs
+//! ```
+//!
+//! Les rencontres d'avant ces formats (salle.wav, distance.wav, reunion.wav pour toute la
+//! rencontre, ou blocs jamais consolidés) restent telles quelles.
 
 use std::collections::{HashSet, VecDeque};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -46,7 +58,11 @@ pub struct Bloc {
     pub duree_ms: u64,
     /// Chemin relatif au dossier de la rencontre, séparé par « / ».
     pub fichier: String,
+    /// Empreinte du fichier ; avec `position`, empreinte des seuls échantillons du bloc (i16 LE).
     pub sha256: String,
+    /// Premier échantillon du bloc dans `fichier`, quand celui-ci est le fichier consolidé.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -526,6 +542,7 @@ impl Ecrivain {
                     duree_ms: ms(echantillons),
                     fichier,
                     sha256,
+                    position: None,
                 }),
                 Err(e) => erreur = Some(e.context(format!("Fermeture de {fichier}"))),
             }
@@ -628,6 +645,18 @@ pub fn reconstituer_dans(dir: &Path, rencontre: &Meeting, portee: Portee, source
 
 pub fn lire_bloc(dir: &Path, b: &Bloc) -> Result<Vec<i16>> {
     let chemin = dir.join(&b.fichier);
+    if let Some(position) = b.position {
+        let mut lecteur = hound::WavReader::open(&chemin).context("fichier manquant")?;
+        if position + b.echantillons > lecteur.len() as u64 {
+            bail!("fichier plus court que l'index (abîmé ou tronqué)");
+        }
+        lecteur.seek(position as u32)?;
+        let v: Vec<i16> = lecteur.samples::<i16>().take(b.echantillons as usize).collect::<Result<_, _>>()?;
+        if empreinte_echantillons(&v) != b.sha256 {
+            bail!("empreinte différente de l'index (fichier modifié ou abîmé)");
+        }
+        return Ok(v);
+    }
     let octets = std::fs::read(&chemin).context("fichier manquant")?;
     decoder(&octets, b)
 }
@@ -664,6 +693,105 @@ pub fn exporter(rencontre: &Meeting, portee: Portee, chemin: &Path) -> Result<Ve
     }
     messages.extend(avertissements);
     Ok(messages)
+}
+
+// ───────────────────────── Consolidation ─────────────────────────
+
+fn empreinte_echantillons(v: &[i16]) -> String {
+    let mut h = Sha256::new();
+    for x in v {
+        h.update(x.to_le_bytes());
+    }
+    format!("{:x}", h.finalize())
+}
+
+/// Nom du fichier consolidé d'une rencontre, sans suffixe de source ni extension.
+pub fn nom_consolide(date: chrono::NaiveDate) -> String {
+    format!("{}-Rencontre-Tour de table", date.format("%Y%m%d"))
+}
+
+/// Remplace les blocs par un fichier par source (`nom_consolide`, suffixé en mode séparé), puis
+/// supprime les blocs et les dossiers devenus vides. L'index garde point, passage et position de
+/// chaque bloc. Si un bloc est illisible ou abîmé, rien n'est supprimé et l'erreur est retournée.
+/// Sans index, ou index déjà consolidé : rien à faire.
+pub fn consolider(dir: &Path, date: chrono::NaiveDate) -> Result<()> {
+    if !existe(dir) {
+        return Ok(());
+    }
+    let index = lire_index(dir)?;
+    if index.blocs.iter().all(|b| b.position.is_some()) {
+        return Ok(());
+    }
+    let base = nom_consolide(date);
+    let mut nouvel = Index { frequence: index.frequence, blocs: Vec::new() };
+    // Toutes les sources sont écrites et vérifiées avant qu'aucun fichier ne prenne son nom.
+    let mut prets = Vec::new();
+    for source in sources(&index) {
+        let fichier = format!("{base}{}.wav", suffixe(source));
+        let chemin = dir.join(&fichier);
+        let tmp = chemin.with_extension("wav.tmp");
+        prets.push((tmp.clone(), chemin));
+        if let Err(e) = ecrire_consolide(dir, &index, source, &fichier, &tmp, &mut nouvel.blocs) {
+            for (tmp, _) in &prets {
+                let _ = std::fs::remove_file(tmp);
+            }
+            return Err(e.context(format!("Consolidation de {fichier} : blocs gardés")));
+        }
+    }
+    for (tmp, chemin) in &prets {
+        std::fs::rename(tmp, chemin).with_context(|| format!("Renommage de {}", chemin.display()))?;
+    }
+    nouvel.blocs.sort_by_key(|b| (b.decalage, b.source as u8));
+    ecrire_index(dir, &nouvel)?;
+
+    // L'index pointe maintenant vers les fichiers consolidés : les blocs ne servent plus.
+    for b in index.blocs.iter().filter(|b| b.position.is_none()) {
+        let chemin = dir.join(&b.fichier);
+        if let Err(e) = std::fs::remove_file(&chemin) {
+            log::warn!("Suppression de {} : {e}", b.fichier);
+        }
+        if let Some(passage) = chemin.parent() {
+            let _ = std::fs::remove_dir(passage);
+            if let Some(point) = passage.parent() {
+                let _ = std::fs::remove_dir(point);
+            }
+        }
+    }
+    log::info!("Audio consolidé : {} blocs, {} fichier(s)", index.blocs.len(), sources(&nouvel).len());
+    Ok(())
+}
+
+/// Écrit les blocs de `source` bout à bout dans `tmp` (trous comblés par du silence) et ajoute
+/// leurs entrées consolidées à `blocs`.
+fn ecrire_consolide(dir: &Path, index: &Index, source: Source, fichier: &str, tmp: &Path, blocs: &mut Vec<Bloc>) -> Result<()> {
+    let mut a_ecrire: Vec<&Bloc> = index.blocs.iter().filter(|b| b.source == source).collect();
+    a_ecrire.sort_by_key(|b| b.decalage);
+    let premier = a_ecrire.first().map_or(0, |b| b.decalage);
+    let mut w = hound::WavWriter::create(tmp, spec())?;
+    let mut ecrits = 0u64;
+    for b in a_ecrire {
+        let v = lire_bloc(dir, b).with_context(|| b.fichier.clone())?;
+        if (v.len() as u64) < b.echantillons {
+            bail!("{} est incomplet", b.fichier);
+        }
+        let position = b.decalage - premier;
+        if position < ecrits {
+            bail!("{} chevauche le bloc précédent", b.fichier);
+        }
+        for _ in ecrits..position {
+            w.write_sample(0i16)?;
+        }
+        for &x in &v {
+            w.write_sample(x)?;
+        }
+        ecrits = position + b.echantillons;
+        blocs.push(Bloc { fichier: fichier.to_string(), sha256: empreinte_echantillons(&v), position: Some(position), ..b.clone() });
+    }
+    w.finalize()?;
+    if hound::WavReader::open(tmp)?.len() as u64 != ecrits {
+        bail!("longueur relue différente de la longueur écrite");
+    }
+    Ok(())
 }
 
 // ───────────────────────── Reprise après un plantage ─────────────────────────
@@ -806,6 +934,7 @@ pub fn reconstruire_index(dir: &Path) -> Result<u64> {
                 duree_ms: ms(n),
                 sha256: empreinte(&chemin)?,
                 fichier: t.fichier,
+                position: None,
             });
             longueur = longueur.max(n);
         }
@@ -824,6 +953,9 @@ pub fn reprendre(rencontre: &mut Meeting, dir: &Path) -> Result<()> {
     let fin = fin_audio.max(fin_texte);
     rencontre.fermer_periode(fin);
     rencontre.duration_s = rencontre.duration_s.max(fin / 1000);
+    if let Err(e) = consolider(dir, rencontre.started_at.date_naive()) {
+        log::warn!("{e:#}");
+    }
     Ok(())
 }
 
@@ -1005,7 +1137,9 @@ mod tests {
         assert_eq!(index.blocs.len(), 2);
         let repare = &index.blocs[1];
         assert_eq!((repare.decalage, repare.echantillons, repare.numero), (SEUIL, 30 * SR, 2));
-        assert_eq!(repare.fichier, dernier.fichier);
+        // Réparé, puis consolidé avec le reste de la rencontre.
+        assert_eq!(repare.fichier, format!("{}.wav", nom_consolide(m.started_at.date_naive())));
+        assert!(!chemin.exists());
         let sortie = dir.join("tout.wav");
         assert!(reconstituer_dans(&dir, &m, Portee::Tout, Source::Mixte, &sortie).unwrap().is_empty());
         assert_eq!(lire(&sortie), flux.iter().map(|&x| quantifier(x)).collect::<Vec<_>>());
@@ -1090,6 +1224,74 @@ mod tests {
             assert_eq!(std::fs::read(annule.join(&b.fichier)).unwrap(), std::fs::read(reference.join(&b.fichier)).unwrap(), "{}", b.fichier);
         }
         for d in [reference, dir, annule] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    /// Fin de rencontre en mode séparé : un fichier par source à la place des blocs, relu
+    /// à l'identique ; un bloc abîmé empêche toute suppression.
+    #[test]
+    fn consolidation_en_un_fichier_par_source() {
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 28).unwrap();
+        let mut m = Meeting::nouvelle("m", None, chrono::Local::now());
+        m.debuter_point(Some(0), 10_000, Declenchement::Manuel);
+        m.debuter_point(Some(1), 125_000, Declenchement::Auto);
+        m.fermer_periode(200_000);
+
+        let dir = temporaire("consolidation");
+        let (avant, salle) = simuler(&dir, &[(10, Ev::Point(Some(0))), (140, Ev::Auto(Some(1), 125))]);
+        let budget_avant = dir.join("budget-avant.wav");
+        reconstituer_dans(&dir, &m, Portee::Point(1), Source::Distance, &budget_avant).unwrap();
+        consolider(&dir, date).unwrap();
+
+        let mut fichiers: Vec<String> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        fichiers.sort();
+        assert_eq!(fichiers, [
+            "20261028-Rencontre-Tour de table-distance.wav",
+            "20261028-Rencontre-Tour de table-salle.wav",
+            "budget-avant.wav",
+            "index-audio.json",
+        ]);
+        let index = lire_index(&dir).unwrap();
+        // Points, passages et décalages inchangés ; seuls le fichier et la position changent.
+        let sans_fichier = |i: &Index| i.blocs.iter().map(|b| (b.point, b.passage, b.numero, b.source, b.decalage, b.echantillons)).collect::<Vec<_>>();
+        assert_eq!(sans_fichier(&index), sans_fichier(&avant));
+        assert!(index.blocs.iter().all(|b| b.position == Some(b.decalage)));
+        assert!(index.blocs.iter().all(|b| b.fichier.starts_with("20261028-Rencontre-Tour de table-")));
+        assert!(orphelins(&dir, &index).is_empty());
+
+        let sortie = dir.join("tout.wav");
+        assert!(reconstituer_dans(&dir, &m, Portee::Tout, Source::Salle, &sortie).unwrap().is_empty());
+        assert_eq!(lire(&sortie), salle.iter().map(|&x| quantifier(x)).collect::<Vec<_>>());
+        assert_eq!(lire(&dir.join("20261028-Rencontre-Tour de table-salle.wav")), lire(&sortie));
+        let budget = dir.join("budget.wav");
+        reconstituer_dans(&dir, &m, Portee::Point(1), Source::Distance, &budget).unwrap();
+        assert_eq!(lire(&budget), lire(&budget_avant));
+        // Déjà consolidé : rien ne change.
+        consolider(&dir, date).unwrap();
+        assert_eq!(lire_index(&dir).unwrap().blocs, index.blocs);
+
+        // Le fichier consolidé modifié est détecté à la lecture.
+        let chemin = dir.join("20261028-Rencontre-Tour de table-salle.wav");
+        let mut octets = std::fs::read(&chemin).unwrap();
+        let n = octets.len();
+        octets[n - 10] ^= 0x55;
+        std::fs::write(&chemin, octets).unwrap();
+        assert!(lire_bloc(&dir, index.blocs.iter().rfind(|b| b.source == Source::Salle).unwrap()).is_err());
+
+        // Bloc abîmé avant la consolidation : erreur, et tous les blocs restent.
+        let abime = temporaire("consolidation-abimee");
+        let (index, _) = simuler(&abime, &[(10, Ev::Point(Some(0)))]);
+        let b = &index.blocs[3];
+        let mut octets = std::fs::read(abime.join(&b.fichier)).unwrap();
+        octets[100] ^= 0x55;
+        std::fs::write(abime.join(&b.fichier), octets).unwrap();
+        assert!(consolider(&abime, date).is_err());
+        assert_eq!(lire_index(&abime).unwrap().blocs, index.blocs);
+        assert!(index.blocs.iter().all(|b| abime.join(&b.fichier).is_file()));
+        assert!(!abime.join("20261028-Rencontre-Tour de table-salle.wav").exists());
+        assert!(!abime.join("20261028-Rencontre-Tour de table-salle.wav.tmp").exists());
+        for d in [dir, abime] {
             let _ = std::fs::remove_dir_all(d);
         }
     }
