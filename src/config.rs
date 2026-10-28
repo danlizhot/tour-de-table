@@ -86,8 +86,9 @@ pub fn threads() -> usize {
     cores.saturating_sub(2).clamp(1, 8)
 }
 
-/// Taille du faisceau de Whisper.
-pub const BEAM_SIZE: u8 = 5;
+/// Taille du faisceau de Whisper. Décodage simple (1) : un faisceau de 5 multiplie
+/// le décodage par 2 à 3 sur processeur seul, et la transcription prenait du retard.
+pub const BEAM_SIZE: u8 = 1;
 
 /// Accélération GPU dès que l'exécutable est compilé avec un moteur GPU.
 pub const USE_GPU: bool = cfg!(any(feature = "metal", feature = "vulkan", feature = "cuda"));
@@ -303,7 +304,7 @@ mod tests {
         let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
         assert_eq!(threads(), cores.saturating_sub(2).clamp(1, 8));
         assert!((1..=8).contains(&threads()));
-        assert_eq!(BEAM_SIZE, 5);
+        assert_eq!(BEAM_SIZE, 1);
         assert_eq!(VAD_SENSITIVITY, 0.5);
         assert_eq!(USE_GPU, cfg!(any(feature = "metal", feature = "vulkan", feature = "cuda")));
         assert!(model_path().ends_with(crate::models::RECOMMENDED));

@@ -72,7 +72,7 @@ struct Loaded {
 
 fn worker(rx: Receiver<Request>, tx: Sender<Reply>, wake: impl Fn()) {
     let mut model: Option<Loaded> = None;
-    let mut settings = Settings { threads: 4, beam_size: 5, glossary: Glossary::parse(""), agenda_hint: String::new() };
+    let mut settings = Settings { threads: 4, beam_size: 1, glossary: Glossary::parse(""), agenda_hint: String::new() };
     let mut deferred: VecDeque<Request> = VecDeque::new();
     loop {
         let req = match deferred.pop_front() {
@@ -104,13 +104,23 @@ fn worker(rx: Receiver<Request>, tx: Sender<Reply>, wake: impl Fn()) {
             }
             Request::Transcribe { utterance, context } => {
                 let (utterance, handled) = batch(utterance, &rx, &mut deferred);
-                match model.as_mut() {
+                let audio_s = utterance.samples.len() as f32 / SAMPLE_RATE as f32;
+                let t = std::time::Instant::now();
+                let reply = match model.as_mut() {
                     None => Reply::Error { message: "Aucun modèle chargé".into(), handled },
                     Some(m) => match transcribe(&mut m.state, &settings, utterance, &context) {
                         Ok(segments) => Reply::Segments { segments, handled },
                         Err(e) => Reply::Error { message: format!("Transcription : {e:#}"), handled },
                     },
-                }
+                };
+                // Vitesse : un rapport au-dessus de 1 signifie que la transcription prend du retard.
+                let calcul_s = t.elapsed().as_secs_f32();
+                log::info!(
+                    "Transcription : {audio_s:.1} s d'audio ({handled} énoncé(s)) en {calcul_s:.1} s, rapport {:.2}, {} en attente",
+                    calcul_s / audio_s.max(0.1),
+                    rx.len() + deferred.len()
+                );
+                reply
             }
         };
         if tx.send(reply).is_err() {
@@ -189,6 +199,11 @@ fn transcribe(state: &mut WhisperState, s: &Settings, utt: Utterance, context: &
     p.set_suppress_blank(true);
     p.set_suppress_nst(true);
     p.set_no_speech_thold(0.6);
+    // Pas de relances à température plus élevée : chacune redécode tout l'énoncé
+    // (jusqu'à 5 fois) et faisait exploser le temps sur l'audio bruité. Les
+    // hallucinations restantes sont filtrées plus bas (`quebec::is_hallucination`).
+    p.set_temperature(0.0);
+    p.set_temperature_inc(0.0);
     p.set_print_progress(false);
     p.set_print_realtime(false);
     p.set_print_special(false);

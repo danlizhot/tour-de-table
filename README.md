@@ -46,8 +46,8 @@ Tour de table l'indique au démarrage.
   des 30 s fixes de Whisper.
 * **Regroupement adaptatif** : si la transcription prend du retard, les énoncés en attente sont
   fusionnés en une seule passe d'encodeur (jusqu'à 28 s), et Tour de table rattrape tout seul son retard.
-* Réglages automatiques : fils de calcul (tous les cœurs moins deux, au plus 8), faisceau de
-  recherche de 5, accélération GPU si l'exécutable est compilé avec un moteur GPU, sensibilité de
+* Réglages automatiques : fils de calcul (tous les cœurs moins deux, au plus 8), décodage simple
+  (sans faisceau ni relances), accélération GPU si l'exécutable est compilé avec un moteur GPU, sensibilité de
   la détection de voix fixe.
 
 ## Spécialisation québécoise
