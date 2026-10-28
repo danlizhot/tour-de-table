@@ -91,11 +91,6 @@ pub struct TourDeTableApp {
     /// Fiche d'une rencontre : transcription brute plutôt que nettoyée.
     vue_brute: bool,
     ctx: egui::Context,
-    /// Travail long lancé (import avec ordre du jour, compte rendu) : la fenêtre se réduit à cet
-    /// instant, une fois l'avis lu.
-    reduire_a: Option<std::time::Instant>,
-    /// Fenêtre réduite par l'application : elle revient quand il faut agir ou que tout est prêt.
-    en_arriere_plan: bool,
 }
 
 impl TourDeTableApp {
@@ -135,8 +130,6 @@ impl TourDeTableApp {
             nettoyages_en_attente: Vec::new(),
             vue_brute: false,
             ctx: cc.egui_ctx.clone(),
-            reduire_a: None,
-            en_arriere_plan: false,
             cfg,
         };
         app.reprendre_rencontres_interrompues();
@@ -270,7 +263,7 @@ impl TourDeTableApp {
                         let _ = std::fs::remove_dir_all(m.dir());
                     }
                     self.notify(format!("Import de « {name} » : {e}"), true);
-                    self.rappeler();
+                    self.signaler();
                 }
             }
         }
@@ -331,19 +324,13 @@ impl TourDeTableApp {
                         let m = &mut self.meetings[i];
                         m.summary = Some(text);
                         let _ = m.save().and_then(|_| m.export_all().map(|_| ()));
-                        if self.en_arriere_plan {
-                            let titre = m.title.clone();
-                            // Pas pendant une nouvelle rencontre lancée entre-temps.
-                            if self.live.is_none() {
-                                self.view = View::Past(i);
-                            }
-                            self.notify(format!("Le compte rendu de « {titre} » est prêt : « Visualiser » l'ouvre dans Word."), false);
-                        }
+                        let titre = m.title.clone();
+                        self.notify(format!("Le compte rendu de « {titre} » est prêt : « Visualiser » l'ouvre dans Word."), false);
                     }
                 }
                 Err(e) => self.notify(e, true),
             }
-            self.rappeler();
+            self.signaler();
         }
         self.pump_nettoyage();
     }
@@ -360,24 +347,10 @@ impl TourDeTableApp {
         }
     }
 
-    /// Travail long qui n'a plus besoin de l'utilisateur : l'avis reste affiché quelques secondes,
-    /// puis la fenêtre se réduit. Elle revient d'elle-même (`rappeler`).
-    pub(super) fn passer_en_arriere_plan(&mut self, avis: &str) {
-        self.notify(avis, false);
-        self.reduire_a = Some(std::time::Instant::now() + Duration::from_secs(4));
-        self.en_arriere_plan = true;
-    }
-
-    /// Fenêtre rappelée si l'application l'avait réduite : rouverte, au premier plan, et
-    /// signalée dans la barre des tâches (le Dock sous macOS).
-    pub(super) fn rappeler(&mut self) {
-        if !self.en_arriere_plan {
-            return;
-        }
-        self.en_arriere_plan = false;
-        self.reduire_a = None;
-        self.ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-        self.ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+    /// Travail long terminé ou qui attend l'utilisateur : l'icône est signalée dans la barre des
+    /// tâches (le Dock sous macOS) si l'on travaille dans une autre fenêtre. La fenêtre n'est
+    /// jamais réduite ni ramenée au premier plan.
+    pub(super) fn signaler(&self) {
         self.ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(egui::UserAttentionType::Informational));
     }
 
@@ -480,10 +453,6 @@ impl TourDeTableApp {
 impl eframe::App for TourDeTableApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.pump();
-        if self.reduire_a.is_some_and(|t| std::time::Instant::now() >= t) {
-            self.reduire_a = None;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-        }
         let ecoute = self.verification.as_ref().is_some_and(verification::Verification::lecture_en_cours);
         if self.recorder.is_some()
             || self.finishing
@@ -492,7 +461,6 @@ impl eframe::App for TourDeTableApp {
             || self.import_job.is_some()
             || self.decoupage_job.is_some()
             || self.nettoyage_en_cours()
-            || self.reduire_a.is_some()
             || ecoute
         {
             ctx.request_repaint_after(Duration::from_millis(80));
