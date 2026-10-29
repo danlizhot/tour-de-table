@@ -88,6 +88,24 @@ on commence avec
 je commence avec
 commencer avec
 commencer tout de suite avec
+on va faire un
+on va faire le
+on fait un
+on fait le
+
+[fin]
+# Fin de la rencontre avant la levée : la suite est hors point (découpage d'un import seulement).
+pas commencer l autre point
+pas de commencer l autre point
+pas commencer le prochain point
+pas de commencer le prochain point
+c est tout pour aujourd hui
+ce sera tout pour aujourd hui
+ca va etre tout pour aujourd hui
+on va arreter ca la pour aujourd hui
+on arrete ca la pour aujourd hui
+on reportera les autres points
+on va reporter les autres points
 
 [passe]
 # Mention d'un point au passé ou au futur : ce n'est pas un changement maintenant.

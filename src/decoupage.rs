@@ -46,6 +46,8 @@ const SAUT_PAR_POINT: i32 = 10;
 const SAUT_MAX: i32 = 30;
 /// Retour à un point déjà atteint sans annonce forte.
 const REVISITE: i32 = 30;
+/// Fin de la rencontre avant la levée (« je commencerai pas l'autre point ») : retour hors point.
+const FIN: i32 = 70;
 /// Mots autour d'une mention où chercher une marque du passé.
 const PORTEE_PASSE: usize = 6;
 
@@ -60,6 +62,7 @@ struct Expressions {
     suivants: Vec<Expr>,
     titres: Vec<(Expr, Vec<String>)>,
     introductions: Vec<Expr>,
+    fins: Vec<Expr>,
     passe: Vec<Expr>,
     restrictions: Vec<Expr>,
     vides: HashSet<String>,
@@ -76,7 +79,7 @@ fn lire_expressions(texte: &str) -> Expressions {
     for ligne in texte.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
         if let Some(nom) = ligne.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
             section = match nom {
-                "annonce" | "annonce-faible" | "suivant" | "titre" | "introduction" | "passe" | "restriction" | "vides" => nom,
+                "annonce" | "annonce-faible" | "suivant" | "titre" | "introduction" | "fin" | "passe" | "restriction" | "vides" => nom,
                 _ => "",
             };
             continue;
@@ -86,6 +89,7 @@ fn lire_expressions(texte: &str) -> Expressions {
             "annonce-faible" => e.faibles.push(normaliser(ligne)),
             "suivant" => e.suivants.push(normaliser(ligne)),
             "introduction" => e.introductions.push(normaliser(ligne)),
+            "fin" => e.fins.push(normaliser(ligne)),
             "passe" => e.passe.push(normaliser(ligne)),
             "restriction" => e.restrictions.push(normaliser(ligne)),
             "vides" => e.vides.extend(normaliser(ligne)),
@@ -417,10 +421,11 @@ struct Candidat {
 }
 
 /// Candidats d'un segment, indépendants de l'état du découpage : un par point désigné, plus
-/// l'annonce du point suivant, qui dépend du point actif.
+/// l'annonce du point suivant, qui dépend du point actif, et la fin de la rencontre.
 struct Candidats {
     points: HashMap<usize, Candidat>,
     suivant: Option<Candidat>,
+    fin: Option<Candidat>,
 }
 
 /// Garde le meilleur candidat de chaque point.
@@ -521,13 +526,18 @@ impl Detecteur {
                 c.raisons.push(format!("titre mentionné (+{TITRE_AVEC_NUMERO})"));
             }
         }
-        Candidats { points: candidats, suivant }
+        let fin = e.fins.iter().find(|f| contient(&mots, f)).map(|f| Candidat {
+            score: FIN,
+            raisons: vec![format!("fin de la rencontre « {} »", f.join(" "))],
+            ..Default::default()
+        });
+        Candidats { points: candidats, suivant, fin }
     }
 
     /// Analyse un segment final. Retourne le meilleur candidat, même sous le seuil (pour le
     /// journal), ou `None` si rien dans le segment ne désigne un point.
     pub fn analyser(&mut self, debut_ms: u64, fin_ms: u64, texte: &str, ctx: &Contexte) -> Option<Detection> {
-        let Candidats { points: mut candidats, suivant } = self.candidats(fin_ms, texte, ctx.points);
+        let Candidats { points: mut candidats, suivant, .. } = self.candidats(fin_ms, texte, ctx.points);
         if let Some(c) = suivant
             && let Some(point) = ctx.prevu()
         {
@@ -639,7 +649,7 @@ fn transition(c: &Candidat, actif: Option<usize>, atteint: usize, vers: usize, d
 /// la suite de frontières la plus cohérente avec l'ordre du jour (programmation dynamique). Une
 /// mention en passant (« au point 5, c'est l'horaire des fêtes », pendant le tour de table) perd
 /// ainsi face aux vraies annonces qui suivent, et une simple mention du titre suffit quand elle
-/// tombe au bon moment.
+/// tombe au bon moment. Une fin de rencontre annoncée avant la levée ramène hors point.
 pub fn detecter_hors_ligne(segments: &[Segment], points: &[Point]) -> Vec<Frontiere> {
     /// Meilleure suite de frontières menant à un état.
     #[derive(Clone, Copy)]
@@ -652,7 +662,7 @@ pub fn detecter_hors_ligne(segments: &[Segment], points: &[Point]) -> Vec<Fronti
     struct Noeud {
         precedent: Option<usize>,
         segment: usize,
-        point: usize,
+        point: Option<usize>,
         raison: String,
     }
     let n = points.len();
@@ -663,8 +673,8 @@ pub fn detecter_hors_ligne(segments: &[Segment], points: &[Point]) -> Vec<Fronti
     let mut noeuds: Vec<Noeud> = Vec::new();
     let mut detecteur = Detecteur::default();
     for (k, s) in segments.iter().enumerate() {
-        let Candidats { points: candidats, suivant } = detecteur.candidats(s.end_ms, &s.text, points);
-        if candidats.is_empty() && suivant.is_none() {
+        let Candidats { points: candidats, suivant, fin } = detecteur.candidats(s.end_ms, &s.text, points);
+        if candidats.is_empty() && suivant.is_none() && fin.is_none() {
             continue;
         }
         // Une seule frontière par segment : on part des états d'avant ce segment.
@@ -686,8 +696,25 @@ pub fn detecter_hors_ligne(segments: &[Segment], points: &[Point]) -> Vec<Fronti
                 let gain = e.gain + score - SEUIL_ALIGNEMENT + 1;
                 let j = indice(Some(vers), atteint.max(vers + 1));
                 if etats[j].is_none_or(|x| gain > x.gain) {
-                    noeuds.push(Noeud { precedent: e.noeud, segment: k, point: vers, raison });
+                    noeuds.push(Noeud { precedent: e.noeud, segment: k, point: Some(vers), raison });
                     etats[j] = Some(Etat { gain, noeud: Some(noeuds.len() - 1), debut_ms: Some(s.start_ms) });
+                }
+            }
+            // Fin de la rencontre : retour hors point, sans changer le premier point jamais atteint.
+            if let Some(c) = fin.as_ref().filter(|_| actif.is_some()) {
+                let mut score = c.score;
+                let mut raisons = c.raisons.clone();
+                if e.debut_ms.is_some_and(|d| s.start_ms.saturating_sub(d) < DEBUT_RECENT_MS) {
+                    score -= PENALITE_RECENT;
+                    raisons.push(format!("point précédent commencé il y a moins de {} s (−{PENALITE_RECENT})", DEBUT_RECENT_MS / 1000));
+                }
+                if score >= SEUIL_ALIGNEMENT {
+                    let gain = e.gain + score - SEUIL_ALIGNEMENT + 1;
+                    let j = indice(None, atteint);
+                    if etats[j].is_none_or(|x| gain > x.gain) {
+                        noeuds.push(Noeud { precedent: e.noeud, segment: k, point: None, raison: format!("score {score} : {}", raisons.join(" ; ")) });
+                        etats[j] = Some(Etat { gain, noeud: Some(noeuds.len() - 1), debut_ms: Some(s.start_ms) });
+                    }
                 }
             }
         }
@@ -699,7 +726,7 @@ pub fn detecter_hors_ligne(segments: &[Segment], points: &[Point]) -> Vec<Fronti
         let nd = &noeuds[i];
         let s = &segments[nd.segment];
         frontieres.push(Frontiere {
-            point: Some(nd.point),
+            point: nd.point,
             debut_ms: s.start_ms,
             extrait: s.text.clone(),
             raison: nd.raison.clone(),
@@ -875,6 +902,7 @@ mod tests {
         assert!(e.annonces.iter().all(|a| a.last().is_some_and(|m| m == "point")));
         assert!(e.faibles.iter().all(|a| a.last().is_some_and(|m| m == "point")));
         assert!(e.titres.iter().any(|(x, _)| x.join(" ") == "on leve la seance"));
+        assert!(e.fins.iter().any(|x| x.join(" ") == "pas de commencer l autre point"));
         assert!(e.vides.contains("de"));
     }
 
@@ -905,5 +933,31 @@ mod tests {
         let trouve: Vec<(&str, u64)> =
             detecter_hors_ligne(&segments, &points).iter().map(|f| (points[f.point.unwrap()].numero.as_str(), f.debut_ms / 1000)).collect();
         assert_eq!(trouve, [("2", 764), ("4", 4593), ("5", 5097), ("8", 5300)]);
+    }
+
+    /// Rencontre d'équipe réelle (audio 1, 13 avril 2026) : seuls le mot de bienvenue et le tour
+    /// de table ont lieu, puis la présidente arrête faute de temps.
+    #[test]
+    fn tour_de_table_puis_fin() {
+        let points = crate::agenda::points(
+            "1. Mot de bienvenue\n2. Tour de table\n3. RH - équipe administratif\n4. Prévision météo - travail\n5. Point conseil - résolution (CSP)\n6. Vacances 2026\n7. Retour sur la rencontre RH\n8. Varia\n9. Prochaine rencontre",
+        );
+        let paroles = [
+            (47, "Oui, oui, oui. Mot de bienvenue, ben c'est ça, c'est fabuleux."),
+            (71, "Fait que on va faire un tour de table juste pour voir où on est rendus."),
+            (117, "Je viens justement d'avoir une rencontre avec notre consultant pour le schéma."),
+            (728, "Là, présentement, on vient de démarrer la vente pour taxes."),
+            (1308, "Il est 10 h pile, fait que je pense même pas de commencer l'autre point."),
+            (1330, "Est-ce que les doublons, ça va bien?"),
+        ];
+        let segments: Vec<Segment> = paroles
+            .iter()
+            .map(|&(s, t)| Segment { start_ms: s * 1000, end_ms: s * 1000 + 5000, source: crate::audio::Source::Mixte, text: t.into() })
+            .collect();
+        let trouve: Vec<(Option<&str>, u64)> = detecter_hors_ligne(&segments, &points)
+            .iter()
+            .map(|f| (f.point.map(|p| points[p].numero.as_str()), f.debut_ms / 1000))
+            .collect();
+        assert_eq!(trouve, [(Some("1"), 47), (Some("2"), 71), (None, 1308)]);
     }
 }
