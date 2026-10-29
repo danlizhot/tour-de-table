@@ -84,6 +84,10 @@ on est rendus au
 on est rendus dans
 on est rendu dans
 on attaque
+on commence avec
+je commence avec
+commencer avec
+commencer tout de suite avec
 
 [passe]
 # Mention d'un point au passé ou au futur : ce n'est pas un changement maintenant.

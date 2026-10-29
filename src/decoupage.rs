@@ -39,6 +39,13 @@ const PENALITE_SAUT: i32 = 30;
 const PENALITE_RECUL: i32 = 15;
 const PENALITE_PASSE: i32 = 50;
 const PENALITE_RESTRICTION: i32 = 40;
+/// Alignement hors ligne : score minimal d'une frontière, une fois l'ordre du jour pris en compte.
+const SEUIL_ALIGNEMENT: i32 = 55;
+/// Point sauté sans annonce forte (jusqu'à `SAUT_MAX`).
+const SAUT_PAR_POINT: i32 = 10;
+const SAUT_MAX: i32 = 30;
+/// Retour à un point déjà atteint sans annonce forte.
+const REVISITE: i32 = 30;
 /// Mots autour d'une mention où chercher une marque du passé.
 const PORTEE_PASSE: usize = 6;
 
@@ -397,14 +404,31 @@ pub struct Detection {
     pub frontiere_ms: u64,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Candidat {
     score: i32,
     raisons: Vec<String>,
     /// Numéro ou ordinal dit explicitement.
     explicite: bool,
+    /// Numéro précédé d'une annonce forte (« on passe au point 4 »).
+    forte: bool,
     passe: bool,
     restriction: bool,
+}
+
+/// Candidats d'un segment, indépendants de l'état du découpage : un par point désigné, plus
+/// l'annonce du point suivant, qui dépend du point actif.
+struct Candidats {
+    points: HashMap<usize, Candidat>,
+    suivant: Option<Candidat>,
+}
+
+/// Garde le meilleur candidat de chaque point.
+fn garder(candidats: &mut HashMap<usize, Candidat>, point: usize, c: Candidat) {
+    let ancien = candidats.entry(point).or_default();
+    if c.score > ancien.score {
+        *ancien = c;
+    }
 }
 
 #[derive(Default)]
@@ -414,9 +438,8 @@ pub struct Detecteur {
 }
 
 impl Detecteur {
-    /// Analyse un segment final. Retourne le meilleur candidat, même sous le seuil (pour le
-    /// journal), ou `None` si rien dans le segment ne désigne un point.
-    pub fn analyser(&mut self, debut_ms: u64, fin_ms: u64, texte: &str, ctx: &Contexte) -> Option<Detection> {
+    /// Candidats d'un segment final, sans bonus ni pénalité liés au point actif.
+    fn candidats(&mut self, fin_ms: u64, texte: &str, points: &[Point]) -> Candidats {
         let e = expressions();
         let mots = normaliser(texte);
         self.recents.push_back((fin_ms, mots.clone()));
@@ -425,19 +448,11 @@ impl Detecteur {
         }
         let passe_partout = e.passe.iter().any(|p| contient(&mots, p));
         let mut candidats: HashMap<usize, Candidat> = HashMap::new();
-        let mut proposer = |point: usize, c: Candidat| {
-            if Some(point) == ctx.actif {
-                return;
-            }
-            let ancien = candidats.entry(point).or_default();
-            if c.score > ancien.score {
-                *ancien = c;
-            }
-        };
+        let mut proposer = |point: usize, c: Candidat| garder(&mut candidats, point, c);
 
         // 1. Annonce et numéro
         for m in mentions(&mots, e) {
-            let Some(point) = ctx.points.iter().position(|p| p.numero == m.numero) else { continue };
+            let Some(point) = points.iter().position(|p| p.numero == m.numero) else { continue };
             let (score, raison) = match &m.annonce {
                 Some((a, true)) => (FORTE, format!("annonce « {a} » et numéro {}", m.numero)),
                 Some((a, false)) => (FAIBLE, format!("annonce faible « {a} » et numéro {}", m.numero)),
@@ -451,20 +466,21 @@ impl Detecteur {
             let a = (m.fin + PORTEE_PASSE).min(mots.len());
             let passe = e.passe.iter().any(|p| positions(&mots, p).any(|i| i >= de && i < a));
             let restriction = e.restrictions.iter().any(|r| finit_par(&mots, m.fin + r.len(), r));
-            proposer(point, Candidat { score, raisons: vec![raison], explicite: true, passe, restriction });
+            proposer(point, Candidat { score, raisons: vec![raison], explicite: true, forte, passe, restriction });
         }
 
         // 2. Annonce sans numéro
-        if let Some(s) = e.suivants.iter().find(|s| contient(&mots, s))
-            && let Some(point) = ctx.prevu()
-        {
-            proposer(point, Candidat { score: SUIVANT, raisons: vec![format!("annonce « {} »", s.join(" "))], passe: passe_partout, ..Default::default() });
-        }
+        let suivant = e.suivants.iter().find(|s| contient(&mots, s)).map(|s| Candidat {
+            score: SUIVANT,
+            raisons: vec![format!("annonce « {} »", s.join(" "))],
+            passe: passe_partout,
+            ..Default::default()
+        });
         for (expr, cles) in &e.titres {
             if !contient(&mots, expr) {
                 continue;
             }
-            for (i, p) in ctx.points.iter().enumerate() {
+            for (i, p) in points.iter().enumerate() {
                 let titre = normaliser(&p.titre);
                 if cles.iter().any(|c| titre.iter().any(|t| t.starts_with(c.as_str()))) {
                     let raisons = vec![format!("« {} » désigne « {} »", expr.join(" "), p.titre)];
@@ -477,7 +493,7 @@ impl Detecteur {
         let fenetre: Vec<&String> = self.recents.iter().flat_map(|(_, m)| m).collect();
         let introduit = e.introductions.iter().find(|i| contient(&mots, i));
         let mut titres: HashMap<usize, (i32, String)> = HashMap::new();
-        for (i, p) in ctx.points.iter().enumerate() {
+        for (i, p) in points.iter().enumerate() {
             let t = mots_du_titre(&p.titre, e);
             if t.is_empty() || !t.iter().any(|w| mots.iter().any(|m| semblable(m, w))) {
                 continue;
@@ -504,6 +520,21 @@ impl Detecteur {
                 c.score += TITRE_AVEC_NUMERO;
                 c.raisons.push(format!("titre mentionné (+{TITRE_AVEC_NUMERO})"));
             }
+        }
+        Candidats { points: candidats, suivant }
+    }
+
+    /// Analyse un segment final. Retourne le meilleur candidat, même sous le seuil (pour le
+    /// journal), ou `None` si rien dans le segment ne désigne un point.
+    pub fn analyser(&mut self, debut_ms: u64, fin_ms: u64, texte: &str, ctx: &Contexte) -> Option<Detection> {
+        let Candidats { points: mut candidats, suivant } = self.candidats(fin_ms, texte, ctx.points);
+        if let Some(c) = suivant
+            && let Some(point) = ctx.prevu()
+        {
+            garder(&mut candidats, point, c);
+        }
+        if let Some(a) = ctx.actif {
+            candidats.remove(&a);
         }
 
         // 4. Bonus et pénalités
@@ -565,27 +596,118 @@ pub struct Frontiere {
     pub declenchement: Declenchement,
 }
 
-/// Découpage d'une rencontre déjà transcrite (import) : mêmes règles que pendant la rencontre,
-/// sans bandeau ni délai. Chaque détection au-dessus du seuil change de point.
+/// Score d'une frontière vers le point `vers` depuis l'état (`actif`, `atteint` : premier point
+/// jamais atteint), commencé à `debut_actif_ms` ; `None` sous le seuil de l'alignement.
+fn transition(c: &Candidat, actif: Option<usize>, atteint: usize, vers: usize, debut_actif_ms: Option<u64>, debut_ms: u64) -> Option<(i32, String)> {
+    let mut score = c.score;
+    let mut raisons = c.raisons.clone();
+    if vers >= atteint {
+        let saut = (vers - atteint) as i32;
+        if vers == actif.map_or(0, |a| a + 1) {
+            score += PREVU;
+            raisons.push(format!("point suivant prévu (+{PREVU})"));
+        } else if saut > 0 && !c.forte {
+            let p = (SAUT_PAR_POINT * saut).min(SAUT_MAX);
+            score -= p;
+            raisons.push(format!("{saut} point(s) sauté(s) sans annonce forte (−{p})"));
+        }
+    } else if c.forte {
+        score -= PENALITE_RECUL;
+        raisons.push(format!("retour à un point déjà atteint (−{PENALITE_RECUL})"));
+    } else {
+        score -= REVISITE;
+        raisons.push(format!("retour à un point déjà atteint sans annonce forte (−{REVISITE})"));
+    }
+    if debut_actif_ms.is_some_and(|d| debut_ms.saturating_sub(d) < DEBUT_RECENT_MS) {
+        score -= PENALITE_RECENT;
+        raisons.push(format!("point précédent commencé il y a moins de {} s (−{PENALITE_RECENT})", DEBUT_RECENT_MS / 1000));
+    }
+    if c.passe {
+        score -= PENALITE_PASSE;
+        raisons.push(format!("mention au passé ou au futur (−{PENALITE_PASSE})"));
+    }
+    if c.restriction {
+        score -= PENALITE_RESTRICTION;
+        raisons.push(format!("« point » suivi d'un qualificatif (−{PENALITE_RESTRICTION})"));
+    }
+    let score = score.clamp(0, 100);
+    (score >= SEUIL_ALIGNEMENT).then(|| (score, format!("score {score} : {}", raisons.join(" ; "))))
+}
+
+/// Découpage d'une rencontre déjà transcrite (import). Toute la transcription est connue : au
+/// lieu de décider segment par segment, on garde tous les candidats, même faibles, et on choisit
+/// la suite de frontières la plus cohérente avec l'ordre du jour (programmation dynamique). Une
+/// mention en passant (« au point 5, c'est l'horaire des fêtes », pendant le tour de table) perd
+/// ainsi face aux vraies annonces qui suivent, et une simple mention du titre suffit quand elle
+/// tombe au bon moment.
 pub fn detecter_hors_ligne(segments: &[Segment], points: &[Point]) -> Vec<Frontiere> {
+    /// Meilleure suite de frontières menant à un état.
+    #[derive(Clone, Copy)]
+    struct Etat {
+        gain: i32,
+        noeud: Option<usize>,
+        debut_ms: Option<u64>,
+    }
+    /// Frontière d'une suite, chaînée à la précédente.
+    struct Noeud {
+        precedent: Option<usize>,
+        segment: usize,
+        point: usize,
+        raison: String,
+    }
+    let n = points.len();
+    // État : (point actif, premier point jamais atteint), le point actif décalé de 1 (0 : aucun).
+    let indice = |actif: Option<usize>, atteint: usize| actif.map_or(0, |a| a + 1) * (n + 1) + atteint;
+    let mut etats: Vec<Option<Etat>> = vec![None; (n + 1) * (n + 1)];
+    etats[0] = Some(Etat { gain: 0, noeud: None, debut_ms: None });
+    let mut noeuds: Vec<Noeud> = Vec::new();
     let mut detecteur = Detecteur::default();
-    let mut frontieres: Vec<Frontiere> = Vec::new();
-    for s in segments {
-        let actif = frontieres.last().and_then(|f| f.point);
-        let ctx = Contexte { points, actif, dernier: actif, debut_actif_ms: frontieres.last().map(|f| f.debut_ms) };
-        let Some(d) = detecteur.analyser(s.start_ms, s.end_ms, &s.text, &ctx) else { continue };
-        let plancher = frontieres.last().map(|f| f.debut_ms + ECART_MINIMAL_MS);
-        if d.score < SEUIL || plancher.is_some_and(|p| d.frontiere_ms < p) {
+    for (k, s) in segments.iter().enumerate() {
+        let Candidats { points: candidats, suivant } = detecteur.candidats(s.end_ms, &s.text, points);
+        if candidats.is_empty() && suivant.is_none() {
             continue;
         }
+        // Une seule frontière par segment : on part des états d'avant ce segment.
+        let avant = etats.clone();
+        for (i, e) in avant.iter().enumerate() {
+            let Some(e) = e else { continue };
+            if e.debut_ms.is_some_and(|d| s.start_ms < d + ECART_MINIMAL_MS) {
+                continue;
+            }
+            let (actif, atteint) = ((i / (n + 1)).checked_sub(1), i % (n + 1));
+            let prevu = actif.map_or(0, |a| a + 1);
+            let suivant = suivant.as_ref().filter(|_| prevu < n).map(|c| (prevu, c));
+            for (vers, c) in candidats.iter().map(|(p, c)| (*p, c)).chain(suivant) {
+                if Some(vers) == actif {
+                    continue;
+                }
+                let Some((score, raison)) = transition(c, actif, atteint, vers, e.debut_ms, s.start_ms) else { continue };
+                // Chaque frontière retenue ajoute au moins 1 : à égalité de candidats, la plus forte.
+                let gain = e.gain + score - SEUIL_ALIGNEMENT + 1;
+                let j = indice(Some(vers), atteint.max(vers + 1));
+                if etats[j].is_none_or(|x| gain > x.gain) {
+                    noeuds.push(Noeud { precedent: e.noeud, segment: k, point: vers, raison });
+                    etats[j] = Some(Etat { gain, noeud: Some(noeuds.len() - 1), debut_ms: Some(s.start_ms) });
+                }
+            }
+        }
+    }
+    let meilleur = etats.iter().flatten().max_by_key(|e| e.gain).and_then(|e| e.noeud);
+    let mut frontieres = Vec::new();
+    let mut courant = meilleur;
+    while let Some(i) = courant {
+        let nd = &noeuds[i];
+        let s = &segments[nd.segment];
         frontieres.push(Frontiere {
-            point: Some(d.point),
-            debut_ms: d.frontiere_ms,
+            point: Some(nd.point),
+            debut_ms: s.start_ms,
             extrait: s.text.clone(),
-            raison: format!("score {} : {}", d.score, d.raison),
+            raison: nd.raison.clone(),
             declenchement: Declenchement::Auto,
         });
+        courant = nd.precedent;
     }
+    frontieres.reverse();
     frontieres
 }
 
@@ -754,5 +876,34 @@ mod tests {
         assert!(e.faibles.iter().all(|a| a.last().is_some_and(|m| m == "point")));
         assert!(e.titres.iter().any(|(x, _)| x.join(" ") == "on leve la seance"));
         assert!(e.vides.contains("de"));
+    }
+
+    /// Rencontre d'équipe réelle (audio 10, 8 octobre 2026), où la présidente n'annonce
+    /// presque jamais de numéro.
+    #[test]
+    fn alignement_hors_ligne() {
+        let points = crate::agenda::points(
+            "1. Mot de bienvenue\n2. Tour de table\n3. Retour rencontre RH\n4. Nouvelle équipe (restructuration)\n5. Horaire des Fêtes\n6. Formulaire pour réseaux sociaux\n7. Discussion corridor / mon bureau\n8. Télétravail\n9. Absence semaine du 13 au 16 octobre\n10. Varia\n11. Prochaine rencontre",
+        );
+        let paroles = [
+            (60, "Bon, on va changer ma chaise tout de suite."),
+            (764, "Fait que je vais commencer tout de suite avec le tour de table."),
+            (900, "Je travaille sur le schéma de couverture de risques."),
+            // Mention en passant, pendant le tour de table.
+            (1625, "Au point 5 c'est l'horaire des fêtes, ben ça aussi, ça occupe mon automne."),
+            (2400, "Moi, je prépare les budgets."),
+            (4593, "Fait que là, le point 4 dans le fond c'est une nouvelle équipe."),
+            (5088, "Fait que l'horaire des Faites, vous avez vu mon courriel."),
+            (5097, "Ah, c'est tout ça. L'horreur des fêtes."),
+            (5300, "Le point au point 8 qui est là, le télétravail."),
+            (5400, "Le télétravail, je trouve que ça va bien."),
+        ];
+        let segments: Vec<Segment> = paroles
+            .iter()
+            .map(|&(s, t)| Segment { start_ms: s * 1000, end_ms: s * 1000 + 5000, source: crate::audio::Source::Mixte, text: t.into() })
+            .collect();
+        let trouve: Vec<(&str, u64)> =
+            detecter_hors_ligne(&segments, &points).iter().map(|f| (points[f.point.unwrap()].numero.as_str(), f.debut_ms / 1000)).collect();
+        assert_eq!(trouve, [("2", 764), ("4", 4593), ("5", 5097), ("8", 5300)]);
     }
 }
