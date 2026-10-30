@@ -277,6 +277,10 @@ préférez la version `.zip`, ou vérifiez l'emplacement réel dans la première
   WARP, qui fonctionne sans carte graphique, puis OpenGL. Si les deux échouent, une boîte de
   dialogue affiche la raison. Pour imposer un moteur, définissez la variable d'environnement
   `TOURDETABLE_AFFICHAGE` à `wgpu` ou à `glow`.
+* **Linux sous Wayland** : la fenêtre s'ouvre par X11 (XWayland) quand il est disponible, car
+  le glisser-déposer de fichiers ne fonctionne pas autrement. Si l'affichage est flou ou mal
+  dimensionné, définissez `TOURDETABLE_WAYLAND=1` pour garder Wayland (sans glisser-déposer :
+  utilisez alors « Importer un enregistrement… »).
 
 ## Compilation
 

@@ -12,7 +12,7 @@ mod verification;
 mod widgets;
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender};
 use eframe::egui::{self, Align, Color32, CornerRadius, Layout, RichText, Sense, Ui, Vec2};
@@ -69,7 +69,7 @@ pub struct TourDeTableApp {
     /// Rédaction en cours : (rencontre, résultat, jetons rédigés, début).
     summary_job: Option<TacheCompteRendu>,
     barre_taches: barre_taches::BarreTaches,
-    notices: Vec<(String, bool)>,
+    notices: Vec<Avis>,
     /// Ordre du jour déposé avant de démarrer : rattaché à la prochaine rencontre.
     draft_agenda: Option<Agenda>,
     /// Fichier audio en cours d'import (nom affiché, résultat : durée, avancement).
@@ -192,7 +192,8 @@ impl TourDeTableApp {
         if error {
             log::error!("{msg}");
         }
-        self.notices.push((msg, error));
+        self.notices.retain(|a| a.texte != msg);
+        self.notices.push(Avis { texte: msg, erreur: error, depuis: Instant::now() });
         if self.notices.len() > 4 {
             self.notices.remove(0);
         }
@@ -521,15 +522,6 @@ impl eframe::App for TourDeTableApp {
             egui::Panel::bottom("controls").show(ui, |ui| self.controls(ui));
         }
         egui::CentralPanel::default_margins().show(ui, |ui| {
-            for (msg, err) in self.notices.clone() {
-                let color = if err { ROUGE } else { SALLE };
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(&msg).color(color));
-                    if ui.small_button("×").clicked() {
-                        self.notices.retain(|(m, _)| *m != msg);
-                    }
-                });
-            }
             match self.view {
                 _ if self.verification.is_some() => self.verification_view(ui),
                 View::Live => self.live_view(ui),
@@ -540,6 +532,7 @@ impl eframe::App for TourDeTableApp {
         if self.show_settings {
             self.settings_window(&ctx);
         }
+        self.afficher_avis(&ctx);
         if hovering {
             let screen = ctx.content_rect();
             let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("depot")));
@@ -551,6 +544,60 @@ impl eframe::App for TourDeTableApp {
                 egui::FontId::proportional(26.0),
                 Color32::WHITE,
             );
+        }
+    }
+}
+
+/// Avis affiché en bannière : une information disparaît seule, une erreur reste jusqu'à ce qu'on
+/// la ferme.
+pub(super) struct Avis {
+    texte: String,
+    erreur: bool,
+    depuis: Instant,
+}
+
+/// Durée d'affichage d'une information (le survol de la souris la prolonge).
+const DUREE_AVIS: Duration = Duration::from_secs(6);
+
+impl TourDeTableApp {
+    /// Bannières dans le coin en bas à droite (au bout de la barre « Démarrer »), par-dessus le
+    /// contenu ; plusieurs s'empilent vers le haut.
+    fn afficher_avis(&mut self, ctx: &egui::Context) {
+        self.notices.retain(|a| a.erreur || a.depuis.elapsed() < DUREE_AVIS);
+        if self.notices.is_empty() {
+            return;
+        }
+        let mut fermer = None;
+        let zone = egui::Area::new(egui::Id::unique("avis"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::RIGHT_BOTTOM, [-16.0, -12.0])
+            .show(ctx, |ui| {
+                ui.set_max_width(440.0);
+                for (i, a) in self.notices.iter().enumerate() {
+                    let couleur = if a.erreur { ROUGE } else { SALLE };
+                    egui::Frame::popup(ui.style()).stroke(egui::Stroke::new(1.5, couleur)).show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.add(egui::Label::new(RichText::new(&a.texte).color(couleur)).wrap());
+                            if ui.small_button("×").on_hover_text("Fermer").clicked() {
+                                fermer = Some(i);
+                            }
+                        });
+                    });
+                    ui.add_space(4.0);
+                }
+            });
+        if let Some(i) = fermer {
+            self.notices.remove(i);
+        }
+        // Lu sous la souris : le compte à rebours recommence.
+        if zone.response.contains_pointer() {
+            for a in &mut self.notices {
+                a.depuis = Instant::now();
+            }
+        }
+        // Réveil à la disparition de la prochaine information (une erreur ne fait pas redessiner).
+        if let Some(reste) = self.notices.iter().filter(|a| !a.erreur).map(|a| DUREE_AVIS.saturating_sub(a.depuis.elapsed())).min() {
+            ctx.request_repaint_after(reste);
         }
     }
 }

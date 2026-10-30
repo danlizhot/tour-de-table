@@ -3882,6 +3882,7 @@ dependencies = [
  "wgpu",
  "whisper-rs",
  "windows",
+ "winit",
  "winresource",
  "zip",
 ]
