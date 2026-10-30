@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Confidentialité · Tour de table</title>
+<meta name="description" content="Politique de confidentialité de Tour de table : transcription de rencontres 100 % locale.">
+<link rel="icon" href="logo.png">
+<style>
+:root { --fond:#ffffff; --texte:#1b1f24; --doux:#57606a; --bleu:#003DA5; --ligne:#d8dee4; --code:#f2f4f7; }
+@media (prefers-color-scheme: dark) {
+  :root { --fond:#111418; --texte:#e6e9ed; --doux:#9aa4af; --bleu:#6fa0ff; --ligne:#2c333b; --code:#1d2228; }
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--fond); color:var(--texte);
+  font:17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+header { display:flex; align-items:center; gap:14px; margin-bottom: 8px; }
+header img { width:56px; height:56px; }
+header .nom { font-size: 1.35rem; font-weight: 700; }
+header .slogan { color: var(--doux); font-size: .95rem; }
+h1 { font-size: 1.7rem; margin: 24px 0 4px; line-height: 1.25; }
+h2 { font-size: 1.2rem; margin: 32px 0 8px; color: var(--bleu); }
+a { color: var(--bleu); }
+code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: .9em; word-break: break-word; }
+table { width:100%; border-collapse: collapse; margin: 12px 0; font-size: .93rem; display:block; overflow-x:auto; }
+th, td { text-align:left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--ligne); }
+th { white-space: nowrap; }
+li { margin: 4px 0; }
+footer { margin-top: 48px; color: var(--doux); font-size: .85rem; border-top: 1px solid var(--ligne); padding-top: 12px; }
+</style>
+</head>
+<body>
+<main>
+<header><img src="logo.png" alt=""><div><div class="nom">Tour de table</div>
+<div class="slogan">Tout le monde parle, rien ne se perd.</div></div></header>
+<h1>Politique de confidentialité — Tour de table</h1>
+<p><em>Dernière mise à jour : 25 octobre 2026</em></p>
+<p>Tour de table est une application de transcription de rencontres qui fonctionne <strong>entièrement sur votre ordinateur</strong>. Cette politique explique quelles données l'application traite, où elles sont conservées et ce qui peut, ou non, quitter votre appareil.</p>
+<h2>En bref</h2>
+<ul><li>Aucun compte, aucune publicité, aucune télémétrie, aucun outil d'analyse.</li><li>L'audio, les transcriptions, les ordres du jour et les comptes rendus restent sur votre ordinateur.</li><li>L'éditeur de Tour de table ne reçoit, ne voit et ne conserve <strong>aucune</strong> de vos données.</li></ul>
+<h2>Données traitées</h2>
+<table><thead><tr><th>Donnée</th><th>Usage</th><th>Où elle est conservée</th></tr></thead><tbody><tr><td>Son du micro et son de l'ordinateur (Teams, Zoom…)</td><td>Transcription, réécoute et découpage par point de l'ordre du jour</td><td>Fichier WAV dans le dossier de la rencontre, sur votre ordinateur</td></tr><tr><td>Transcriptions et titres des rencontres</td><td>Affichage, exports, comptes rendus</td><td>Dossier « Tour de table » de votre dossier Musique, sur votre ordinateur (une rencontre par dossier)</td></tr><tr><td>Enregistrements importés (MP4, M4A, MP3…)</td><td>Transcription</td><td>Lus sur place, jamais copiés ni envoyés</td></tr><tr><td>Ordres du jour déposés (Word, PDF, texte)</td><td>Guider la transcription, rédiger le compte rendu</td><td>Le texte extrait est enregistré avec la rencontre</td></tr><tr><td>Comptes rendus et résumés</td><td>Affichage et exports</td><td>Avec la rencontre</td></tr><tr><td>Paramètres (périphériques, mode de captation, lexique)</td><td>Fonctionnement de l'application</td><td>Dossier de l'application, sur votre ordinateur, avec les modèles et le journal</td></tr></tbody></table>
+<p>Si votre dossier Musique est synchronisé par un service infonuagique (OneDrive, iCloud Drive…), ce service copie aussi vos rencontres, selon ses propres conditions. Tour de table, lui, n'envoie rien.</p>
+<p>La reconnaissance vocale (Whisper) s'exécute sur votre processeur ou votre carte graphique. Aucun service infonuagique de transcription n'est utilisé.</p>
+<h2>Connexions réseau</h2>
+<p>La seule connexion Internet de Tour de table a lieu à l'installation des modèles :</p>
+<ul><li><strong>Téléchargement des modèles</strong> (reconnaissance vocale et rédaction), automatiquement au premier démarrage, puis seulement si un modèle manque (fichier effacé ou endommagé, mémoire vive du poste modifiée). Les fichiers proviennent de Hugging Face (<code>huggingface.co</code> et ses serveurs de téléchargement en <code>hf.co</code>) : dépôt officiel de whisper.cpp et dépôts publics des modèles Qwen. Comme tout site Web, ces serveurs peuvent journaliser votre adresse IP. Aucune de vos données n'est transmise. Si les modèles ont été copiés à l'avance par votre service informatique, aucune connexion n'a lieu.</li></ul>
+<p>Les comptes rendus sont rédigés <strong>par le modèle intégré, sur votre ordinateur, sans aucune connexion</strong>.</p>
+<p>L'application ne fait aucune autre connexion.</p>
+<h2>Conservation et suppression</h2>
+<p>Vos rencontres restent sur votre ordinateur jusqu'à ce que vous les supprimiez. Le bouton « Supprimer » déplace une rencontre dans le dossier « corbeille » de l'application, d'où vous pouvez la récupérer ou l'effacer définitivement. Désinstaller l'application supprime ses modèles, ses paramètres et sa corbeille (version du Microsoft Store), mais <strong>pas vos rencontres</strong> : elles restent dans Musique/Tour de table, où vous pouvez les effacer vous-même.</p>
+<h2>Votre responsabilité lors de l'enregistrement</h2>
+<p>Enregistrer ou transcrire une conversation peut être encadré par la loi, notamment au Québec par la <em>Loi sur la protection des renseignements personnels dans le secteur privé</em> et par la <em>Loi sur l'accès aux documents des organismes publics et sur la protection des renseignements personnels</em>. Informez les participants, y compris ceux à distance, et obtenez leur consentement avant d'enregistrer une rencontre.</p>
+<h2>Enfants</h2>
+<p>L'application ne s'adresse pas aux enfants et ne recueille sciemment aucune donnée les concernant.</p>
+<h2>Changements</h2>
+<p>Toute modification de cette politique sera publiée à cette adresse, avec sa date de mise à jour.</p>
+<h2>Nous joindre</h2>
+<p>Pour toute question : <a href="mailto:tourdetable.app@outlook.com">tourdetable.app@outlook.com</a></p>
+<footer>Tour de table — transcription de rencontres en français québécois, entièrement sur votre ordinateur.</footer>
+</main>
+</body>
+</html>
