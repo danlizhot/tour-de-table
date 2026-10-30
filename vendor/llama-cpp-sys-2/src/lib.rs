@@ -7,6 +7,9 @@
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
+/// Essai Bonsai : absent du llama.cpp de PrismML, mais nommé par llama-cpp-2.
+pub const LLAMA_VOCAB_TYPE_TEST: llama_vocab_type = 7;
+
 #[cfg(test)]
 mod tests {
     #[test]
