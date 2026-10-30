@@ -200,7 +200,9 @@ pub fn points(text: &str) -> Vec<Point> {
     let mut out: Vec<Point> = Vec::new();
     // Chemin courant : (genre, retrait) de chaque niveau ouvert.
     let mut pile: Vec<(Genre, usize)> = Vec::new();
-    for ligne in text.lines() {
+    // Ce qui précède le titre « Ordre du jour » (personnes convoquées, lieu…) n'en fait pas partie.
+    let debut = text.lines().position(titre_ordre_du_jour).unwrap_or(0);
+    for ligne in text.lines().skip(debut) {
         let retrait: usize = ligne.chars().take_while(|c| c.is_whitespace()).map(|c| if c == '\t' { 4 } else { 1 }).sum();
         let ligne = ligne.trim();
         if ligne.is_empty() {
@@ -295,6 +297,13 @@ fn marque(ligne: &str) -> Option<(Genre, &str)> {
     } else {
         None
     }
+}
+
+/// Titre de la section des points : « Ordre du jour », « PROJET D'ORDRE DU JOUR »…
+fn titre_ordre_du_jour(ligne: &str) -> bool {
+    let t = ligne.trim().to_lowercase().replace('’', "'");
+    let t = ["projet d'", "proposition d'"].iter().find_map(|p| t.strip_prefix(p)).unwrap_or(&t);
+    t.starts_with("ordre du jour") && t.chars().count() <= 60
 }
 
 /// En-têtes d'un ordre du jour qui ne sont pas des points : titre, date.
@@ -400,6 +409,18 @@ mod tests {
         assert!(points("Point de presse demain").is_empty());
         // PDF justifié : espaces multiples réduits.
         assert_eq!(resume(&points("1. Tour  de  table\n7.    Retour sur la rencontre RH")), vec![p("1", "Tour de table", 1), p("2", "Retour sur la rencontre RH", 1)]);
+    }
+
+    #[test]
+    fn points_apres_les_personnes_convoquees() {
+        let a = "COMITÉ ÉCONOMIQUE\nRENCONTRE DU 8 JUILLET 2026\nPERSONNES CONVOQUÉES\n• Martin Lefebvre, préfet\n• Luc Lalonde, maire\n\
+                 PROJET D’ORDRE DU JOUR\n1. Mot de bienvenue\n2. Filière forestière\n2.1 Fermeture de la scierie\n3. Varia";
+        assert_eq!(
+            resume(&points(a)),
+            vec![p("1", "Mot de bienvenue", 1), p("2", "Filière forestière", 1), p("2.1", "Fermeture de la scierie", 2), p("3", "Varia", 1)]
+        );
+        // Un point qui parle de l'ordre du jour n'est pas le titre.
+        assert_eq!(resume(&points("1. Ouverture\n2. Adoption de l'ordre du jour\n3. Varia")).len(), 3);
     }
 
     #[test]
