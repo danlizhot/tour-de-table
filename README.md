@@ -218,7 +218,9 @@ tourdetable --compte-rendu ordre-du-jour.docx enregistrement.mp4   # ou transcri
 
 Emplacement des données. Les rencontres sont dans le dossier Musique, une par dossier nommé
 d'après sa date et son titre (`2026-10-30-rencontre-ca-mensuel`, ou `2026-10-30-rencontre`
-sans titre) ; renommer une rencontre ne renomme pas son dossier. Pendant la rencontre, l'audio
+sans titre). Avec un ordre du jour déposé avant de commencer, le nom vient du fichier :
+« 20260708-Oj-Comité économique.pdf » donne `2026-10-30-rencontre-comite-economique` (date de la
+rencontre, sans la date ni la mention « Oj » du fichier). Renommer une rencontre ne renomme pas son dossier. Pendant la rencontre, l'audio
 est écrit en blocs de 2 minutes ; à la fin, ils sont remplacés par un seul fichier,
 `AAAAMMJJ-Rencontre-Tour de table.wav` (mode « Sources séparées » : un fichier `-salle` et un
 fichier `-distance`). Les modèles, la configuration,
