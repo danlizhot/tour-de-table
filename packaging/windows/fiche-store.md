@@ -88,7 +88,7 @@ Version 0.1.1
 
 * **Catégorie** : Productivité
 * **Prix** : gratuit (ou selon votre choix)
-* **Politique de confidentialité** : https://danlizhot.github.io/tour-de-table-confidentialite/
+* **Politique de confidentialité** : https://danlizhot.github.io/tour-de-table/confidentialite/
 * **Courriel de soutien** (Propriétés → Coordonnées) : tourdetable.app@outlook.com
 * **Classification par âge** : questionnaire IARC. L'application n'a ni contenu violent, ni
   achats, ni échanges entre utilisateurs, et ne partage pas la position.
