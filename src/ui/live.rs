@@ -50,7 +50,7 @@ impl TourDeTableApp {
                 self.proposition = None;
                 self.bandeau = None;
                 self.view = View::Live;
-                self.notices.retain(|(_, e)| *e);
+                self.notices.retain(|a| a.erreur);
             }
             Err(e) => {
                 let _ = std::fs::remove_dir_all(meeting.dir());
