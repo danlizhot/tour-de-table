@@ -156,6 +156,7 @@ impl TourDeTableApp {
             })();
             let _ = tx.send(result.map_err(|e| format!("{e:#}")));
         });
+        self.notify(format!("« {name} » importé : la transcription commence."), false);
         self.import_job = Some((name, rx, avancement));
     }
 
