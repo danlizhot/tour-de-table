@@ -1,21 +1,22 @@
 name: Compilation
 
+# Une PR compile Windows seulement (le zip à essayer au travail). Les trois systèmes ne sont
+# compilés que pour une version (tag `v*`) ou à la demande (« Run workflow » dans Actions) : sur
+# un dépôt privé, Windows compte 2× et macOS 10× dans le quota de minutes.
 on:
   push:
-    branches: [main]
     tags: ["v*"]
+  pull_request:
     # Une modification de la documentation seule ne relance pas la compilation.
     paths-ignore: ["**.md", "LICENSE"]
-  pull_request:
-    paths-ignore: ["**.md", "LICENSE"]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
   # Binaire portable : pas d'optimisation « -march=native » de la machine de CI.
   GGML_NATIVE: "OFF"
 
-# Une nouvelle poussée annule la compilation précédente de la même branche
-# (les minutes macOS comptent 10× sur un dépôt privé).
+# Une nouvelle poussée annule la compilation précédente de la même branche.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -25,16 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: windows-latest
-            artifact: tourdetable-windows-x64
-            features: ""
-          - os: macos-14
-            artifact: tourdetable-macos-arm64
-            features: "--features metal,tourdetable-redaction/metal"
-          - os: ubuntu-24.04
-            artifact: tourdetable-linux-x64
-            features: ""
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"windows-latest","artifact":"tourdetable-windows-x64","features":""}]' || '[{"os":"windows-latest","artifact":"tourdetable-windows-x64","features":""},{"os":"macos-14","artifact":"tourdetable-macos-arm64","features":"--features metal,tourdetable-redaction/metal"},{"os":"ubuntu-24.04","artifact":"tourdetable-linux-x64","features":""}]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7

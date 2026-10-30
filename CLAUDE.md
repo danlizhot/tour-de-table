@@ -71,8 +71,10 @@ cargo build --release --workspace
 ```
 
 La CI (`.github/workflows/build.yml`) lance `cargo test --workspace` et
-`cargo build --release --workspace` sur Windows, macOS (`--features metal,tourdetable-redaction/metal`)
-et Linux, puis vérifie qu'aucune DLL du runtime Visual C++ n'est importée sous Windows.
+`cargo build --release --workspace`, puis vérifie qu'aucune DLL du runtime Visual C++ n'est importée
+sous Windows. Une PR compile Windows seulement ; Windows, macOS (`--features metal,tourdetable-redaction/metal`)
+et Linux sont compilés pour une étiquette `v*` ou à la demande (« Run workflow »). Rien à la
+fusion dans `main` : les minutes de CI sont limitées. Lancer donc les tests sur Linux en local.
 Prérequis Linux : `libasound2-dev cmake clang`.
 
 Le code n'a jamais été passé par `rustfmt` (lignes d'environ 130 colonnes, sans
