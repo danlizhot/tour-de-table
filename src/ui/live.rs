@@ -50,7 +50,7 @@ impl TourDeTableApp {
                 self.proposition = None;
                 self.bandeau = None;
                 self.view = View::Live;
-                self.notices.retain(|(_, e)| *e);
+                self.notices.retain(|a| a.erreur);
             }
             Err(e) => {
                 let _ = std::fs::remove_dir_all(meeting.dir());
@@ -156,6 +156,7 @@ impl TourDeTableApp {
             })();
             let _ = tx.send(result.map_err(|e| format!("{e:#}")));
         });
+        self.notify(format!("« {name} » importé : la transcription commence."), false);
         self.import_job = Some((name, rx, avancement));
     }
 

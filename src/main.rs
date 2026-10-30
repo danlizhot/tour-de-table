@@ -120,9 +120,22 @@ fn run_gui(renderer: Renderer) -> eframe::Result {
     if let Some(icon) = icon {
         viewport = viewport.with_icon(icon);
     }
+    // Linux : sous Wayland, winit ne reçoit pas les fichiers glissés dans la fenêtre ; on passe
+    // donc par X11 (XWayland) quand il est disponible. Dépannage : TOURDETABLE_WAYLAND=1.
+    #[cfg(target_os = "linux")]
+    let event_loop_builder = (std::env::var_os("DISPLAY").is_some() && std::env::var_os("TOURDETABLE_WAYLAND").is_none()).then(|| {
+        let hook: eframe::EventLoopBuilderHook = Box::new(|b| {
+            use winit::platform::x11::EventLoopBuilderExtX11;
+            b.with_x11();
+        });
+        hook
+    });
+    #[cfg(not(target_os = "linux"))]
+    let event_loop_builder = None;
     let options = eframe::NativeOptions {
         viewport,
         renderer,
+        event_loop_builder,
         wgpu_options: wgpu_options(),
         ..Default::default()
     };
