@@ -59,3 +59,8 @@ strip = true
 ProductName = "Tour de table"
 FileDescription = "Tour de table — transcription de rencontres en français québécois"
 LegalCopyright = "MIT"
+
+# Branche d'essai seulement (ne pas fusionner) : llama.cpp de PrismML, qui lit les modèles
+# ternaires Bonsai 2 (formats PQ2_0 et PTQ1_0).
+[patch.crates-io]
+llama-cpp-sys-2 = { path = "vendor/llama-cpp-sys-2" }

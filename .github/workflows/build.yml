@@ -29,15 +29,12 @@ jobs:
           - os: windows-latest
             artifact: tourdetable-windows-x64
             features: ""
-          - os: macos-14
-            artifact: tourdetable-macos-arm64
-            features: "--features metal,tourdetable-redaction/metal"
-          - os: ubuntu-24.04
-            artifact: tourdetable-linux-x64
-            features: ""
+          # Branche d'essai Bonsai : Windows seulement.
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
