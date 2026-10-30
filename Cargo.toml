@@ -33,6 +33,11 @@ sysinfo = { version = "0.39.6", default-features = false, features = ["system", 
 [dev-dependencies]
 resvg = "0.48.1"
 
+# Windows : avancement dans l'icône de la barre des tâches (ITaskbarList3).
+[target."cfg(windows)".dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell"] }
+raw-window-handle = "0.6"
+
 [target."cfg(windows)".build-dependencies]
 winresource = "0.1.34"
 
