@@ -9,6 +9,7 @@ mod config;
 mod decoupage;
 mod diagnostic;
 mod docx;
+mod gpu;
 mod models;
 mod nettoyage;
 mod quebec;
@@ -22,12 +23,18 @@ use eframe::Renderer;
 
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).is_some_and(|a| a == "--etalonner") {
+        // Lancé par l'application elle-même (voir `gpu::Etalonnage`), avant `diagnostic::init` :
+        // ni rotation du journal de l'application, ni fenêtre d'erreur si le pilote plante.
+        std::process::exit(if gpu::etalonner(&args[2..]).is_ok() { 0 } else { 1 });
+    }
     diagnostic::init();
+    gpu::init();
     whisper_rs::install_logging_hooks();
     config::migrate_from_noter();
     config::migrate_meetings();
 
-    let args: Vec<String> = std::env::args().collect();
     if args.get(1).is_some_and(|a| a == "--transcrire") {
         let Some(wav) = args.get(2) else {
             eprintln!("Usage : tourdetable --transcrire enregistrement.wav [modele.bin]");

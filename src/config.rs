@@ -90,9 +90,6 @@ pub fn threads() -> usize {
 /// le décodage par 2 à 3 sur processeur seul, et la transcription prenait du retard.
 pub const BEAM_SIZE: u8 = 1;
 
-/// Accélération GPU dès que l'exécutable est compilé avec un moteur GPU.
-pub const USE_GPU: bool = cfg!(any(feature = "metal", feature = "vulkan", feature = "cuda"));
-
 /// Sensibilité de la détection de voix, 0.0 (peu sensible) à 1.0 (très sensible).
 pub const VAD_SENSITIVITY: f32 = 0.5;
 
@@ -103,7 +100,7 @@ pub fn model_path() -> PathBuf {
 
 /// Moteur de rédaction (nettoyage et compte rendu).
 pub fn moteur() -> crate::summary::Moteur {
-    crate::summary::Moteur { modele: models_dir().join(crate::models::modele_redaction().file), fils: threads() }
+    crate::summary::Moteur { modele: models_dir().join(crate::models::modele_redaction().file), fils: threads(), gpu: crate::gpu::redaction() }
 }
 
 fn dirs() -> ProjectDirs {
@@ -306,7 +303,6 @@ mod tests {
         assert!((1..=8).contains(&threads()));
         assert_eq!(BEAM_SIZE, 1);
         assert_eq!(VAD_SENSITIVITY, 0.5);
-        assert_eq!(USE_GPU, cfg!(any(feature = "metal", feature = "vulkan", feature = "cuda")));
         assert!(model_path().ends_with(crate::models::RECOMMENDED));
         let moteur = moteur();
         assert!(moteur.modele.ends_with(crate::models::modele_redaction().file));

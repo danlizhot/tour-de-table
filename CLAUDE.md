@@ -42,6 +42,11 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   compte rendu. `Meeting::segments` (brut) n'est jamais modifié ; résultat dans
   `Meeting::nettoyage`. File d'attente et exclusion avec l'enregistrement dans `ui/nettoyage.rs`.
 * `quebec.rs` : invite québécoise, typographie OQLF, lexique, filtre d'hallucinations.
+* `gpu.rs` : puce graphique (Vulkan, Windows) choisie par étalonnage (`tourdetable --etalonner`, processus
+  à part lancé par `ui/puce.rs` quand l'application est inoccupée) ; sentinelle autour des transcriptions
+  sur la puce, repli de la rédaction sur le processeur après un plantage. Sans verdict : processeur, et
+  `GGML_VK_VISIBLE_DEVICES` vide pour que ggml n'y touche pas. Pas de *flash attention* avec Vulkan
+  (charabia sur Intel).
 
 ### Crate auxiliaire `tourdetable-redaction` (`redaction/`)
 
@@ -71,7 +76,8 @@ cargo build --release --workspace
 ```
 
 La CI (`.github/workflows/build.yml`) lance `cargo test --workspace` et
-`cargo build --release --workspace` sur Windows, macOS (`--features metal,tourdetable-redaction/metal`)
+`cargo build --release --workspace` sur Windows (`--features vulkan,tourdetable-redaction/vulkan`, SDK
+Vulkan installé par la CI, `vulkan-1.dll` livré), macOS (`--features metal,tourdetable-redaction/metal`)
 et Linux, puis vérifie qu'aucune DLL du runtime Visual C++ n'est importée sous Windows.
 Prérequis Linux : `libasound2-dev cmake clang`.
 

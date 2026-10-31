@@ -28,7 +28,9 @@ jobs:
         include:
           - os: windows-latest
             artifact: tourdetable-windows-x64
-            features: ""
+            # Puce graphique (Vulkan) : retenue seulement si l'étalonnage au premier démarrage
+            # la trouve plus rapide et juste (voir src/gpu.rs).
+            features: "--features vulkan,tourdetable-redaction/vulkan"
           - os: macos-14
             artifact: tourdetable-macos-arm64
             features: "--features metal,tourdetable-redaction/metal"
@@ -54,6 +56,18 @@ jobs:
           echo "GGML_AVX2=ON" >> $GITHUB_ENV
           echo "GGML_FMA=ON" >> $GITHUB_ENV
           echo "GGML_F16C=ON" >> $GITHUB_ENV
+
+      # Compilation des noyaux Vulkan (glslc) et bibliothèque d'importation de vulkan-1.dll.
+      - name: SDK Vulkan (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VULKAN_VERSION: 1.4.313.2
+        run: |
+          curl.exe -sSLo "$env:RUNNER_TEMP\vulkansdk.exe" "https://sdk.lunarg.com/sdk/download/$env:VULKAN_VERSION/windows/vulkansdk-windows-X64-$env:VULKAN_VERSION.exe"
+          & "$env:RUNNER_TEMP\vulkansdk.exe" --accept-licenses --default-answer --confirm-command install
+          Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\$env:VULKAN_VERSION"
+          Add-Content $env:GITHUB_PATH "C:\VulkanSDK\$env:VULKAN_VERSION\Bin"
 
       # whisper.cpp déclare une vieille version minimale de CMake : on active la
       # politique moderne pour que le choix du runtime statique (/MT) s'applique.
@@ -93,6 +107,11 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/tourdetable.exe dist/TourDeTable.exe
           Copy-Item target/release/tourdetable-redaction.exe dist/
+          # Chargeur Vulkan (Khronos, Apache 2.0) livré à côté : sans lui, l'application ne
+          # démarrerait pas sur un poste sans pilote Vulkan (machine virtuelle).
+          $vk = @("$env:VULKAN_SDK\Bin\vulkan-1.dll", "$env:SystemRoot\System32\vulkan-1.dll") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $vk) { Write-Error "vulkan-1.dll introuvable"; exit 1 }
+          Copy-Item $vk dist/
           Copy-Item README.md dist/
           Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}.zip
 
@@ -106,6 +125,7 @@ jobs:
           New-Item -ItemType Directory -Force msix/Assets | Out-Null
           Copy-Item target/release/tourdetable.exe msix/TourDeTable.exe
           Copy-Item target/release/tourdetable-redaction.exe msix/
+          Copy-Item dist/vulkan-1.dll msix/
           Copy-Item packaging/windows/Assets/* msix/Assets/
           (Get-Content packaging/windows/AppxManifest.xml -Raw) -replace 'Version="0\.0\.0\.0"', "Version=`"$version`"" |
             Set-Content msix/AppxManifest.xml -Encoding utf8

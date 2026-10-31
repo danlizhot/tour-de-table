@@ -58,7 +58,7 @@ fn transcribe(fichier: &str, model: Option<&str>, agenda: Option<Agenda>) -> Res
         agenda_hint: agenda.as_ref().map(|a| crate::agenda::hint(&a.text)).unwrap_or_default(),
     }))?;
     let t = Instant::now();
-    engine.tx.send(Request::Load { path: model_path.clone(), use_gpu: config::USE_GPU })?;
+    engine.tx.send(Request::Load { path: model_path.clone(), use_gpu: crate::gpu::whisper() })?;
     match engine.rx.recv()? {
         Reply::Loaded(Ok(name)) => eprintln!("Modèle {name} chargé en {:.1} s", t.elapsed().as_secs_f32()),
         Reply::Loaded(Err(e)) => bail!(e),
