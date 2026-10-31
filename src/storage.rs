@@ -120,6 +120,19 @@ impl Meeting {
         }
     }
 
+    /// Dossier nommé d'après le fichier de l'ordre du jour, s'il y en a un : « 20260708-Oj-Comité
+    /// économique.pdf » donne `AAAA-MM-JJ-rencontre-comite-economique`. À appeler avant que le
+    /// dossier soit créé : son nom ne change plus ensuite.
+    pub fn nommer_d_apres(&mut self, agenda: Option<&Agenda>) {
+        self.nommer_dans(&crate::config::meetings_dir(), agenda);
+    }
+
+    fn nommer_dans(&mut self, racine: &Path, agenda: Option<&Agenda>) {
+        if let Some(nom) = agenda.and_then(|a| nom_de_l_ordre_du_jour(&a.file)) {
+            self.dossier = nom_dossier(racine, &self.started_at, &nom);
+        }
+    }
+
     pub fn dir(&self) -> PathBuf {
         self.dir_dans(&crate::config::meetings_dir())
     }
@@ -495,6 +508,39 @@ fn nom_dossier(racine: &Path, date: &DateTime<Local>, titre: &str) -> String {
         .expect("suite infinie")
 }
 
+/// Nom de la rencontre tiré du fichier de l'ordre du jour, sans l'extension, la date, la mention
+/// « Oj », « ODJ » ou « Ordre du jour » au début, ni le « (1) » d'une copie. `None` pour un ordre
+/// du jour saisi à la main ou un nom qui ne contient rien d'autre.
+fn nom_de_l_ordre_du_jour(fichier: &str) -> Option<String> {
+    let chemin = Path::new(fichier);
+    chemin.extension()?;
+    let mut nom = chemin.file_stem()?.to_string_lossy().trim().to_string();
+    // « (1) », « (2) » : copie téléchargée une seconde fois.
+    if let Some(debut) = nom.rfind(" (").filter(|&i| nom.ends_with(')') && nom[i + 2..nom.len() - 1].chars().all(|c| c.is_ascii_digit())) {
+        nom.truncate(debut);
+    }
+    const MENTIONS: [&str; 6] = ["projet d'ordre du jour", "ordre du jour", "ordre-du-jour", "projet", "odj", "oj"];
+    let separateur = |c: char| c == '-' || c == '_' || c == '.' || c.is_whitespace();
+    let mut reste = nom.as_str();
+    loop {
+        reste = reste.trim_start_matches(separateur);
+        let mot = reste.split(separateur).next().unwrap_or_default();
+        let bas = reste.to_lowercase().replace('’', "'");
+        let mention = MENTIONS.iter().find(|m| bas.starts_with(*m) && bas[m.len()..].chars().next().is_none_or(separateur));
+        if !mot.is_empty() && mot.chars().all(|c| c.is_ascii_digit()) {
+            reste = &reste[mot.len()..];
+        } else if let Some(m) = mention {
+            // Même longueur en octets : les mentions sont en ASCII, sauf l'apostrophe remplacée.
+            let longueur = reste.char_indices().nth(m.chars().count()).map_or(reste.len(), |(i, _)| i);
+            reste = &reste[longueur..];
+        } else {
+            break;
+        }
+    }
+    let reste = reste.trim_matches(separateur);
+    (!reste.is_empty()).then(|| reste.to_string())
+}
+
 /// Titre réduit à des minuscules ASCII sans accents séparées par des tirets, 40 caractères au plus.
 pub(crate) fn slug(titre: &str) -> String {
     let mut s = String::new();
@@ -781,6 +827,26 @@ mod tests {
         assert!(long.len() <= 40);
         let mot = slug(&"a".repeat(60));
         assert_eq!(mot.len(), 40);
+    }
+
+    #[test]
+    fn nom_tire_de_l_ordre_du_jour() {
+        assert_eq!(nom_de_l_ordre_du_jour("20260708-Oj-Comité économique (1).pdf").as_deref(), Some("Comité économique"));
+        assert_eq!(nom_de_l_ordre_du_jour("20261008-Odj-R équipe administratif.pdf").as_deref(), Some("R équipe administratif"));
+        assert_eq!(nom_de_l_ordre_du_jour("2026-10-30_ODJ_CA mensuel.docx").as_deref(), Some("CA mensuel"));
+        assert_eq!(nom_de_l_ordre_du_jour("Projet d’ordre du jour - Comité de liaison.pdf").as_deref(), Some("Comité de liaison"));
+        assert_eq!(nom_de_l_ordre_du_jour("Ordre du jour.docx"), None);
+        assert_eq!(nom_de_l_ordre_du_jour("odj.txt"), None);
+        assert_eq!(nom_de_l_ordre_du_jour("Saisi à la main"), None);
+        // « Ojibwé » commence par « oj » sans en être la mention.
+        assert_eq!(nom_de_l_ordre_du_jour("Ojibwé.pdf").as_deref(), Some("Ojibwé"));
+
+        let racine = temporaire("nom-odj");
+        let mut m = Meeting::nouvelle_dans(&racine, "m.bin", None, le_30_octobre());
+        m.nommer_dans(&racine, Some(&Agenda::new("20260708-Oj-Comité économique.pdf".into(), String::new())));
+        assert_eq!(m.dossier, "2026-10-30-rencontre-comite-economique");
+        m.nommer_dans(&racine, Some(&Agenda::new("Saisi à la main".into(), String::new())));
+        assert_eq!(m.dossier, "2026-10-30-rencontre-comite-economique");
     }
 
     #[test]
