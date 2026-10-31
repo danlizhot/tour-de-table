@@ -80,6 +80,17 @@ jobs:
           Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\$env:VULKAN_VERSION"
           Add-Content $env:GITHUB_PATH "C:\VulkanSDK\$env:VULKAN_VERSION\Bin"
 
+      # Générateur Ninja : avec celui de Visual Studio (compilation parallèle), l'installation de
+      # vulkan-shaders-gen partait avant sa configuration (« Not a file: cmake_install.cmake »).
+      # Ninja exige l'environnement MSVC (cl.exe, et Ninja fourni par Visual Studio).
+      - name: Environnement MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Générateur Ninja (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
+
       # whisper.cpp déclare une vieille version minimale de CMake : on active la
       # politique moderne pour que le choix du runtime statique (/MT) s'applique.
       - name: Runtime Visual C++ statique (Windows)
