@@ -32,6 +32,8 @@ use serde_json::json;
 pub struct Moteur {
     pub modele: PathBuf,
     pub fils: usize,
+    /// Sur la puce graphique (décidé par `gpu`).
+    pub gpu: bool,
 }
 
 impl Moteur {
@@ -309,15 +311,28 @@ pub fn points_de(m: &crate::storage::Meeting) -> (Vec<PointCr>, String) {
 
 pub fn compte_rendu(r: &Request) -> Result<String> {
     let mut session: Option<Session> = None;
+    let mut moteur = r.moteur.clone();
     let mut rediger = |prompt: &str, max_jetons: usize| -> Result<String> {
-        if session.is_none() {
-            session = Some(Session::ouvrir(r.moteur)?);
+        loop {
+            if session.is_none() {
+                session = Some(Session::ouvrir(&moteur)?);
+            }
+            let s = session.as_mut().expect("ouverte");
+            if let Some(a) = r.avancement {
+                a.jetons.store(0, Ordering::Relaxed);
+            }
+            let annuler = r.avancement.map(|a| &a.annuler);
+            let reponse = s.rediger(prompt, max_jetons, r.avancement.map(|a| &a.jetons), annuler);
+            // Plantage sur la puce graphique (pilote) : on reprend la même requête sur le processeur.
+            let annule = annuler.is_some_and(|a| a.load(Ordering::Relaxed));
+            if reponse.is_err() && moteur.gpu && s.arrete() && !annule {
+                crate::gpu::redaction_plantee();
+                moteur.gpu = false;
+                session = None;
+                continue;
+            }
+            return reponse;
         }
-        let s = session.as_mut().expect("ouverte");
-        if let Some(a) = r.avancement {
-            a.jetons.store(0, Ordering::Relaxed);
-        }
-        s.rediger(prompt, max_jetons, r.avancement.map(|a| &a.jetons), r.avancement.map(|a| &a.annuler))
     };
     rediger_compte_rendu(r, &mut rediger)
 }
@@ -746,6 +761,7 @@ pub struct Session {
     sortie: Lines<BufReader<ChildStdout>>,
     modele: PathBuf,
     fils: usize,
+    gpu: bool,
 }
 
 impl Session {
@@ -755,6 +771,13 @@ impl Session {
         }
         let mut cmd = Command::new(helper()?);
         cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
+        if moteur.gpu {
+            // Variable héritée du processus principal quand Whisper n'utilise pas la puce.
+            cmd.env_remove("GGML_VK_VISIBLE_DEVICES");
+        } else {
+            // Aucune puce visible pour ggml-vulkan : tout reste sur le processeur.
+            cmd.env("GGML_VK_VISIBLE_DEVICES", "");
+        }
         #[cfg(windows)]
         {
             // Programme console : sans ce drapeau, une fenêtre noire apparaîtrait.
@@ -764,7 +787,7 @@ impl Session {
         let mut child = cmd.spawn().context("Lancement du programme de rédaction")?;
         let entree = child.stdin.take();
         let sortie = BufReader::new(child.stdout.take().expect("sortie redirigée")).lines();
-        Ok(Self { child, entree, sortie, modele: moteur.modele.clone(), fils: moteur.fils })
+        Ok(Self { child, entree, sortie, modele: moteur.modele.clone(), fils: moteur.fils, gpu: moteur.gpu })
     }
 
     /// Une requête. `annuler` arrête le programme dès sa prochaine ligne de sortie ; la session
@@ -780,6 +803,7 @@ impl Session {
             "max_jetons": max_jetons,
             "temperature": 0.2,
             "fils": self.fils,
+            "gpu": self.gpu,
         });
         let entree = self.entree.as_mut().context("Programme de rédaction arrêté")?;
         writeln!(entree, "{requete}").and_then(|()| entree.flush()).context("Envoi au programme de rédaction")?;
@@ -804,6 +828,13 @@ impl Session {
         self.entree = None;
         let status = self.child.wait()?;
         bail!("Le programme de rédaction s'est arrêté ({status}) : mémoire insuffisante?")
+    }
+}
+
+impl Session {
+    /// Le programme s'est arrêté (plantage, annulation) : la session est inutilisable.
+    fn arrete(&self) -> bool {
+        self.entree.is_none()
     }
 }
 
@@ -883,7 +914,7 @@ mod tests {
     }
 
     fn moteur() -> Moteur {
-        Moteur { modele: PathBuf::from("absent.gguf"), fils: 1 }
+        Moteur { modele: PathBuf::from("absent.gguf"), fils: 1, gpu: false }
     }
 
     /// Modèle simulé : répond selon le point demandé et note les invites reçues.

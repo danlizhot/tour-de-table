@@ -7,6 +7,7 @@ mod installation;
 mod live;
 mod nettoyage;
 mod past;
+mod puce;
 mod settings;
 mod verification;
 mod widgets;
@@ -92,6 +93,9 @@ pub struct TourDeTableApp {
     nettoyages_en_attente: Vec<(String, bool)>,
     /// Fiche d'une rencontre : transcription brute plutôt que nettoyée.
     vue_brute: bool,
+    /// Étalonnage de la puce graphique en cours, et début de la période sans tâche.
+    etalonnage: Option<crate::gpu::Etalonnage>,
+    inoccupe_depuis: Instant,
     ctx: egui::Context,
 }
 
@@ -132,6 +136,8 @@ impl TourDeTableApp {
             nettoyage_job: None,
             nettoyages_en_attente: Vec::new(),
             vue_brute: false,
+            etalonnage: None,
+            inoccupe_depuis: Instant::now(),
             ctx: cc.egui_ctx.clone(),
             cfg,
         };
@@ -181,7 +187,7 @@ impl TourDeTableApp {
             self.model = ModelState::Verification;
         } else if models::installed(models::RECOMMENDED) {
             self.model = ModelState::Loading;
-            let _ = self.engine.tx.send(Request::Load { path: config::model_path(), use_gpu: config::USE_GPU });
+            let _ = self.engine.tx.send(Request::Load { path: config::model_path(), use_gpu: crate::gpu::whisper() });
         } else {
             self.model = ModelState::Missing;
         }
@@ -231,6 +237,7 @@ impl TourDeTableApp {
 
     /// Traitement hors affichage : canaux des fils audio, Whisper et tâches.
     fn pump(&mut self) {
+        self.surveiller_puce();
         if let Some(rx) = &self.audio_export
             && let Ok(res) = rx.try_recv()
         {

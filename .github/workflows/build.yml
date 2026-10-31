@@ -26,7 +26,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"windows-latest","artifact":"tourdetable-windows-x64","features":""}]' || '[{"os":"windows-latest","artifact":"tourdetable-windows-x64","features":""},{"os":"macos-14","artifact":"tourdetable-macos-arm64","features":"--features metal,tourdetable-redaction/metal"},{"os":"ubuntu-24.04","artifact":"tourdetable-linux-x64","features":""}]') }}
+        # Windows : puce graphique (Vulkan) retenue seulement si l'étalonnage la trouve plus rapide et
+        # juste (voir src/gpu.rs).
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"windows-latest","artifact":"tourdetable-windows-x64","features":"--features vulkan,tourdetable-redaction/vulkan"}]' || '[{"os":"windows-latest","artifact":"tourdetable-windows-x64","features":"--features vulkan,tourdetable-redaction/vulkan"},{"os":"macos-15","artifact":"tourdetable-macos-arm64","features":"--features metal,tourdetable-redaction/metal"},{"os":"ubuntu-24.04","artifact":"tourdetable-linux-x64","features":""}]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -46,6 +48,51 @@ jobs:
           echo "GGML_AVX2=ON" >> $GITHUB_ENV
           echo "GGML_FMA=ON" >> $GITHUB_ENV
           echo "GGML_F16C=ON" >> $GITHUB_ENV
+
+      # Les noyaux Vulkan se compilent très loin dans target/ : MSBuild dépasse la limite de
+      # 260 caractères des chemins Windows (FTK1011). Compilation dans C:\t, un lien vers target/
+      # (le cache et les chemins target/release des étapes suivantes restent valables).
+      - name: Dossier de compilation court (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force target | Out-Null
+          New-Item -ItemType Junction -Path C:\t -Target "$PWD\target" | Out-Null
+          Add-Content $env:GITHUB_ENV "CARGO_TARGET_DIR=C:\t"
+
+      # Compilation des noyaux Vulkan (glslc) et bibliothèque d'importation de vulkan-1.dll.
+      - name: SDK Vulkan (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VULKAN_VERSION: 1.4.313.2
+        run: |
+          curl.exe -sSLo "$env:RUNNER_TEMP\vulkansdk.exe" "https://sdk.lunarg.com/sdk/download/$env:VULKAN_VERSION/windows/vulkansdk-windows-X64-$env:VULKAN_VERSION.exe"
+          & "$env:RUNNER_TEMP\vulkansdk.exe" --accept-licenses --default-answer --confirm-command install
+          Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\$env:VULKAN_VERSION"
+          Add-Content $env:GITHUB_PATH "C:\VulkanSDK\$env:VULKAN_VERSION\Bin"
+
+      # Générateur Ninja : avec celui de Visual Studio (compilation parallèle), l'installation de
+      # vulkan-shaders-gen partait avant sa configuration (« Not a file: cmake_install.cmake »).
+      # Ninja exige l'environnement MSVC (cl.exe, et Ninja fourni par Visual Studio).
+      # (vcvars64.bat lu à la main : l'action ilammy/msvc-dev-cmd tourne encore sous Node.js 20.)
+      - name: Environnement MSVC (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $avant = @{}
+          Get-ChildItem env: | ForEach-Object { $avant[$_.Name] = $_.Value }
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$' -and $avant[$Matches[1]] -ne $Matches[2]) {
+              Add-Content $env:GITHUB_ENV "$($Matches[1])=$($Matches[2])"
+            }
+          }
+      - name: Générateur Ninja (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
 
       # whisper.cpp déclare une vieille version minimale de CMake : on active la
       # politique moderne pour que le choix du runtime statique (/MT) s'applique.
@@ -85,6 +132,11 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/tourdetable.exe dist/TourDeTable.exe
           Copy-Item target/release/tourdetable-redaction.exe dist/
+          # Chargeur Vulkan (Khronos, Apache 2.0) livré à côté : sans lui, l'application ne
+          # démarrerait pas sur un poste sans pilote Vulkan (machine virtuelle).
+          $vk = @("$env:VULKAN_SDK\Bin\vulkan-1.dll", "$env:SystemRoot\System32\vulkan-1.dll") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $vk) { Write-Error "vulkan-1.dll introuvable"; exit 1 }
+          Copy-Item $vk dist/
           Copy-Item README.md dist/
           Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}.zip
 
@@ -98,6 +150,7 @@ jobs:
           New-Item -ItemType Directory -Force msix/Assets | Out-Null
           Copy-Item target/release/tourdetable.exe msix/TourDeTable.exe
           Copy-Item target/release/tourdetable-redaction.exe msix/
+          Copy-Item dist/vulkan-1.dll msix/
           Copy-Item packaging/windows/Assets/* msix/Assets/
           (Get-Content packaging/windows/AppxManifest.xml -Raw) -replace 'Version="0\.0\.0\.0"', "Version=`"$version`"" |
             Set-Content msix/AppxManifest.xml -Encoding utf8

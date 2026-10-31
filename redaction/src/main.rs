@@ -37,6 +37,9 @@ struct Requete {
     temperature: f32,
     #[serde(default)]
     fils: i32,
+    /// Couches du modèle sur la puce graphique (si compilé avec Vulkan ou Metal).
+    #[serde(default)]
+    gpu: bool,
 }
 
 fn defaut_contexte() -> u32 {
@@ -60,7 +63,7 @@ fn emettre(valeur: serde_json::Value) {
 /// Modèle chargé, gardé pour les requêtes suivantes qui le demandent.
 struct Charge {
     backend: LlamaBackend,
-    modele: Option<(String, LlamaModel)>,
+    modele: Option<(String, bool, LlamaModel)>,
 }
 
 fn main() {
@@ -85,16 +88,16 @@ fn rediger(charge: &mut Option<Charge>, r: &Requete) -> Result<String> {
         *charge = Some(Charge { backend, modele: None });
     }
     let Charge { backend, modele: garde } = charge.as_mut().expect("initialisé");
-    if garde.as_ref().is_none_or(|(chemin, _)| *chemin != r.modele) {
+    if garde.as_ref().is_none_or(|(chemin, gpu, _)| *chemin != r.modele || *gpu != r.gpu) {
         *garde = None; // libère l'ancien modèle avant de charger le suivant
         // Sans mmap : sur processeur, llama.cpp réorganise les poids (« repack ») et
         // garderait sinon deux copies du modèle en mémoire (fichier + réorganisée).
-        let params_modele = LlamaModelParams::default().with_use_mmap(false);
+        let params_modele = LlamaModelParams::default().with_use_mmap(false).with_n_gpu_layers(if r.gpu { 999 } else { 0 });
         let m = LlamaModel::load_from_file(backend, &r.modele, &params_modele)
             .with_context(|| format!("Chargement du modèle {}", r.modele))?;
-        *garde = Some((r.modele.clone(), m));
+        *garde = Some((r.modele.clone(), r.gpu, m));
     }
-    let modele = &garde.as_ref().expect("chargé").1;
+    let modele = &garde.as_ref().expect("chargé").2;
     let backend = &*backend;
 
     // Gabarit de conversation propre au modèle (ChatML pour Qwen, etc.).

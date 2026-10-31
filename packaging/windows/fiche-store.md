@@ -46,6 +46,11 @@ transcrire et en tirer le compte rendu.
 **Léger et rapide**
 Application native d'environ 25 Mo. Demande 16 Go de mémoire.
 
+Si votre ordinateur a une puce graphique récente (Intel Iris Xe ou Arc, AMD Radeon), Tour de
+table s'en sert pour transcrire et rédiger plus vite. Il la met d'abord à l'essai et ne la garde
+que si elle est nettement plus rapide que le processeur et donne le même texte ; sinon, tout
+reste sur le processeur.
+
 Rien d'autre à installer : au premier démarrage, Tour de table télécharge tout seul, une seule
 fois, ses modèles de reconnaissance vocale (574 Mo) et de rédaction (5,7 Go), soit 6,3 Go.
 
@@ -63,6 +68,7 @@ fois, ses modèles de reconnaissance vocale (574 Mo) et de rédaction (5,7 Go), 
 10. 100 % local : aucun compte, aucune donnée envoyée en ligne
 11. Import d'enregistrements Teams, Zoom ou téléphone (MP4, M4A, MP3, WAV)
 12. Rédaction intégrée : aucun logiciel supplémentaire à installer
+13. Accélération par la puce graphique, gardée seulement si elle est plus rapide et fiable
 
 ## Mots-clés (jusqu'à 7)
 

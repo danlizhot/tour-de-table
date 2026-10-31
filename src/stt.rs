@@ -66,6 +66,8 @@ impl Engine {
 
 struct Loaded {
     name: String,
+    /// Sur la puce graphique.
+    gpu: bool,
     state: WhisperState,
     _ctx: WhisperContext,
 }
@@ -89,7 +91,7 @@ fn worker(rx: Receiver<Request>, tx: Sender<Reply>, wake: impl Fn()) {
             }
             Request::Load { path, use_gpu } => {
                 let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                if model.as_ref().is_some_and(|m| m.name == name) {
+                if model.as_ref().is_some_and(|m| m.name == name && m.gpu == use_gpu) {
                     Reply::Loaded(Ok(name))
                 } else {
                     model = None; // libère la mémoire avant de charger le suivant
@@ -108,7 +110,7 @@ fn worker(rx: Receiver<Request>, tx: Sender<Reply>, wake: impl Fn()) {
                 let t = std::time::Instant::now();
                 let reply = match model.as_mut() {
                     None => Reply::Error { message: "Aucun modèle chargé".into(), handled },
-                    Some(m) => match transcribe(&mut m.state, &settings, utterance, &context) {
+                    Some(m) => match sur_la_puce(m.gpu, || transcribe(&mut m.state, &settings, utterance, &context)) {
                         Ok(segments) => Reply::Segments { segments, handled },
                         Err(e) => Reply::Error { message: format!("Transcription : {e:#}"), handled },
                     },
@@ -156,15 +158,44 @@ fn batch(mut first: Utterance, rx: &Receiver<Request>, deferred: &mut VecDeque<R
     (first, handled)
 }
 
+/// Une transcription sur la puce graphique est encadrée par la sentinelle de `gpu` : si le
+/// pilote fait planter l'application, la puce est écartée au prochain démarrage.
+fn sur_la_puce<T>(gpu: bool, f: impl FnOnce() -> T) -> T {
+    if gpu && cfg!(feature = "vulkan") {
+        crate::gpu::debut_transcription();
+    }
+    let r = f();
+    if gpu && cfg!(feature = "vulkan") {
+        crate::gpu::fin_transcription();
+    }
+    r
+}
+
+/// Transcription d'un extrait, hors du fil de Whisper (étalonnage de la puce graphique).
+pub fn transcrire_extrait(path: &std::path::Path, use_gpu: bool, audio: &[f32]) -> Result<String> {
+    let mut m = load(path, use_gpu)?;
+    let s = Settings {
+        threads: crate::config::threads(),
+        beam_size: crate::config::BEAM_SIZE,
+        glossary: Glossary::parse(""),
+        agenda_hint: String::new(),
+    };
+    let utt = Utterance { source: crate::audio::Source::Salle, start: 0, samples: audio.to_vec() };
+    let segments = transcribe(&mut m.state, &s, utt, "")?;
+    Ok(segments.iter().map(|s| s.text.trim()).collect::<Vec<_>>().join(" "))
+}
+
 fn load(path: &std::path::Path, use_gpu: bool) -> Result<Loaded> {
     let mut params = WhisperContextParameters::default();
-    params.use_gpu(use_gpu).flash_attn(use_gpu);
+    // Flash attention : bon sur Metal, mais du charabia sur certaines puces Intel avec Vulkan.
+    params.use_gpu(use_gpu).flash_attn(use_gpu && cfg!(feature = "metal"));
     let ctx = WhisperContext::new_with_params(path, params)
         .with_context(|| format!("Chargement du modèle {}", path.display()))?;
     anyhow::ensure!(ctx.is_multilingual(), "Ce modèle est anglais seulement ; choisissez un modèle multilingue");
     let state = ctx.create_state().context("Création de l'état Whisper")?;
     Ok(Loaded {
         name: path.file_name().unwrap().to_string_lossy().into_owned(),
+        gpu: use_gpu,
         state,
         _ctx: ctx,
     })

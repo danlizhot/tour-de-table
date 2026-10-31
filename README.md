@@ -47,8 +47,15 @@ Tour de table l'indique au démarrage.
 * **Regroupement adaptatif** : si la transcription prend du retard, les énoncés en attente sont
   fusionnés en une seule passe d'encodeur (jusqu'à 28 s), et Tour de table rattrape tout seul son retard.
 * Réglages automatiques : fils de calcul (tous les cœurs moins deux, au plus 8), décodage simple
-  (sans faisceau ni relances), accélération GPU si l'exécutable est compilé avec un moteur GPU, sensibilité de
-  la détection de voix fixe.
+  (sans faisceau ni relances), sensibilité de la détection de voix fixe.
+* **Puce graphique décidée par mesure** (Windows, Vulkan) : une minute après le premier démarrage, quand
+  l'application est inoccupée, un étalonnage d'environ 3 minutes compare la puce graphique au processeur
+  sur un extrait synthétique de 20 s, pour la transcription et pour la rédaction, dans un processus à part.
+  La puce n'est retenue que si elle fait gagner au moins 15 % du temps et donne le même texte. Une vieille
+  puce (Intel UHD 630) reste écartée : plus lente, texte erroné. Un plantage du pilote en cours d'usage
+  ramène le moteur sur le processeur pour de bon (la rédaction reprend aussitôt sur le processeur). Verdict
+  dans `puce-graphique.json`, dans le dossier de données ; il est refait à chaque nouvelle version. Sur Mac,
+  Metal est toujours utilisé.
 
 ## Spécialisation québécoise
 
@@ -291,7 +298,7 @@ Prérequis : Rust (stable), CMake, Clang/LLVM. Sous Linux, ajoutez `libasound2-d
 ```
 cargo build --release                    # CPU (Windows, Linux)
 cargo build --release --features metal   # macOS Apple Silicon (GPU)
-cargo build --release --features vulkan  # GPU AMD/Intel/NVIDIA (SDK Vulkan requis)
+cargo build --release --workspace --features vulkan,tourdetable-redaction/vulkan  # Windows livré (SDK Vulkan requis)
 cargo build --release --features cuda    # GPU NVIDIA (CUDA requis)
 cargo test
 ```
@@ -362,4 +369,5 @@ Source vectorielle : `assets/logo.svg`.
 
 ## Licence
 
-MIT. Inspiré de Meetily (MIT, Zackriya Solutions).
+MIT. Inspiré de Meetily (MIT, Zackriya Solutions). Le zip Windows contient `vulkan-1.dll`, le chargeur
+Vulkan de Khronos (Apache 2.0).
