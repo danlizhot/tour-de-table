@@ -298,7 +298,8 @@ cargo test
 
 Pour un exécutable à distribuer, ajoutez `GGML_NATIVE=OFF` (sinon il est optimisé pour le seul
 processeur de la machine qui compile). Le flux GitHub Actions `.github/workflows/build.yml`
-produit Windows (`.zip`), macOS (`.app`) et Linux (`.tar.gz`) à chaque étiquette `v*`.
+produit Windows (`.zip`), macOS (`.app`) et Linux (`.tar.gz`) à chaque étiquette `v*`, ou à la
+demande (« Run workflow » dans l'onglet Actions) ; une PR ne compile que Windows.
 
 Pour régénérer les icônes et les tuiles du Store à partir de `assets/logo.svg` : `cargo run --example gen_icons`.
 
