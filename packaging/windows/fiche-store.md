@@ -68,7 +68,22 @@ fois, ses modèles de reconnaissance vocale (574 Mo) et de rédaction (5,7 Go), 
 
 transcription · compte rendu · réunion · procès-verbal · québécois · ordre du jour · Teams
 
-## Notes de version
+## Notes de version (≤ 1 500 caractères)
+
+Version 0.1.2
+* Installation des modèles automatique au premier démarrage, sans aucun clic.
+* Nouveau modèle de rédaction, plus juste : Qwen3.5 9B (16 Go de mémoire minimum).
+* Ordre du jour lu point par point : la rencontre est découpée par point, et le compte rendu suit la
+  forme habituelle des organismes (présences, points, levée de la séance), exporté en Word.
+* Pour un enregistrement importé, le découpage par point est proposé à vérifier avant le compte rendu.
+* Les personnes convoquées et les annexes jointes à l'ordre du jour sont ignorées.
+* Transcription nettoyée avant le compte rendu, et transcription plus rapide.
+* Rédaction en arrière-plan : la fenêtre reste utilisable pendant l'import et la rédaction.
+* Rencontres rangées dans Musique\Tour de table, chacune dans un dossier nommé d'après son
+  ordre du jour.
+* Avancement affiché dans l'icône de la barre des tâches, avis plus discrets et Paramètres simplifiés.
+
+### Versions précédentes
 
 Version 0.1.1
 * Rédaction des comptes rendus intégrée : plus besoin d'installer Ollama.
