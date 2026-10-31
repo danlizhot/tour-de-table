@@ -199,7 +199,8 @@ déposer l'ordre du jour, importer l'enregistrement et revenir plus tard : tout 
 **En arrière-plan** : la transcription d'un import et la rédaction du compte rendu se font
 sans bloquer l'application, qui reste ouverte. Quand il faut vérifier le découpage par point,
 puis quand le compte rendu est prêt, un avis s'affiche et l'icône est signalée dans la barre des
-tâches (le Dock sous macOS) si vous travaillez dans une autre fenêtre. Le bouton
+tâches (le Dock sous macOS) si vous travaillez dans une autre fenêtre. Sous Windows, l'icône
+montre aussi l'avancement de l'import et du compte rendu, comme une barre de progression. Le bouton
 **Visualiser** de la fiche ouvre le compte rendu dans Word (`compte-rendu.docx`).
 
 **Paramètres** : seulement le micro et la sortie audio, la question sur les haut-parleurs de la

@@ -1,6 +1,7 @@
 //! Interface native (egui) : rendu GPU immédiat, aucun navigateur embarqué.
 
 mod agenda;
+mod barre_taches;
 mod decoupage;
 mod installation;
 mod live;
@@ -67,6 +68,7 @@ pub struct TourDeTableApp {
     installation: Option<installation::Installation>,
     /// Rédaction en cours : (rencontre, résultat, jetons rédigés, début).
     summary_job: Option<TacheCompteRendu>,
+    barre_taches: barre_taches::BarreTaches,
     notices: Vec<Avis>,
     /// Ordre du jour déposé avant de démarrer : rattaché à la prochaine rencontre.
     draft_agenda: Option<Agenda>,
@@ -116,6 +118,7 @@ impl TourDeTableApp {
             show_settings: false,
             installation: installation::Installation::au_demarrage(),
             summary_job: None,
+            barre_taches: barre_taches::BarreTaches::new(cc),
             notices: Vec::new(),
             draft_agenda: None,
             import_job: None,
@@ -336,6 +339,26 @@ impl TourDeTableApp {
         self.pump_nettoyage();
     }
 
+    /// Avancement montré dans l'icône de la barre des tâches : l'import (bloc par bloc), puis le
+    /// compte rendu (point par point) ; les autres travaux longs, sans durée connue.
+    fn avancement_global(&self) -> barre_taches::Avancement {
+        use barre_taches::Avancement::{Aucun, Fraction, Indetermine};
+        use std::sync::atomic::Ordering::Relaxed;
+        if let Some((_, _, av)) = &self.import_job {
+            let total = av.total.load(Relaxed);
+            return if total == 0 { Indetermine } else { Fraction(av.blocs_transcrits() as f32 / total as f32) };
+        }
+        if let Some((_, _, av, _)) = &self.summary_job {
+            // `points + 1` étapes : chaque point, puis l'assemblage (présences, levée).
+            let (point, points) = (av.point.load(Relaxed), av.points.load(Relaxed));
+            return if points == 0 { Indetermine } else { Fraction(point.saturating_sub(1) as f32 / (points + 1) as f32) };
+        }
+        if self.finishing || self.decoupage_job.is_some() || self.nettoyage_en_cours() {
+            return Indetermine;
+        }
+        Aucun
+    }
+
     /// Enregistrement ou import qui démarre : Whisper doit être chargé (ou en chargement).
     pub(super) fn whisper_disponible(&mut self) -> bool {
         matches!(self.model, ModelState::Ready | ModelState::Loading)
@@ -454,6 +477,8 @@ impl TourDeTableApp {
 impl eframe::App for TourDeTableApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.pump();
+        let a = self.avancement_global();
+        self.barre_taches.afficher(a);
         let ecoute = self.verification.as_ref().is_some_and(verification::Verification::lecture_en_cours);
         if self.recorder.is_some()
             || self.finishing
