@@ -22,7 +22,7 @@ pub fn read(path: &Path) -> Result<String> {
         }
         _ => bail!("Format non pris en charge : utilisez Word (.docx), PDF, .txt ou .md"),
     };
-    let text = tidy(&text);
+    let text = sans_annexes(&tidy(&text));
     if text.trim().is_empty() {
         bail!("Aucun texte trouvé dans {}", path.display());
     }
@@ -306,6 +306,26 @@ fn titre_ordre_du_jour(ligne: &str) -> bool {
     t.starts_with("ordre du jour") && t.chars().count() <= 60
 }
 
+/// Les annexes jointes à l'ordre du jour (synthèses, rapports…) ne servent ni au découpage ni à la
+/// rédaction, et peuvent dépasser le contexte du modèle : le texte s'arrête au premier titre
+/// « Annexe » qui suit l'ordre du jour.
+fn sans_annexes(text: &str) -> String {
+    let lignes: Vec<&str> = text.lines().collect();
+    let debut = lignes.iter().position(|l| titre_ordre_du_jour(l)).unwrap_or(0);
+    let fin = lignes.iter().skip(debut + 1).position(|l| titre_annexe(l)).map(|i| debut + 1 + i);
+    match fin {
+        Some(fin) => lignes[..fin].join("\n").trim_end().to_string(),
+        None => text.to_string(),
+    }
+}
+
+/// « ANNEXE 1 », « Annexe A – Synthèse », « Annexes » ; pas « (voir annexe 1) » ni un point numéroté.
+fn titre_annexe(ligne: &str) -> bool {
+    let t = ligne.trim().to_lowercase();
+    let Some(reste) = t.strip_prefix("annexes").or_else(|| t.strip_prefix("annexe")) else { return false };
+    (reste.is_empty() || reste.starts_with([' ', ':', '-', '–', '—'])) && t.chars().count() <= 120
+}
+
 /// En-têtes d'un ordre du jour qui ne sont pas des points : titre, date.
 fn est_entete(titre: &str) -> bool {
     let t = titre.to_lowercase();
@@ -409,6 +429,20 @@ mod tests {
         assert!(points("Point de presse demain").is_empty());
         // PDF justifié : espaces multiples réduits.
         assert_eq!(resume(&points("1. Tour  de  table\n7.    Retour sur la rencontre RH")), vec![p("1", "Tour de table", 1), p("2", "Retour sur la rencontre RH", 1)]);
+    }
+
+    #[test]
+    fn annexes_ignorees() {
+        let a = "PROJET D’ORDRE DU JOUR\n1. Mot de bienvenue\n2. Projet Onimiki (voir annexe\n1)\n3. Fin de la rencontre\n\
+                 Page 2 sur 8\n  ANNEXE 1\n  SYNTHÈSE DU PLAN\n1. Les grands constats\nLe plan vise…";
+        let t = sans_annexes(a);
+        assert!(t.ends_with("Page 2 sur 8"), "{t}");
+        assert_eq!(points(&t).len(), 3);
+        // Sans titre « Annexe », rien n'est retiré ; un point « Annexes » de l'ordre du jour reste aussi.
+        assert_eq!(sans_annexes("1. Ouverture\n2. Varia"), "1. Ouverture\n2. Varia");
+        assert!(!titre_annexe("Annexer le terrain"));
+        assert!(!titre_annexe("3. Annexes au budget"));
+        assert!(titre_annexe("Annexe A – Synthèse"));
     }
 
     #[test]
