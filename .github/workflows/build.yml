@@ -75,9 +75,20 @@ jobs:
       # Générateur Ninja : avec celui de Visual Studio (compilation parallèle), l'installation de
       # vulkan-shaders-gen partait avant sa configuration (« Not a file: cmake_install.cmake »).
       # Ninja exige l'environnement MSVC (cl.exe, et Ninja fourni par Visual Studio).
+      # (vcvars64.bat lu à la main : l'action ilammy/msvc-dev-cmd tourne encore sous Node.js 20.)
       - name: Environnement MSVC (Windows)
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $avant = @{}
+          Get-ChildItem env: | ForEach-Object { $avant[$_.Name] = $_.Value }
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$' -and $avant[$Matches[1]] -ne $Matches[2]) {
+              Add-Content $env:GITHUB_ENV "$($Matches[1])=$($Matches[2])"
+            }
+          }
       - name: Générateur Ninja (Windows)
         if: runner.os == 'Windows'
         shell: bash
