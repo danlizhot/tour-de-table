@@ -68,6 +68,7 @@ fn transcribe(fichier: &str, model: Option<&str>, agenda: Option<Agenda>) -> Res
     let nom = path.file_stem().map(|n| n.to_string_lossy().into_owned());
     let started_at = path.metadata().and_then(|m| m.modified()).map_or_else(|_| chrono::Local::now(), Into::into);
     let mut meeting = Meeting::nouvelle(&model_path.file_name().unwrap_or_default().to_string_lossy(), nom, started_at);
+    meeting.nommer_d_apres(agenda.as_ref());
     meeting.agenda = agenda;
     let dir = meeting.dir();
     let r = importer(&engine, path, &dir, &mut meeting);

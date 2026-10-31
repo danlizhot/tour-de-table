@@ -75,15 +75,18 @@ Règles :\n\
 - Pour un tour de table, une ligne en gras par personne (« **[Prénom Nom]** »), suivie de 2 à 4 puces courtes \
 qui commencent par un verbe (« Poursuit… », « Prépare… »). Seulement des personnes, jamais un groupe (« les comptables »).\n\
 - Si la transcription s'arrête avant un point, écris « Point non abordé ou reporté. » : n'invente rien.\n\
+- « Point non abordé ou reporté. » remplace tout le contenu d'un point : ne l'ajoute jamais sous un point que tu as résumé.\n\
+- Présences : une liste à puces, prénom et nom, des personnes qui ont participé, jamais un groupe.\n\
 - L'ordre du jour sert uniquement à structurer : les faits (lieu, heure, montants, noms) viennent \
 de la transcription seulement. Ne recopie pas le lieu ou l'heure de cette rencontre pour la prochaine.\n\
 Structure du document :\n\
 # Compte rendu\n\
 **{titre}**\n\
 **Date** : {date}{heure}\n\
-## Présences (liste à puces, prénom et nom, des personnes qui prennent la parole ; jamais un groupe)\n\
+## Présences\n\
 ## 1. … (chaque point de l'ordre du jour)\n\
-## Levée de la séance (un court paragraphe qui résume l'esprit de la rencontre)\n";
+## Levée de la séance\n\
+La levée de la séance est un court paragraphe qui résume l'esprit de la rencontre.\n";
 
 /// Au-delà, la transcription (ou celle d'un point) est d'abord condensée par tranches : les
 /// petits modèles locaux perdent le fil sur des contextes trop longs, et la mémoire du contexte
@@ -379,7 +382,41 @@ fn en_un_appel(r: &Request, rediger: &mut Redacteur) -> Result<String> {
     }
     prompt.push_str("\n\n=== TRANSCRIPTION ===\n");
     prompt.push_str(&transcript);
-    generate(rediger, &prompt, JETONS_DOCUMENT)
+    Ok(sans_consignes_recopiees(&generate(rediger, &prompt, JETONS_DOCUMENT)?))
+}
+
+/// Ce que le modèle recopie des consignes : précision entre parenthèses dans un titre
+/// (« ## Présences (liste à puces…) »), mais pas « (information) » de l'ordre du jour ; « Point non abordé ou reporté. » sous un point résumé.
+/// Une seule phrase avec la formule (« Mentionné, mais non discuté. ») : la formule seule.
+fn sans_consignes_recopiees(md: &str) -> String {
+    let mut sections: Vec<(String, Vec<&str>)> = vec![(String::new(), Vec::new())];
+    for ligne in md.lines() {
+        if let Some(titre) = ligne.strip_prefix("## ") {
+            let titre = match titre.split_once(" (") {
+                Some((debut, fin)) if ["liste à puces", "paragraphe", "prénom et nom", "jamais un groupe"].iter().any(|c| fin.contains(c)) => debut,
+                _ => titre,
+            };
+            sections.push((format!("## {}", titre.trim_end()), Vec::new()));
+        } else {
+            sections.last_mut().expect("au moins une").1.push(ligne);
+        }
+    }
+    let formule = |l: &str| l.trim().trim_start_matches(['-', '*', '•']).trim() == NON_ABORDE;
+    let mut out = Vec::new();
+    for (titre, lignes) in &sections {
+        if !titre.is_empty() {
+            out.push(titre.clone());
+        }
+        let contenu: Vec<&str> = lignes.iter().copied().filter(|l| !l.trim().is_empty() && !formule(l)).collect();
+        let avec_formule = lignes.iter().any(|l| formule(l));
+        let resume = contenu.len() >= 2 || contenu.iter().any(|l| l.trim_start().starts_with(['-', '*', '•']));
+        if avec_formule && !resume {
+            out.push(NON_ABORDE.to_string());
+        } else {
+            out.extend(lignes.iter().filter(|l| !formule(l)).map(|l| l.to_string()));
+        }
+    }
+    out.join("\n")
 }
 
 /// Date et heure de l'en-tête : celles de l'ordre du jour s'il les annonce, sinon celles du
@@ -837,6 +874,20 @@ fn tidy_answer(md: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn consignes_recopiees_retirees() {
+        let md = "# Compte rendu\n## Présences (liste à puces, prénom et nom)\n- Julie Roy\n\n\
+                  ## 1. Mot de bienvenue\nLa direction ouvre la séance.\n*   Lecture de l'ordre du jour.\nPoint non abordé ou reporté.\n\n\
+                  ## 2. Adoption (procès-verbal)\nMentionné, mais aucune discussion.\nPoint non abordé ou reporté.\n\n## 3. Varia\nPoint non abordé ou reporté.";
+        assert_eq!(
+            sans_consignes_recopiees(md),
+            "# Compte rendu\n## Présences\n- Julie Roy\n\n## 1. Mot de bienvenue\nLa direction ouvre la séance.\n*   Lecture de l'ordre du jour.\n\n\
+             ## 2. Adoption (procès-verbal)\nPoint non abordé ou reporté.\n## 3. Varia\nPoint non abordé ou reporté."
+        );
+        // Une parenthèse qui fait partie du titre reste.
+        assert_eq!(sans_consignes_recopiees("## 4. Budget (Société sylvicole)\nTexte."), "## 4. Budget (Société sylvicole)\nTexte.");
+    }
 
     #[test]
     fn signale_les_chiffres_inventes() {

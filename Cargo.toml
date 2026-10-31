@@ -33,6 +33,11 @@ sysinfo = { version = "0.39.6", default-features = false, features = ["system", 
 [dev-dependencies]
 resvg = "0.48.1"
 
+# Windows : avancement dans l'icône de la barre des tâches (ITaskbarList3).
+[target."cfg(windows)".dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell"] }
+raw-window-handle = "0.6"
+
 # Linux : choix de X11 pour la fenêtre (même version que celle d'eframe).
 [target."cfg(target_os = \"linux\")".dependencies]
 winit = { version = "0.30", default-features = false, features = ["x11"] }

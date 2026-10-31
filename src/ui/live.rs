@@ -19,7 +19,8 @@ impl TourDeTableApp {
         if !self.whisper_disponible() {
             return;
         }
-        let meeting = Meeting::new(models::RECOMMENDED);
+        let mut meeting = Meeting::new(models::RECOMMENDED);
+        meeting.nommer_d_apres(self.draft_agenda.as_ref());
         // L'audio est toujours conservé : en blocs rangés par point de l'ordre du jour pendant la
         // rencontre, puis en un seul fichier par source.
         let dossier = meeting.dir();
@@ -40,7 +41,6 @@ impl TourDeTableApp {
                 for w in rec.warnings.clone() {
                     self.notify(w, true);
                 }
-                let mut meeting = meeting;
                 meeting.agenda = self.draft_agenda.take();
                 meeting.save().ok();
                 self.live = Some(meeting);
@@ -127,6 +127,7 @@ impl TourDeTableApp {
         // Date de l'enregistrement plutôt que celle de l'import, si connue.
         let started_at = path.metadata().and_then(|m| m.modified()).map_or_else(|_| chrono::Local::now(), Into::into);
         let mut meeting = Meeting::nouvelle(models::RECOMMENDED, Some(name.clone()), started_at);
+        meeting.nommer_d_apres(self.draft_agenda.as_ref());
         meeting.agenda = self.draft_agenda.take();
         let _ = meeting.save();
         self.live = Some(meeting);

@@ -206,7 +206,8 @@ déposer l'ordre du jour, importer l'enregistrement et revenir plus tard : tout 
 **En arrière-plan** : la transcription d'un import et la rédaction du compte rendu se font
 sans bloquer l'application, qui reste ouverte. Quand il faut vérifier le découpage par point,
 puis quand le compte rendu est prêt, un avis s'affiche et l'icône est signalée dans la barre des
-tâches (le Dock sous macOS) si vous travaillez dans une autre fenêtre. Le bouton
+tâches (le Dock sous macOS) si vous travaillez dans une autre fenêtre. Sous Windows, l'icône
+montre aussi l'avancement de l'import et du compte rendu, comme une barre de progression. Le bouton
 **Visualiser** de la fiche ouvre le compte rendu dans Word (`compte-rendu.docx`).
 
 **Paramètres** : seulement le micro et la sortie audio, la question sur les haut-parleurs de la
@@ -225,7 +226,9 @@ tourdetable --compte-rendu ordre-du-jour.docx enregistrement.mp4   # ou transcri
 
 Emplacement des données. Les rencontres sont dans le dossier Musique, une par dossier nommé
 d'après sa date et son titre (`2026-10-30-rencontre-ca-mensuel`, ou `2026-10-30-rencontre`
-sans titre) ; renommer une rencontre ne renomme pas son dossier. Pendant la rencontre, l'audio
+sans titre). Avec un ordre du jour déposé avant de commencer, le nom vient du fichier :
+« 20260708-Oj-Comité économique.pdf » donne `2026-10-30-rencontre-comite-economique` (date de la
+rencontre, sans la date ni la mention « Oj » du fichier). Renommer une rencontre ne renomme pas son dossier. Pendant la rencontre, l'audio
 est écrit en blocs de 2 minutes ; à la fin, ils sont remplacés par un seul fichier,
 `AAAAMMJJ-Rencontre-Tour de table.wav` (mode « Sources séparées » : un fichier `-salle` et un
 fichier `-distance`). Les modèles, la configuration,
@@ -302,7 +305,8 @@ cargo test
 
 Pour un exécutable à distribuer, ajoutez `GGML_NATIVE=OFF` (sinon il est optimisé pour le seul
 processeur de la machine qui compile). Le flux GitHub Actions `.github/workflows/build.yml`
-produit Windows (`.zip`), macOS (`.app`) et Linux (`.tar.gz`) à chaque étiquette `v*`.
+produit Windows (`.zip`), macOS (`.app`) et Linux (`.tar.gz`) à chaque étiquette `v*`, ou à la
+demande (« Run workflow » dans l'onglet Actions) ; une PR ne compile que Windows.
 
 Pour régénérer les icônes et les tuiles du Store à partir de `assets/logo.svg` : `cargo run --example gen_icons`.
 
