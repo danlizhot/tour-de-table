@@ -57,6 +57,17 @@ jobs:
           echo "GGML_FMA=ON" >> $GITHUB_ENV
           echo "GGML_F16C=ON" >> $GITHUB_ENV
 
+      # Les noyaux Vulkan se compilent très loin dans target/ : MSBuild dépasse la limite de
+      # 260 caractères des chemins Windows (FTK1011). Compilation dans C:\t, un lien vers target/
+      # (le cache et les chemins target/release des étapes suivantes restent valables).
+      - name: Dossier de compilation court (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force target | Out-Null
+          New-Item -ItemType Junction -Path C:\t -Target "$PWD\target" | Out-Null
+          Add-Content $env:GITHUB_ENV "CARGO_TARGET_DIR=C:\t"
+
       # Compilation des noyaux Vulkan (glslc) et bibliothèque d'importation de vulkan-1.dll.
       - name: SDK Vulkan (Windows)
         if: runner.os == 'Windows'
