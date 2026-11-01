@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 
 use eframe::egui::{RichText, Sense, Ui, Vec2};
 
-use super::widgets::{DISTANCE, SALLE, draw_logo, meter, record_button, transcript};
+use super::widgets::{DISTANCE, SALLE, draw_logo, meter, pause_button, record_button, transcript};
 use super::{ModelState, TourDeTableApp, View};
 use crate::audio::{self, Source, import};
 use crate::config;
@@ -68,7 +68,9 @@ impl TourDeTableApp {
             rec.stop();
             // Fin de la période en cours : après le dernier échantillon transmis.
             if let Some(m) = self.live.as_mut() {
-                m.fermer_periode(crate::recorder::position_ms(&echantillons));
+                let fin = crate::recorder::position_ms(&echantillons);
+                m.fermer_periode(fin);
+                m.fermer_pause(fin);
                 let _ = m.save();
             }
             self.edit_points = false;
@@ -76,6 +78,20 @@ impl TourDeTableApp {
             self.bandeau = None;
             self.finishing = true;
         }
+    }
+
+    /// Met l'enregistrement en pause ou le reprend : la pause est notée dans la rencontre.
+    pub(super) fn basculer_pause(&mut self) {
+        let (Some(rec), Some(m)) = (&self.recorder, self.live.as_mut()) else { return };
+        let pause = !rec.en_pause();
+        let ms = rec.mettre_en_pause(pause);
+        if pause {
+            m.debuter_pause(ms);
+        } else {
+            m.fermer_pause(ms);
+        }
+        log::info!("Enregistrement {} à {}", if pause { "en pause" } else { "repris" }, clock(ms));
+        let _ = m.save();
     }
 
     pub(super) fn finalize(&mut self) {
@@ -198,18 +214,28 @@ impl TourDeTableApp {
                     self.start_recording();
                 }
             }
+            if recording {
+                ui.add_space(6.0);
+                if pause_button(ui, self.recorder.as_ref().is_some_and(Recorder::en_pause)).clicked() {
+                    self.basculer_pause();
+                }
+            }
             ui.add_space(10.0);
             if let Some(rec) = &self.recorder {
                 ui.label(RichText::new(clock(rec.started.elapsed().as_millis() as u64)).size(22.0).monospace());
                 ui.add_space(10.0);
-                ui.vertical(|ui| {
-                    if rec.active.contains(&Source::Salle) {
-                        meter(ui, "Salle", rec.mic_level.get(), SALLE);
-                    }
-                    if rec.active.contains(&Source::Distance) {
-                        meter(ui, "À distance", rec.sys_level.get(), DISTANCE);
-                    }
-                });
+                if rec.en_pause() {
+                    ui.label(RichText::new("En pause : rien n'est capté").strong());
+                } else {
+                    ui.vertical(|ui| {
+                        if rec.active.contains(&Source::Salle) {
+                            meter(ui, "Salle", rec.mic_level.get(), SALLE);
+                        }
+                        if rec.active.contains(&Source::Distance) {
+                            meter(ui, "À distance", rec.sys_level.get(), DISTANCE);
+                        }
+                    });
+                }
                 if self.in_flight > 1 {
                     ui.label(RichText::new(format!("{} énoncés en attente", self.in_flight)).small().weak());
                 }
@@ -243,6 +269,7 @@ impl TourDeTableApp {
                         let text = match self.etat_import() {
                             Some(etat) => etat,
                             None if self.finishing => "Transcription de l'enregistrement…".to_string(),
+                            None if m.en_pause() => "En pause : rien n'est capté.".to_string(),
                             None => "À l'écoute… la transcription apparaît au fil de la rencontre.".to_string(),
                         };
                         ui.spinner();

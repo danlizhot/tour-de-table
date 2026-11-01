@@ -47,6 +47,9 @@ enum Commande {
 
 pub struct Recorder {
     stop: Arc<AtomicBool>,
+    /// En pause, le son capté est remplacé par du silence : rien n'est transcrit ni conservé,
+    /// mais l'horloge des segments continue d'avancer.
+    pause: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
     pub mic_level: Arc<Level>,
     pub sys_level: Arc<Level>,
@@ -70,6 +73,7 @@ struct Track {
 impl Recorder {
     pub fn start(opts: Options, out: Sender<Utterance>) -> Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
+        let pause = Arc::new(AtomicBool::new(false));
         let mic_level = Arc::new(Level::default());
         let sys_level = Arc::new(Level::default());
         let echantillons = Arc::new(AtomicU64::new(0));
@@ -77,9 +81,10 @@ impl Recorder {
         let (commandes, commandes_rx) = crossbeam_channel::unbounded();
 
         let thread = {
-            let (stop, mic_level, sys_level, ech) = (stop.clone(), mic_level.clone(), sys_level.clone(), echantillons.clone());
+            let (stop, pause, mic_level, sys_level, ech) =
+                (stop.clone(), pause.clone(), mic_level.clone(), sys_level.clone(), echantillons.clone());
             std::thread::Builder::new().name("audio".into()).spawn(move || {
-                run(opts, out, commandes_rx, stop, mic_level, sys_level, ech, ready_tx);
+                run(opts, out, commandes_rx, stop, pause, mic_level, sys_level, ech, ready_tx);
             })?
         };
 
@@ -93,6 +98,7 @@ impl Recorder {
         }
         Ok(Self {
             stop,
+            pause,
             thread: Some(thread),
             mic_level,
             sys_level,
@@ -141,6 +147,16 @@ impl Recorder {
         let _ = self.commandes.send(Commande::Titres(titres));
     }
 
+    /// Met en pause ou reprend la capture ; retourne la position du changement en millisecondes.
+    pub fn mettre_en_pause(&self, oui: bool) -> u64 {
+        self.pause.store(oui, Ordering::Relaxed);
+        self.position_ms()
+    }
+
+    pub fn en_pause(&self) -> bool {
+        self.pause.load(Ordering::Relaxed)
+    }
+
     /// Position courante sur l'horloge des segments, en millisecondes.
     pub fn position_ms(&self) -> u64 {
         position_ms(&self.echantillons)
@@ -165,6 +181,7 @@ fn run(
     out: Sender<Utterance>,
     commandes: Receiver<Commande>,
     stop: Arc<AtomicBool>,
+    pause: Arc<AtomicBool>,
     mic_level: Arc<Level>,
     sys_level: Arc<Level>,
     echantillons: Arc<AtomicU64>,
@@ -240,6 +257,9 @@ fn run(
                 if let Some(track) = tracks.get_mut(&chunk.source) {
                     resampled.clear();
                     track.resampler.process(&chunk.samples, &mut resampled);
+                    if pause.load(Ordering::Relaxed) {
+                        resampled.fill(0.0);
+                    }
                     let gap = track.aligner.gap(expected, resampled.len());
                     let mut block = vec![0.0f32; gap];
                     block.extend_from_slice(&resampled);

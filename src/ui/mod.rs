@@ -619,7 +619,9 @@ impl Drop for TourDeTableApp {
             let echantillons = rec.echantillons.clone();
             rec.stop();
             if let Some(m) = self.live.as_mut() {
-                m.fermer_periode(crate::recorder::position_ms(&echantillons));
+                let fin = crate::recorder::position_ms(&echantillons);
+                m.fermer_periode(fin);
+                m.fermer_pause(fin);
             }
         }
         if let Some(m) = &self.live

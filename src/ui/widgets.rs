@@ -184,6 +184,32 @@ pub(super) fn record_button(ui: &mut Ui, recording: bool, enabled: bool) -> egui
     }
 }
 
+/// Pause ou reprise de l'enregistrement, à côté de « Arrêter » ; icône dessinée comme celle
+/// de `record_button` : deux barres, ou le triangle de lecture pendant la pause.
+pub(super) fn pause_button(ui: &mut Ui, en_pause: bool) -> egui::Response {
+    let text = if en_pause { "Reprendre" } else { "Pause" };
+    let btn = egui::Button::new(RichText::new(format!("     {text}")).size(16.0))
+        .corner_radius(CornerRadius::same(18))
+        .min_size(Vec2::new(130.0, 40.0));
+    let resp = ui.add(btn);
+    let couleur = ui.style().interact(&resp).fg_stroke.color;
+    let c = Pos2::new(resp.rect.left() + 26.0, resp.rect.center().y);
+    if en_pause {
+        let points = vec![c + Vec2::new(-5.0, -7.0), c + Vec2::new(7.0, 0.0), c + Vec2::new(-5.0, 7.0)];
+        ui.painter().add(egui::Shape::convex_polygon(points, couleur, egui::Stroke::NONE));
+    } else {
+        for dx in [-3.5, 3.5] {
+            let barre = egui::Rect::from_center_size(c + Vec2::new(dx, 0.0), Vec2::new(4.0, 14.0));
+            ui.painter().rect_filled(barre, CornerRadius::same(1), couleur);
+        }
+    }
+    resp.on_hover_text(if en_pause {
+        "Reprendre la transcription"
+    } else {
+        "Rien n'est capté pendant la pause : ni transcrit, ni conservé dans l'audio"
+    })
+}
+
 /// Bouton carré du thème, avec son icône dessinée (la police par défaut d'egui n'a pas ces
 /// symboles) : soleil, lune ou écran pour le système.
 pub(super) fn theme_button(ui: &mut Ui, theme: Theme) -> egui::Response {
