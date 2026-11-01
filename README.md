@@ -2,6 +2,11 @@
 
 # Tour de table
 
+![Rust](https://img.shields.io/badge/Rust-B7410E?logo=rust&logoColor=white)
+![Windows · macOS · Linux](https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-natif-555555)
+[![Licence MIT](https://img.shields.io/badge/licence-MIT-2E7D32)](LICENSE)
+![État : alpha](https://img.shields.io/badge/%C3%A9tat-alpha-E6A700)
+
 > *Tout le monde parle, rien ne se perd.*
 
 **Transcription de rencontres en français québécois, 100 % locale.**

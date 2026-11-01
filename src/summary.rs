@@ -54,8 +54,11 @@ const SANS_ORDRE_DU_JOUR: &str = "Tu es secrétaire de réunion. À partir de la
 ## Résumé (5 phrases maximum)\n\
 ## Points discutés (liste)\n\
 ## Décisions\n\
-## Suivis\n\
-Les suivis sont un tableau à trois colonnes : Action | Responsable | Échéance.\n";
+## Suites à donner\n\
+Regroupe les suites à donner par responsable : un titre de niveau 3 par personne ou organisation \
+(« ### Actions de [nom] »), puis une liste à puces d'actions courtes qui commencent par un verbe à l'infinitif, \
+avec l'échéance entre parenthèses si elle a été dite. Sans responsable connu : « ### Actions à préciser ». \
+Aucun tableau. « Salle » et « À distance » désignent des micros, jamais des personnes : ne les écris pas.\n";
 
 /// Forme commune à tous les points : celle des comptes rendus d'organisme.
 const FORME: &str = "Écris comme dans un compte rendu officiel : au présent, à la troisième personne, \

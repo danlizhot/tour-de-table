@@ -133,10 +133,11 @@ impl TourDeTableApp {
             });
             ui.label(
                 RichText::new(format!(
-                    "{} · {} · {} segments · {}",
+                    "{} · {} · {} segments{} · {}",
                     m.started_at.format("%Y-%m-%d %H h %M"),
                     clock(m.duration_s * 1000),
                     m.segments.len(),
+                    m.liste_pauses().map(|p| format!(" · pauses : {p}")).unwrap_or_default(),
                     short_model(&m.model)
                 ))
                 .small()

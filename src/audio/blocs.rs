@@ -952,6 +952,7 @@ pub fn reprendre(rencontre: &mut Meeting, dir: &Path) -> Result<()> {
     let fin_texte = rencontre.segments.iter().map(|s| s.end_ms).max().unwrap_or(0);
     let fin = fin_audio.max(fin_texte);
     rencontre.fermer_periode(fin);
+    rencontre.fermer_pause(fin);
     rencontre.duration_s = rencontre.duration_s.max(fin / 1000);
     if let Err(e) = consolider(dir, rencontre.started_at.date_naive()) {
         log::warn!("{e:#}");

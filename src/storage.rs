@@ -43,6 +43,9 @@ pub struct Meeting {
     /// Transcription nettoyée (voir `nettoyage`) ; `segments` reste la transcription brute.
     #[serde(default)]
     pub nettoyage: Option<Nettoyage>,
+    /// Pauses de l'enregistrement, dans l'ordre chronologique.
+    #[serde(default)]
+    pub pauses: Vec<Pause>,
 }
 
 /// Ordre du jour déposé avant ou après la rencontre.
@@ -86,6 +89,16 @@ pub enum Declenchement {
     Auto,
 }
 
+/// Pause de l'enregistrement : rien n'est capté, donc ni transcrit ni conservé, de `debut_ms` à
+/// `fin_ms` (horloge des segments). L'audio de la pause est du silence : l'horloge ne s'arrête pas.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Pause {
+    pub debut_ms: u64,
+    /// `None` tant que la pause dure.
+    #[serde(default)]
+    pub fin_ms: Option<u64>,
+}
+
 /// Paragraphe d'export : début, source et texte.
 type Paragraphe = (u64, crate::audio::Source, String);
 
@@ -117,6 +130,7 @@ impl Meeting {
             agenda: None,
             periodes: Vec::new(),
             nettoyage: None,
+            pauses: Vec::new(),
         }
     }
 
@@ -190,6 +204,35 @@ impl Meeting {
         if let Some(p) = self.periodes.last_mut().filter(|p| p.fin_ms.is_none()) {
             p.fin_ms = Some(ms.max(p.debut_ms));
         }
+    }
+
+    pub fn en_pause(&self) -> bool {
+        self.pauses.last().is_some_and(|p| p.fin_ms.is_none())
+    }
+
+    pub fn debuter_pause(&mut self, ms: u64) {
+        if !self.en_pause() {
+            self.pauses.push(Pause { debut_ms: ms, fin_ms: None });
+        }
+    }
+
+    pub fn fermer_pause(&mut self, ms: u64) {
+        if let Some(p) = self.pauses.last_mut().filter(|p| p.fin_ms.is_none()) {
+            p.fin_ms = Some(ms.max(p.debut_ms));
+        }
+    }
+
+    /// « 00:45:10 à 00:52:00 » pour chaque pause, sur une ligne ; `None` sans pause.
+    pub fn liste_pauses(&self) -> Option<String> {
+        let v: Vec<String> = self
+            .pauses
+            .iter()
+            .map(|p| match p.fin_ms {
+                Some(f) => format!("{} à {}", clock(p.debut_ms), clock(f)),
+                None => format!("à partir de {}", clock(p.debut_ms)),
+            })
+            .collect();
+        (!v.is_empty()).then(|| v.join(", "))
     }
 
     /// Point dont la période contient `start_ms` (la plus récente, si elles se chevauchent).
@@ -386,12 +429,16 @@ impl Meeting {
 
     pub fn to_markdown(&self) -> String {
         let mut md = format!(
-            "# {}\n\n- Date : {}\n- Durée : {}\n- Modèle : {}\n\n",
+            "# {}\n\n- Date : {}\n- Durée : {}\n- Modèle : {}\n",
             self.title,
             self.started_at.format("%Y-%m-%d %H h %M"),
             clock(self.duration_s * 1000),
             self.model
         );
+        if let Some(pauses) = self.liste_pauses() {
+            let _ = writeln!(md, "- Pauses (rien n'est transcrit) : {pauses}");
+        }
+        md.push('\n');
         if let Some(a) = &self.agenda {
             let _ = write!(md, "## Ordre du jour\n\n{}\n\n", a.text);
         }
@@ -703,6 +750,23 @@ mod tests {
         assert!(m.to_srt().starts_with("1\n00:00:01,000 --> 00:00:02,000\nSalle : Bon ben"));
     }
 
+    #[test]
+    fn pauses() {
+        let mut m = Meeting::new("test.bin");
+        assert!(!m.en_pause() && m.liste_pauses().is_none());
+        m.debuter_pause(60_000);
+        m.debuter_pause(61_000);
+        assert!(m.en_pause());
+        assert_eq!(m.liste_pauses().as_deref(), Some("à partir de 01:00"));
+        m.fermer_pause(150_000);
+        m.debuter_pause(200_000);
+        m.fermer_pause(190_000);
+        assert!(!m.en_pause());
+        assert_eq!(m.pauses, vec![Pause { debut_ms: 60_000, fin_ms: Some(150_000) }, Pause { debut_ms: 200_000, fin_ms: Some(200_000) }]);
+        assert!(m.to_markdown().contains("- Modèle : test.bin\n- Pauses (rien n'est transcrit) : 01:00 à 02:30, 03:20 à 03:20\n\n"));
+        assert!(!Meeting::new("test.bin").to_markdown().contains("Pauses"));
+    }
+
     fn rencontre_avec_points() -> Meeting {
         let mut m = Meeting::new("test.bin");
         m.agenda = Some(Agenda::new("od.docx".into(), "Ordre du jour\n1. Ouverture\n2. Budget\n3. Varia".into()));
@@ -922,7 +986,7 @@ mod tests {
     fn ancien_format_sans_dossier() {
         let m: Meeting = serde_json::from_str(ANCIEN_FORMAT).unwrap();
         assert_eq!(m.dossier, "");
-        assert!(m.periodes.is_empty());
+        assert!(m.periodes.is_empty() && m.pauses.is_empty());
         assert_eq!(m.point_de(1000), None);
         // Jamais la racine elle-même.
         assert_eq!(m.dir_dans(Path::new("/racine")), Path::new("/racine/2026-10-30_09-15-00"));
