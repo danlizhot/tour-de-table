@@ -22,6 +22,8 @@ rendu, en français québécois. Il est pensé pour les rencontres entre organis
 Tour de table capte en même temps le micro de la salle et le son des participants à distance
 (Teams, Zoom, Meet, Webex…), sans pilote ni configuration. Chaque intervention est identifiée
 « Salle » ou « À distance ».
+Un bouton Pause suspend la captation le temps d'un huis clos ou d'une discussion hors sujet :
+rien n'en est transcrit ni conservé.
 
 **Pensé pour notre façon de parler**
 La reconnaissance vocale est guidée pour le français québécois : expressions d'ici, typographie
@@ -44,7 +46,7 @@ Importez un enregistrement existant (Teams, Zoom, téléphone : MP4, M4A, MP3, W
 transcrire et en tirer le compte rendu.
 
 **Léger et rapide**
-Application native d'environ 25 Mo. Demande 16 Go de mémoire.
+Application native pour Windows. Demande 16 Go de mémoire.
 
 Si votre ordinateur a une puce graphique récente (Intel Iris Xe ou Arc, AMD Radeon), Tour de
 table s'en sert pour transcrire et rédiger plus vite. Il la met d'abord à l'essai et ne la garde
@@ -69,12 +71,24 @@ fois, ses modèles de reconnaissance vocale (574 Mo) et de rédaction (5,7 Go), 
 11. Import d'enregistrements Teams, Zoom ou téléphone (MP4, M4A, MP3, WAV)
 12. Rédaction intégrée : aucun logiciel supplémentaire à installer
 13. Accélération par la puce graphique, gardée seulement si elle est plus rapide et fiable
+14. Bouton Pause : rien n'est capté pendant un huis clos ou une discussion hors sujet
 
 ## Mots-clés (jusqu'à 7)
 
 transcription · compte rendu · réunion · procès-verbal · québécois · ordre du jour · Teams
 
 ## Notes de version (≤ 1 500 caractères)
+
+Version 0.1.3
+* Bouton Pause pendant la rencontre : rien n'est capté pendant la pause, ni transcrit ni conservé
+  dans l'audio. Pratique pour un huis clos ou une discussion hors sujet. Les pauses sont notées
+  dans la transcription.
+* Accélération par la puce graphique : Tour de table la met à l'essai et ne la garde que si elle
+  est nettement plus rapide que le processeur et donne le même texte.
+* Compte rendu sans ordre du jour : suites à donner regroupées par responsable, et export Word
+  plus propre.
+
+### Versions précédentes
 
 Version 0.1.2
 * Installation des modèles automatique au premier démarrage, sans aucun clic.
@@ -88,8 +102,6 @@ Version 0.1.2
 * Rencontres rangées dans Musique\Tour de table, chacune dans un dossier nommé d'après son
   ordre du jour.
 * Avancement affiché dans l'icône de la barre des tâches, avis plus discrets et Paramètres simplifiés.
-
-### Versions précédentes
 
 Version 0.1.1
 * Rédaction des comptes rendus intégrée : plus besoin d'installer Ollama.
