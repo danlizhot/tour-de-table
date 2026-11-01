@@ -71,6 +71,13 @@ fn document(md: &str) -> String {
             let niveau = usize::from(t.len() - sans_retrait.len() >= 2);
             let ppr = format!(r#"<w:numPr><w:ilvl w:val="{niveau}"/><w:numId w:val="1"/></w:numPr><w:spacing w:after="0"/>"#);
             corps.push_str(&paragraphe(&ppr, puce));
+        } else if let Some(cellules) = sans_retrait.strip_prefix('|').and_then(|l| l.strip_suffix('|')) {
+            // Tableau Markdown que le modèle aurait produit malgré la consigne : une ligne par
+            // rangée, cellules séparées par « — », sans la ligne de séparation « |---| ».
+            if !cellules.chars().all(|c| matches!(c, '|' | '-' | ':' | ' ')) {
+                let texte: Vec<&str> = cellules.split('|').map(str::trim).collect();
+                corps.push_str(&paragraphe("", &texte.join(" — ")));
+            }
         } else if let Some(citation) = sans_retrait.strip_prefix("> ") {
             corps.push_str(&paragraphe(r#"<w:ind w:left="360"/>"#, &format!("*{citation}*")));
         } else if t.starts_with("**Date**") {
@@ -137,6 +144,9 @@ mod tests {
         assert!(doc.find("w:pBdr").unwrap() > doc.find("Julie Roy").unwrap());
         assert!(doc.contains("1. Budget &amp; dépenses") && doc.contains("présente &lt;le&gt; budget"));
         assert!(doc.contains(r#"<w:ilvl w:val="0"/><w:numId w:val="1"/>"#) && doc.contains(r#"<w:ilvl w:val="1"/>"#));
+        let tableau = document("| Action | Responsable |\n| :--- | :--- |\n| Envoyer la présentation | Julie |");
+        assert!(tableau.contains("Action — Responsable") && tableau.contains("Envoyer la présentation — Julie"), "{tableau}");
+        assert!(!tableau.contains('|') && !tableau.contains(":---"), "{tableau}");
         assert!(doc.contains(r#"<w:i/><w:iCs/></w:rPr><w:t xml:space="preserve">Liste à vérifier.</w:t>"#), "{doc}");
         assert!(doc.contains(r#"<w:b/><w:bCs/><w:i/><w:iCs/></w:rPr><w:t xml:space="preserve">À vérifier</w:t>"#), "{doc}");
 
