@@ -797,7 +797,7 @@ impl Session {
     /// est alors inutilisable.
     pub fn rediger(&mut self, prompt: &str, max_jetons: usize, progress: Option<&AtomicUsize>, annuler: Option<&AtomicBool>) -> Result<String> {
         // Contexte de travail : invite (≈ 3 caractères par jeton en français) + réponse.
-        // Plafonné à 12 k jetons pour garder la mémoire du contexte raisonnable.
+        // Seulement un minimum : le programme de rédaction l'agrandit selon les jetons réels.
         let contexte = (prompt.chars().count() / 3 + max_jetons + 256).clamp(4096, 12288);
         let requete = json!({
             "modele": self.modele,

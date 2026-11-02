@@ -116,7 +116,10 @@ fn rediger(charge: &mut Option<Charge>, r: &Requete) -> Result<String> {
 
     let vocab = modele.vocab();
     let jetons = vocab.tokenize(texte_invite.as_bytes(), false, true);
-    let contexte = r.contexte.min(modele.n_ctx_train()).max(2048);
+    // Le contexte demandé est estimé d'après le nombre de caractères : une transcription bruitée
+    // compte bien plus de jetons que prévu. On l'agrandit donc à l'invite réelle plus la réponse.
+    let voulu = (jetons.len() + r.max_jetons.max(256)).max(r.contexte as usize);
+    let contexte = voulu.min(modele.n_ctx_train() as usize).max(2048) as u32;
     if jetons.len() + 256 > contexte as usize {
         bail!(
             "Texte trop long pour le modèle : {} jetons pour un contexte de {}",
