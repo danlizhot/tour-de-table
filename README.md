@@ -197,23 +197,24 @@ même un enregistrement de plusieurs heures n'est jamais chargé entier en mémo
 intacte du fichier est gardée dans `source/` ; l'audio est rangé en blocs de 2 minutes,
 transcrits l'un après l'autre (la progression s'affiche par bloc).
 
-À la fin de la transcription, avec un ordre du jour, l'application propose le début de chaque
-point d'après les annonces reconnues (« on passe au point 3… »). Un écran de vérification montre
-l'heure proposée et la phrase qui l'a déclenchée ; on peut écouter 10 s autour de chaque
-frontière, la déplacer, en ajouter ou en retirer, puis valider. Sans ordre du jour, tout reste
-hors point : le bouton « Découper par points » de la fiche ouvre plus tard le même écran.
+À la fin de la transcription, avec un ordre du jour, l'application range l'audio par point
+d'après les annonces reconnues (« on passe au point 3… »), sans rien demander. Sans ordre du
+jour, tout reste hors point. Le bouton « Découper par points » de la fiche ouvre au besoin un
+écran de vérification : l'heure de début de chaque point et la phrase qui l'a déclenchée ; on
+peut écouter 10 s autour de chaque frontière, la déplacer, en ajouter ou en retirer, puis
+valider.
 
 **Compte rendu automatique** : si un ordre du jour est joint (déposé avant l'import ou avant de
 démarrer la rencontre), le compte rendu est rédigé dès la fin du nettoyage de la transcription
-(pour un import, après la validation du découpage par point). On peut donc
+(pour un import, après le rangement de l'audio par point). On peut donc
 déposer l'ordre du jour, importer l'enregistrement et revenir plus tard : tout est prêt.
 
 **En arrière-plan** : la transcription d'un import et la rédaction du compte rendu se font
-sans bloquer l'application, qui reste ouverte. Quand il faut vérifier le découpage par point,
-puis quand le compte rendu est prêt, un avis s'affiche et l'icône est signalée dans la barre des
-tâches (le Dock sous macOS) si vous travaillez dans une autre fenêtre. Sous Windows, l'icône
-montre aussi l'avancement de l'import et du compte rendu, comme une barre de progression. Le bouton
-**Visualiser** de la fiche ouvre le compte rendu dans Word (`compte-rendu.docx`).
+sans bloquer l'application, qui reste ouverte. Quand le compte rendu est prêt, un avis s'affiche
+et l'icône est signalée dans la barre des tâches (le Dock sous macOS) si vous travaillez dans une
+autre fenêtre. Sous Windows, l'icône montre aussi l'avancement de l'import et du compte rendu,
+comme une barre de progression. Le bouton **Visualiser** de la fiche ouvre le compte rendu dans
+Word (`compte-rendu.docx`).
 
 **Paramètres** : seulement le micro et la sortie audio, la question sur les haut-parleurs de la
 salle et le lexique. Tout le reste (modèles, performance, détection de voix, conservation de
