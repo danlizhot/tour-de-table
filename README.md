@@ -102,8 +102,9 @@ Déposez l'ordre du jour **avant** la rencontre (sur l'écran de départ) ou **a
 de la rencontre). Vous pouvez glisser le fichier dans la fenêtre, utiliser « Parcourir… », ou le
 saisir à la main.
 
-* **Formats** : Word (`.docx`), PDF texte, `.txt`, `.md`. La numérotation automatique des listes
-  Word est reconstituée (1., 2., 2.1…). Un PDF numérisé en image n'a pas de texte lisible.
+* **Formats** : Word (`.docx`, ou `.doc` de Word 97-2003), PDF texte, `.txt`, `.md`. La
+  numérotation automatique des listes Word est reconstituée (1., 2., 2.1…). Un PDF numérisé en
+  image n'a pas de texte lisible.
 * **Points** : l'ordre du jour devient une liste de points (« 1. », « 1) », « Point 1 : », « I. »,
   « a) », puces, sous-points). « Modifier les points » permet d'en ajouter, d'en renommer, d'en
   supprimer ou de les réordonner, avant ou pendant la rencontre.

@@ -1,4 +1,4 @@
-//! Ordre du jour : lecture du texte d'un document Word, PDF, texte ou Markdown.
+//! Ordre du jour : lecture du texte d'un document Word (.docx ou .doc), PDF, texte ou Markdown.
 
 use std::io::Read;
 use std::path::Path;
@@ -6,7 +6,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-pub const EXTENSIONS: &[&str] = &["docx", "pdf", "txt", "md", "markdown"];
+pub const EXTENSIONS: &[&str] = &["docx", "doc", "pdf", "txt", "md", "markdown"];
 
 /// Taille maximale conservée : un ordre du jour fait rarement plus de quelques pages.
 const MAX_CHARS: usize = 20_000;
@@ -15,12 +15,13 @@ pub fn read(path: &Path) -> Result<String> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
     let text = match ext.as_str() {
         "docx" => docx_text(path).with_context(|| format!("Lecture de {}", path.display()))?,
+        "doc" => doc_text(path).with_context(|| format!("Lecture de {}", path.display()))?,
         "pdf" => pdf_extract::extract_text(path).context("Lecture du PDF (est-il numérisé en image?)")?,
         "txt" | "md" | "markdown" => {
             let bytes = std::fs::read(path).with_context(|| format!("Lecture de {}", path.display()))?;
-            String::from_utf8(bytes.clone()).unwrap_or_else(|_| latin1(&bytes))
+            String::from_utf8(bytes.clone()).unwrap_or_else(|_| bytes.iter().map(|&b| windows_1252(b)).collect())
         }
-        _ => bail!("Format non pris en charge : utilisez Word (.docx), PDF, .txt ou .md"),
+        _ => bail!("Format non pris en charge : utilisez Word (.docx ou .doc), PDF, .txt ou .md"),
     };
     let text = sans_annexes(&tidy(&text));
     if text.trim().is_empty() {
@@ -29,9 +30,14 @@ pub fn read(path: &Path) -> Result<String> {
     Ok(text.chars().take(MAX_CHARS).collect())
 }
 
-/// Les vieux fichiers texte Windows sont souvent en Windows-1252/Latin-1.
-fn latin1(bytes: &[u8]) -> String {
-    bytes.iter().map(|&b| b as char).collect()
+/// Les vieux fichiers Windows (texte, .doc) sont en Windows-1252 : Latin-1, plus les guillemets et
+/// apostrophes typographiques, les tirets, l'euro… entre 0x80 et 0x9F.
+fn windows_1252(b: u8) -> char {
+    const HAUT: &str = "€\u{81}‚ƒ„…†‡ˆ‰Š‹Œ\u{8D}Ž\u{8F}\u{90}‘’“”•–—˜™š›œ\u{9D}žŸ";
+    match b {
+        0x80..=0x9F => HAUT.chars().nth((b - 0x80) as usize).unwrap_or(b as char),
+        _ => b as char,
+    }
 }
 
 /// Un .docx est une archive ZIP ; le texte est dans `word/document.xml`.
@@ -151,6 +157,116 @@ fn unescape(s: &str) -> String {
         .replace("&quot;", "\"")
         .replace("&apos;", "'")
         .replace("&amp;", "&")
+}
+
+/// Un .doc (Word 97-2003) est un fichier composé OLE : le texte est dans le flux `WordDocument`,
+/// en morceaux décrits par la table des pièces du flux `0Table` ou `1Table`.
+fn doc_text(path: &Path) -> Result<String> {
+    let mut fichier = cfb::open(path).context("Fichier Word illisible")?;
+    let mut lire = |nom: &str| -> Result<Vec<u8>> {
+        let mut octets = Vec::new();
+        fichier.open_stream(nom).with_context(|| format!("Fichier Word sans flux {nom}"))?.read_to_end(&mut octets)?;
+        Ok(octets)
+    };
+    let document = lire("WordDocument")?;
+    let table = lire(if mot(&document, 0x0A)? & 0x0200 != 0 { "1Table" } else { "0Table" })?;
+    doc_bytes_to_text(&document, &table)
+}
+
+fn mot(octets: &[u8], i: usize) -> Result<u16> {
+    let b = octets.get(i..i + 2).context("Fichier Word tronqué")?;
+    Ok(u16::from_le_bytes([b[0], b[1]]))
+}
+
+fn long(octets: &[u8], i: usize) -> Result<u32> {
+    let b = octets.get(i..i + 4).context("Fichier Word tronqué")?;
+    Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+}
+
+/// Texte du document principal (sans notes ni en-têtes), d'après l'en-tête de `WordDocument`
+/// (la FIB) et la table des pièces (le « Clx » de `table`). Des champs (numéro de page, date…),
+/// seul le résultat est gardé.
+fn doc_bytes_to_text(document: &[u8], table: &[u8]) -> Result<String> {
+    if mot(document, 0)? != 0xA5EC {
+        bail!("Ce fichier .doc n'est pas un document Word");
+    }
+    if mot(document, 2)? <= 0x68 {
+        bail!("Document Word trop ancien (avant Word 97) : enregistrez-le en .docx");
+    }
+    if mot(document, 0x0A)? & 0x0100 != 0 {
+        bail!("Document Word protégé par mot de passe");
+    }
+    // La FIB : des blocs de taille variable, chacun précédé de son nombre d'éléments.
+    let csw = mot(document, 32)? as usize;
+    let cslw = mot(document, 34 + 2 * csw)? as usize;
+    let rg_lw = 36 + 2 * csw;
+    let ccp_text = long(document, rg_lw + 12)?;
+    let fc_clx = rg_lw + 4 * cslw + 2 + 33 * 8;
+    let (debut, taille) = (long(document, fc_clx)? as usize, long(document, fc_clx + 4)? as usize);
+    let clx = table.get(debut..debut + taille).context("Fichier Word tronqué")?;
+    // Le Clx : des propriétés (0x01), puis la table des pièces (0x02).
+    let mut i = 0;
+    while clx.get(i) == Some(&1) {
+        i += 3 + mot(clx, i + 1)? as usize;
+    }
+    if clx.get(i) != Some(&2) {
+        bail!("Fichier Word sans table des pièces");
+    }
+    let taille = long(clx, i + 1)? as usize;
+    let plc = clx.get(i + 5..i + 5 + taille).context("Fichier Word tronqué")?;
+    let n = taille.saturating_sub(4) / 12;
+    let mut texte = String::new();
+    // Champs ouverts : `true` tant qu'on est dans le code du champ (masqué), `false` dans son résultat.
+    let mut champs: Vec<bool> = Vec::new();
+    for k in 0..n {
+        let (cp, fin) = (long(plc, 4 * k)?, long(plc, 4 * k + 4)?.min(ccp_text));
+        if cp >= fin {
+            continue;
+        }
+        let nb = (fin - cp) as usize;
+        let fc = long(plc, 4 * (n + 1) + 8 * k + 2)?;
+        let caracteres: Vec<char> = if fc & 0x4000_0000 != 0 {
+            // Pièce sur 8 bits, en Windows-1252.
+            let o = (fc & 0x3FFF_FFFF) as usize / 2;
+            document.get(o..o + nb).context("Fichier Word tronqué")?.iter().map(|&b| windows_1252(b)).collect()
+        } else {
+            let o = fc as usize;
+            let octets = document.get(o..o + 2 * nb).context("Fichier Word tronqué")?;
+            char::decode_utf16(octets.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)))
+                .map(|c| c.unwrap_or(char::REPLACEMENT_CHARACTER))
+                .collect()
+        };
+        for c in caracteres {
+            match c {
+                '\u{13}' => champs.push(true),
+                '\u{14}' => {
+                    if let Some(code) = champs.last_mut() {
+                        *code = false;
+                    }
+                }
+                '\u{15}' => {
+                    champs.pop();
+                }
+                _ if champs.contains(&true) => {}
+                '\r' | '\u{0B}' | '\u{0C}' => texte.push('\n'),
+                // Fin de cellule de tableau ; deux de suite : fin de la rangée.
+                '\u{07}' => {
+                    if texte.ends_with('\t') {
+                        texte.pop();
+                        texte.push('\n');
+                    } else {
+                        texte.push('\t');
+                    }
+                }
+                '\u{1E}' => texte.push('-'),
+                '\t' => texte.push('\t'),
+                // Ancres d'images, trait d'union conditionnel…
+                c if c < ' ' => {}
+                c => texte.push(c),
+            }
+        }
+    }
+    Ok(texte)
 }
 
 /// Supprime les lignes vides en trop et les espaces de fin.
@@ -375,6 +491,42 @@ mod tests {
             docx_xml_to_text(&xml, &bullet_lists(numbering)),
             "1. Ouverture\n2. Budget\n  1. Patinoire\n  2. Parc\n3. Varia\n"
         );
+    }
+
+    /// .doc minimal (FIB de Word 97) : une pièce sur 8 bits, une en UTF-16, puis une note de bas
+    /// de page, hors du document principal.
+    #[test]
+    fn doc_pieces_champs_et_tableaux() {
+        let pieces: [(&[u8], bool); 3] = [
+            (b"Ordre du jour\r1)\tBudget de l\x92\xE9t\xE9 \x13 PAGE \x14p. 5\x15\r", true),
+            (&"Varia\u{7}Hydro\u{1E}Québec\u{7}\u{7}\r".encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<_>>(), false),
+            (b"Note", true),
+        ];
+        let mut document = vec![0u8; 2048];
+        let mut ecrire = |i: usize, octets: &[u8]| document[i..i + octets.len()].copy_from_slice(octets);
+        ecrire(0, &0xA5ECu16.to_le_bytes());
+        ecrire(2, &0xC1u16.to_le_bytes());
+        ecrire(32, &14u16.to_le_bytes());
+        ecrire(62, &22u16.to_le_bytes());
+        let (mut cps, mut pcds, mut cp) = (vec![0u32], Vec::new(), 0u32);
+        for (k, (octets, compresse)) in pieces.iter().enumerate() {
+            let o = 512 + 512 * k;
+            ecrire(o, octets);
+            cp += if *compresse { octets.len() } else { octets.len() / 2 } as u32;
+            cps.push(cp);
+            let fc = if *compresse { 0x4000_0000 | (2 * o as u32) } else { o as u32 };
+            pcds.extend([0, 0].into_iter().chain(fc.to_le_bytes()).chain([0, 0]));
+        }
+        ecrire(76, &cps[2].to_le_bytes());
+        let plc: Vec<u8> = cps.iter().flat_map(|c| c.to_le_bytes()).chain(pcds).collect();
+        let table: Vec<u8> = [1, 2, 0, 0xAA, 0xBB, 2].into_iter().chain((plc.len() as u32).to_le_bytes()).chain(plc).collect();
+        ecrire(418, &0u32.to_le_bytes());
+        ecrire(422, &(table.len() as u32).to_le_bytes());
+        assert_eq!(
+            doc_bytes_to_text(&document, &table).unwrap(),
+            "Ordre du jour\n1)\tBudget de l’été p. 5\nVaria\tHydro-Québec\n\n"
+        );
+        assert!(doc_bytes_to_text(b"PK\x03\x04", &table).is_err());
     }
 
     #[test]
