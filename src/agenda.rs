@@ -442,13 +442,16 @@ fn titre_annexe(ligne: &str) -> bool {
     (reste.is_empty() || reste.starts_with([' ', ':', '-', '–', '—'])) && t.chars().count() <= 120
 }
 
-/// En-têtes d'un ordre du jour qui ne sont pas des points : titre, date.
+/// En-têtes d'un ordre du jour qui ne sont pas des points : titre, date. Une date seule est courte
+/// (« Mardi 22 septembre 2026 ») ; un point peut en contenir une (« Adoption du compte rendu du
+/// 18 août 2026 »).
 fn est_entete(titre: &str) -> bool {
     let t = titre.to_lowercase();
     const MOIS: [&str; 12] =
         ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
     let annee = t.split(|c: char| !c.is_ascii_digit()).any(|n| n.len() == 4);
-    t.starts_with("ordre du jour") || (annee && (MOIS.iter().any(|m| t.contains(m)) || t.chars().all(|c| c.is_ascii_digit() || "-/ ".contains(c))))
+    let date = MOIS.iter().any(|m| t.contains(m)) && t.split_whitespace().count() <= 5;
+    t.starts_with("ordre du jour") || (annee && (date || t.chars().all(|c| c.is_ascii_digit() || "-/ ".contains(c))))
 }
 
 /// Version courte pour guider Whisper (sujets, noms propres, acronymes).
@@ -573,6 +576,18 @@ mod tests {
         assert_eq!(resume(&points("Ordre du jour\n- Ouverture\n- Varia")), vec![p("1", "Ouverture", 1), p("2", "Varia", 1)]);
         // Puces sous un point numéroté : sous-points.
         assert_eq!(resume(&points("1. Budget\n- Patinoire\n2. Varia")), vec![p("1", "Budget", 1), p("1.1", "Patinoire", 2), p("2", "Varia", 1)]);
+    }
+
+    /// Points qui contiennent une date (ordre du jour réel, lu d'un .doc) ; « Mardi 22 septembre
+    /// 2026 » reste un en-tête.
+    #[test]
+    fn points_avec_une_date() {
+        let a = "Ordre du jour\n1) Mardi 22 septembre 2026\n2)\tAdoption de l'ordre du jour.\n\t3)\tAdoption du compte rendu du 18 août 2026\n\
+                 4)\tRapport budgétaire 2026-2027 et avancement des travaux (au 21 septembre 2026).\n\
+                 5)\tListe des chèques du 16 août au 17 septembre 2026 (information).\n";
+        let titres: Vec<String> = points(a).into_iter().map(|p| p.titre).collect();
+        assert_eq!(titres.len(), 4, "{titres:?}");
+        assert!(titres[1].starts_with("Adoption du compte rendu"));
     }
 
     #[test]
