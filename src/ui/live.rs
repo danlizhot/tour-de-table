@@ -103,13 +103,12 @@ impl TourDeTableApp {
                 let _ = std::fs::remove_dir_all(m.dir());
                 return;
             }
-            // Import : le découpage par point est vérifié avant tout le reste (compte rendu compris).
+            // Import : l'audio est rangé par point avant tout le reste (compte rendu compris).
             if import::en_attente(&m.dir()) {
                 if let Err(e) = m.save() {
                     self.notify(format!("Sauvegarde : {e:#}"), true);
                 }
-                self.signaler();
-                self.ouvrir_verification(m, true);
+                self.decouper_import(m);
                 return;
             }
             if let Err(e) = m.save().and_then(|_| m.export_all().map(|_| ())) {
@@ -131,7 +130,7 @@ impl TourDeTableApp {
             return;
         }
         if self.verification.is_some() || self.decoupage_job.is_some() {
-            self.notify("Validez d'abord le découpage par point affiché avant d'importer un autre fichier.", true);
+            self.notify("Attendez la fin du découpage par point en cours avant d'importer un autre fichier.", true);
             return;
         }
         if !self.whisper_disponible() {

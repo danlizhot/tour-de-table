@@ -72,6 +72,18 @@ fn lire_heure(texte: &str) -> Option<u64> {
 }
 
 impl TourDeTableApp {
+    /// Fin d'un import : les frontières détectées sont appliquées sans écran de vérification
+    /// (« Découper par points » de la fiche permet de les corriger plus tard).
+    pub(super) fn decouper_import(&mut self, rencontre: Meeting) {
+        let points = rencontre.agenda.as_ref().map(|a| a.points.clone()).unwrap_or_default();
+        let frontieres = decoupage::detecter_hors_ligne(&rencontre.segments, &points);
+        let dir = rencontre.dir();
+        for f in &frontieres {
+            decoupage::journaliser(&dir, &format!("hors ligne | {} | {} | « {} » | {}", clock(f.debut_ms), rencontre.intertitre(f.point), f.extrait, f.raison));
+        }
+        self.valider_decoupage(rencontre, true, frontieres);
+    }
+
     /// Ouvre l'écran de vérification ; sans point à l'ordre du jour, tout va hors point.
     pub(super) fn ouvrir_verification(&mut self, rencontre: Meeting, nouvelle: bool) {
         let points = rencontre.agenda.as_ref().map(|a| a.points.clone()).unwrap_or_default();
