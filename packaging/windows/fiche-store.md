@@ -79,6 +79,18 @@ transcription · compte rendu · réunion · procès-verbal · québécois · or
 
 ## Notes de version (≤ 1 500 caractères)
 
+Version 0.1.4
+* Compte rendu plus complet et sans répétitions : chaque sujet discuté est d'abord rangé sous un
+  seul point, puis chaque point est rédigé avec toute la rencontre sous les yeux.
+* Un point qui a des sous-points devient un intertitre ; les adoptions tiennent en une phrase.
+* Ordres du jour Word 97-2003 (.doc) acceptés, et ordres du jour mieux lus : sous-points, titres
+  sur deux lignes, en-têtes de page des PDF, montants avec des cents.
+* Les chiffres à vérifier sont regroupés par point du compte rendu.
+* Rencontre mieux protégée contre les coupures de courant.
+* Sécurité renforcée.
+
+### Versions précédentes
+
 Version 0.1.3
 * Bouton Pause pendant la rencontre : rien n'est capté pendant la pause, ni transcrit ni conservé
   dans l'audio. Pratique pour un huis clos ou une discussion hors sujet. Les pauses sont notées
@@ -87,8 +99,6 @@ Version 0.1.3
   est nettement plus rapide que le processeur et donne le même texte.
 * Compte rendu sans ordre du jour : suites à donner regroupées par responsable, et export Word
   plus propre.
-
-### Versions précédentes
 
 Version 0.1.2
 * Installation des modèles automatique au premier démarrage, sans aucun clic.
