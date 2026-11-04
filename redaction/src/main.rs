@@ -14,12 +14,15 @@ use std::io::{BufRead, Write};
 use std::num::NonZeroU32;
 
 use anyhow::{Context, Result, bail};
+use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::context::params::LlamaContextParams;
+use llama_cpp_2::context::session::{LlamaStateSeqFlags, SeqState};
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{LlamaChatMessage, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;
+use llama_cpp_2::token::LlamaToken;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -29,6 +32,10 @@ struct Requete {
     #[serde(default)]
     systeme: String,
     invite: String,
+    /// Début commun à une série de requêtes (la transcription complète) : lu une seule fois,
+    /// son état est gardé et repris tant que les requêtes suivantes commencent pareil.
+    #[serde(default)]
+    prefixe: String,
     #[serde(default = "defaut_contexte")]
     contexte: u32,
     #[serde(default = "defaut_max")]
@@ -64,6 +71,14 @@ fn emettre(valeur: serde_json::Value) {
 struct Charge {
     backend: LlamaBackend,
     modele: Option<(String, bool, LlamaModel)>,
+    prefixe: Option<Prefixe>,
+}
+
+/// État du contexte après la lecture d'un préfixe commun.
+struct Prefixe {
+    jetons: Vec<LlamaToken>,
+    contexte: u32,
+    etat: SeqState,
 }
 
 fn main() {
@@ -85,11 +100,12 @@ fn rediger(charge: &mut Option<Charge>, r: &Requete) -> Result<String> {
     if charge.is_none() {
         let backend = LlamaBackend::init()?;
         llama_cpp_2::send_logs_to_tracing(llama_cpp_2::LogOptions::default().with_logs_enabled(false));
-        *charge = Some(Charge { backend, modele: None });
+        *charge = Some(Charge { backend, modele: None, prefixe: None });
     }
-    let Charge { backend, modele: garde } = charge.as_mut().expect("initialisé");
+    let Charge { backend, modele: garde, prefixe: garde_prefixe } = charge.as_mut().expect("initialisé");
     if garde.as_ref().is_none_or(|(chemin, gpu, _)| *chemin != r.modele || *gpu != r.gpu) {
         *garde = None; // libère l'ancien modèle avant de charger le suivant
+        *garde_prefixe = None;
         // Sans mmap : sur processeur, llama.cpp réorganise les poids (« repack ») et
         // garderait sinon deux copies du modèle en mémoire (fichier + réorganisée).
         let params_modele = LlamaModelParams::default().with_use_mmap(false).with_n_gpu_layers(if r.gpu { 999 } else { 0 });
@@ -106,8 +122,18 @@ fn rediger(charge: &mut Option<Charge>, r: &Requete) -> Result<String> {
     if !r.systeme.is_empty() {
         messages.push(LlamaChatMessage::new("system".into(), r.systeme.clone())?);
     }
-    messages.push(LlamaChatMessage::new("user".into(), r.invite.clone())?);
-    let mut texte_invite = modele.apply_chat_template(&gabarit, &messages, true)?;
+    let invite = format!("{}{}", r.prefixe, r.invite);
+    messages.push(LlamaChatMessage::new("user".into(), invite.clone())?);
+    let mut texte_invite = match modele.apply_chat_template(&gabarit, &messages, true) {
+        Ok(t) => t,
+        // Gemma 4 : gabarit que cette version de llama.cpp ne sait pas appliquer. Même texte que
+        // le gabarit, sans réflexion.
+        Err(_) if gabarit.to_str().is_ok_and(|g| g.contains("<|turn>")) => {
+            let systeme = if r.systeme.is_empty() { String::new() } else { format!("<|turn>system\n{}<turn|>\n", r.systeme) };
+            format!("<bos>{systeme}<|turn>user\n{invite}<turn|>\n<|turn>model\n<|channel>thought\n<channel|>")
+        }
+        Err(e) => return Err(e.into()),
+    };
     // Modèles qui réfléchissent par défaut (Qwen3.5, Granite 4.2) : un bloc de réflexion vide,
     // comme le produit leur gabarit avec `enable_thinking=False`, fait répondre directement.
     if gabarit.to_str().is_ok_and(|g| g.contains("enable_thinking")) {
@@ -115,10 +141,18 @@ fn rediger(charge: &mut Option<Charge>, r: &Requete) -> Result<String> {
     }
 
     let vocab = modele.vocab();
-    let jetons = vocab.tokenize(texte_invite.as_bytes(), false, true);
+    // Le préfixe est découpé en jetons à part, pour que son découpage ne dépende pas de la suite.
+    let fin_prefixe = (!r.prefixe.is_empty()).then(|| texte_invite.find(&r.prefixe).map(|i| i + r.prefixe.len())).flatten();
+    let (tete, queue) = texte_invite.split_at(fin_prefixe.unwrap_or(0));
+    let mut jetons = vocab.tokenize(tete.as_bytes(), false, true);
+    let n_prefixe = jetons.len();
+    jetons.extend(vocab.tokenize(queue.as_bytes(), false, true));
     // Le contexte demandé est estimé d'après le nombre de caractères : une transcription bruitée
     // compte bien plus de jetons que prévu. On l'agrandit donc à l'invite réelle plus la réponse.
     let voulu = (jetons.len() + r.max_jetons.max(256)).max(r.contexte as usize);
+    // Avec un préfixe, le même contexte pour toute la série (sinon le préfixe est relu) : calculé
+    // sur le préfixe seul, avec 8 192 jetons de marge pour la question et la réponse.
+    let voulu = if n_prefixe > 0 { voulu.max(n_prefixe + 8192).div_ceil(8192) * 8192 } else { voulu };
     let contexte = voulu.min(modele.n_ctx_train() as usize).max(2048) as u32;
     if jetons.len() + 256 > contexte as usize {
         bail!(
@@ -141,17 +175,24 @@ fn rediger(charge: &mut Option<Charge>, r: &Requete) -> Result<String> {
         .with_n_threads_batch(fils);
     let mut ctx = modele.new_context(backend, params).context("Création du contexte")?;
 
-    // Lecture de l'invite, par lots.
+    // Lecture de l'invite, par lots : le préfixe est repris de la requête précédente s'il est
+    // identique, sinon lu puis gardé.
     let mut lot = LlamaBatch::new(LOT, 1);
-    let dernier = jetons.len() - 1;
-    for (i, morceau) in jetons.chunks(LOT).enumerate() {
-        lot.clear();
-        for (j, jeton) in morceau.iter().enumerate() {
-            let pos = i * LOT + j;
-            lot.add(*jeton, pos as i32, &[0], pos == dernier)?;
+    let mut debut = 0;
+    if n_prefixe > 0 && n_prefixe < jetons.len() {
+        let repris = garde_prefixe
+            .as_ref()
+            .filter(|p| p.contexte == contexte && p.jetons == jetons[..n_prefixe])
+            .is_some_and(|p| ctx.state_seq_set(&p.etat, 0).is_ok());
+        if !repris {
+            *garde_prefixe = None;
+            lire(&mut ctx, &mut lot, &jetons[..n_prefixe], 0, false)?;
+            let etat = ctx.state_seq_get(0, LlamaStateSeqFlags::empty()).map_err(|e| anyhow::anyhow!("{e:?}"))?;
+            *garde_prefixe = Some(Prefixe { jetons: jetons[..n_prefixe].to_vec(), contexte, etat });
         }
-        ctx.decode(&mut lot).context("Lecture de l'invite")?;
+        debut = n_prefixe;
     }
+    lire(&mut ctx, &mut lot, &jetons[debut..], debut, true)?;
 
     let mut echantillonneur = LlamaSampler::chain_simple([
         // Légère pénalité de répétition : sur un long tour de table, un petit modèle finit par
@@ -179,4 +220,18 @@ fn rediger(charge: &mut Option<Charge>, r: &Requete) -> Result<String> {
         }
     }
     Ok(String::from_utf8_lossy(&sortie).trim().to_string())
+}
+
+/// Lit des jetons à partir de la position `debut` ; `logits` : ceux du dernier, pour la suite.
+fn lire(ctx: &mut LlamaContext, lot: &mut LlamaBatch, jetons: &[LlamaToken], debut: usize, logits: bool) -> Result<()> {
+    let dernier = jetons.len() - 1;
+    for (i, morceau) in jetons.chunks(LOT).enumerate() {
+        lot.clear();
+        for (j, jeton) in morceau.iter().enumerate() {
+            let k = i * LOT + j;
+            lot.add(*jeton, (debut + k) as i32, &[0], logits && k == dernier)?;
+        }
+        ctx.decode(lot).context("Lecture de l'invite")?;
+    }
+    Ok(())
 }

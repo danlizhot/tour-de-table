@@ -316,17 +316,32 @@ pub fn points(text: &str) -> Vec<Point> {
     let mut out: Vec<Point> = Vec::new();
     // Chemin courant : (genre, retrait) de chaque niveau ouvert.
     let mut pile: Vec<(Genre, usize)> = Vec::new();
+    // Dernier numéro lu à chaque niveau ouvert (numéros simples seulement : « 3) », « 4. »).
+    let mut derniers: Vec<Option<u32>> = Vec::new();
     // Ce qui précède le titre « Ordre du jour » (personnes convoquées, lieu…) n'en fait pas partie.
     let debut = text.lines().position(titre_ordre_du_jour).unwrap_or(0);
     for ligne in text.lines().skip(debut) {
         let retrait: usize = ligne.chars().take_while(|c| c.is_whitespace()).map(|c| if c == '\t' { 4 } else { 1 }).sum();
-        let ligne = ligne.trim();
+        // Symbole d'une police comme Wingdings (case à cocher, U+F0AC) devant le numéro : ignoré.
+        let ligne = ligne.trim().trim_start_matches(|c: char| ('\u{e000}'..='\u{f8ff}').contains(&c)).trim_start();
         if ligne.is_empty() {
             continue;
+        }
+        // Ligne de signature (« ________ ») après les points : la suite (tâches, coordonnées)
+        // n'est plus l'ordre du jour.
+        if !out.is_empty() && ligne.len() >= 5 && ligne.chars().all(|c| c == '_') {
+            break;
         }
         let Some((genre, titre)) = marque(ligne).filter(|(_, t)| !t.is_empty() && !est_entete(t)) else {
             // Ligne ordinaire : précision du dernier point (les en-têtes avant le premier sont ignorés).
             if let Some(p) = out.last_mut() {
+                // Titre coupé en fin de ligne (« Rouyn- » / « Noranda », « (voir annexe » / « 1) ») : la
+                // ligne suivante le termine.
+                if p.detail.is_empty() && (p.titre.ends_with(['-', '–']) || p.titre.matches('(').count() > p.titre.matches(')').count()) {
+                    let espace = if p.titre.ends_with(['-', '–']) { "" } else { " " };
+                    p.titre = format!("{}{espace}{}", p.titre, ligne.split_whitespace().collect::<Vec<_>>().join(" "));
+                    continue;
+                }
                 if !p.detail.is_empty() {
                     p.detail.push('\n');
                 }
@@ -334,14 +349,27 @@ pub fn points(text: &str) -> Vec<Point> {
             }
             continue;
         };
+        let numero = numero_simple(ligne);
         let cle = (genre, retrait);
-        match pile.iter().position(|&k| k == cle) {
-            Some(i) => pile.truncate(i + 1),
+        // Numéro qui suit celui d'un niveau ouvert du même genre (« 2) », puis « 3) » décalé d'une
+        // tabulation) : même niveau, quel que soit le retrait.
+        let suite = numero.and_then(|n| pile.iter().rposition(|&(g, _)| g == genre).filter(|&i| n > 0 && derniers[i] == Some(n - 1)));
+        match pile.iter().position(|&k| k == cle).or(suite) {
+            Some(i) => {
+                pile.truncate(i + 1);
+                derniers.truncate(i + 1);
+                derniers[i] = numero;
+                // « 1. » décalé d'une espace, puis « 2. » au bord : le niveau garde le plus petit
+                // retrait, sinon « 2.1 » (au bord) le fermerait.
+                pile[i].1 = pile[i].1.min(retrait);
+            }
             None => {
                 while pile.last().is_some_and(|&(_, r)| r > retrait) {
                     pile.pop();
+                    derniers.pop();
                 }
                 pile.push(cle);
+                derniers.push(numero);
             }
         }
         // Espaces multiples d'un PDF justifié (« Tour  de  table ») réduits à une seule.
@@ -368,6 +396,18 @@ pub fn renumeroter(points: &mut [Point]) {
 }
 
 /// Numérotation en tête de ligne et reste de la ligne.
+/// Numéro d'un point à une seule composante (« 3) », « 4. », « Point 5 : »).
+fn numero_simple(ligne: &str) -> Option<u32> {
+    let reste = match ligne.get(..5) {
+        Some(p) if p.eq_ignore_ascii_case("point") => ligne[5..].trim_start(),
+        _ => ligne,
+    };
+    let fin = reste.find(|c: char| !c.is_ascii_digit()).unwrap_or(reste.len());
+    let n = reste[..fin].parse().ok()?;
+    // « 2.1 » n'est pas un numéro simple.
+    (!reste[fin..].strip_prefix('.').is_some_and(|r| r.starts_with(|c: char| c.is_ascii_digit()))).then_some(n)
+}
+
 fn marque(ligne: &str) -> Option<(Genre, &str)> {
     if let Some(reste) = ligne.strip_prefix(['-', '*', '•', '–', '▪', '◦']) {
         return reste.starts_with(char::is_whitespace).then(|| (Genre::Puce, reste.trim()));
@@ -657,6 +697,32 @@ mod tests {
         v.remove(0);
         renumeroter(&mut v);
         assert_eq!(resume(&v), vec![p("1", "A1", 1), p("2", "B", 1)]);
+    }
+
+    #[test]
+    fn numero_decale_par_une_tabulation() {
+        // Ordre du jour Word : « 3) » décalé d'une tabulation reste un point, pas un sous-point.
+        let v = points("ORDRE DU JOUR\n1)   Bienvenue\n2)\tAdoption de l’ordre du jour\n\t3)\tCompte rendu\n\t\t1) Détail\n\u{f0ac}  4)\tBudget\n\n______\n(Le 19 mai 2026 / el)\nTâches\n-  Préparation du budget  mars");
+        assert_eq!(resume(&v), vec![p("1", "Bienvenue", 1), p("2", "Adoption de l’ordre du jour", 1), p("3", "Compte rendu", 1), p("3.1", "Détail", 2), p("4", "Budget", 1)]);
+    }
+
+    #[test]
+    fn premier_numero_decale_et_titres_coupes() {
+        // PDF : « 1. » décalé d'une espace, sous-points au bord, titres coupés en fin de ligne.
+        let v = points("ORDRE DU JOUR\n 1.  Bienvenue\n2.  Forêt\n2.1  Scierie\n2.2  Étude\n3.  Énergie\n3.1  Plan 2026-2050 (voir annexe\n1)\n3.2  Suivi\n4.  Stratégie pour Rouyn-\nNoranda-Témiscamingue\nPage 2 sur 8");
+        assert_eq!(
+            resume(&v),
+            vec![
+                p("1", "Bienvenue", 1),
+                p("2", "Forêt", 1),
+                p("2.1", "Scierie", 2),
+                p("2.2", "Étude", 2),
+                p("3", "Énergie", 1),
+                p("3.1", "Plan 2026-2050 (voir annexe 1)", 2),
+                p("3.2", "Suivi", 2),
+                p("4", "Stratégie pour Rouyn-Noranda-Témiscamingue", 1),
+            ]
+        );
     }
 
     #[test]

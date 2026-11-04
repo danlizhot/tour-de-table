@@ -102,6 +102,8 @@ pub(super) fn markdown(ui: &mut Ui, md: &str) {
                 .inner_margin(egui::Margin::same(8))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
+                    // « > - Point 5 : 1 340,02 » : une puce de l'avertissement « À vérifier ».
+                    let q = q.strip_prefix("- ").map_or_else(|| q.to_string(), |r| format!("• {r}"));
                     ui.label(RichText::new(q.replace("**", "")).color(Color32::from_rgb(0xD9, 0x77, 0x06)));
                 });
         } else if t.starts_with('|') {

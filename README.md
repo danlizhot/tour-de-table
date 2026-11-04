@@ -132,14 +132,15 @@ saisir à la main.
   avec Qwen2.5 7B : « budget dépassé de 200 $ », alors que 2 300 $ avaient été dépensés sur
   2 500 $. Le compte rendu reste un **brouillon à relire** avant diffusion.
 * Sans ordre du jour, Tour de table produit un résumé structuré.
-* **Compte rendu par point** : quand la rencontre est découpée par point, chaque point est rédigé
-  à part, avec seulement sa transcription (« Compte rendu — point 3 sur 8 »), puis un dernier
-  appel, à partir des points rédigés, ajoute les présences, les sujets hors ordre du jour et la
-  levée de la séance. Chaque résumé est enregistré dans `resume.md` du dossier du
-  point : un compte rendu interrompu reprend sans tout recommencer. Un point trop long (plus
-  d'environ 24 000 caractères) est d'abord condensé par tranches.
-* **Rencontres sans découpage par point** (anciennes, ou sans ordre du jour) : la transcription
-  est rédigée d'un coup, condensée d'abord par tranches au-delà d'environ 45 min.
+* **Compte rendu par point** : quand la rencontre a un ordre du jour, le modèle lit d'abord toute la
+  transcription et range chaque sujet discuté sous un seul point (« 4.1 | sujet »), pour qu'un sujet
+  ne soit pas rédigé deux fois. Chaque point est ensuite rédigé avec toute la transcription sous les
+  yeux et ses sujets (« Compte rendu — point 3 sur 8 ») ; la transcription n'est lue qu'une fois pour
+  toute la série. Un point qui a des sous-points n'est qu'un intertitre ; une adoption ou la fin de
+  la rencontre tient en une ou deux phrases. Un dernier appel ajoute les présences et la levée de la
+  séance. Durée mesurée : de 0,8 à 1,2 fois la durée de la rencontre.
+* **Rencontres sans ordre du jour** : la transcription est rédigée d'un coup, condensée d'abord par
+  tranches au-delà d'environ 45 min.
 * Exporté dans `compte-rendu.docx` (Word : Calibri, titres en gras, puces, prêt à relire et à
   diffuser) et `compte-rendu.md`, et inclus dans `transcription.md`.
 
