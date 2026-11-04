@@ -1026,6 +1026,20 @@ mod tests {
     }
 
     #[test]
+    fn ecriture_durable_remplace_sans_fichier_temporaire() {
+        let dir = std::env::temp_dir().join(format!("tdt-durable-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let chemin = dir.join("rencontre.json");
+        ecrire_durable(&chemin, b"ancien").unwrap();
+        ecrire_durable(&chemin, b"nouveau").unwrap();
+        assert_eq!(std::fs::read(&chemin).unwrap(), b"nouveau");
+        assert!(!dir.join("rencontre.json.tmp").exists());
+        synchroniser(&chemin).unwrap();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn ancien_format_ordre_du_jour_sans_points() {
         let json = ANCIEN_FORMAT.replace(
             r#""segments": [],"#,
