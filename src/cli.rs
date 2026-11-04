@@ -180,6 +180,29 @@ pub fn compte_rendu(agenda_path: &str, source: &str, modele: Option<&str>) -> Re
         Some(m)
     } else if chemin.extension().is_some_and(|e| e == "json") {
         let mut m = crate::storage::charger_fichier(chemin)?;
+        // Essai : rencontre transcrite sans ordre du jour (`--transcrire`), découpée par point comme
+        // à l'import. TOURDETABLE_DECOUPER=seul : découpage seulement, sans compte rendu.
+        if let Some(mode) = std::env::var_os("TOURDETABLE_DECOUPER").filter(|_| m.agenda.is_none()) {
+            let nom = Path::new(agenda_path).file_name().unwrap_or_default().to_string_lossy().into_owned();
+            let a = Agenda::new(nom, agenda.clone());
+            let frontieres = crate::decoupage::detecter_hors_ligne(&m.segments, &a.points);
+            m.agenda = Some(a);
+            eprintln!("{} points, {} frontières", m.agenda.as_ref().map_or(0, |a| a.points.len()), frontieres.len());
+            for f in &frontieres {
+                eprintln!("{} : {} — « {} »", crate::storage::clock(f.debut_ms), m.intertitre(f.point), f.extrait);
+            }
+            frontieres::redecouper(&m.dir(), &mut m, &frontieres)?;
+            m.save()?;
+            m.export_all()?;
+            if mode == "seul" {
+                return Ok(());
+            }
+        }
+        // Transcription complète : points relus avec la lecture actuelle de l'ordre du jour, ceux du
+        // fichier datent de son enregistrement.
+        if let Some(a) = m.agenda.as_mut().filter(|_| crate::summary::transcription_complete()) {
+            a.points = crate::agenda::points(&a.text);
+        }
         // Mesure : tout est refait, nettoyage compris.
         m.nettoyage = None;
         m.summary = None;
@@ -200,11 +223,11 @@ pub fn compte_rendu(agenda_path: &str, source: &str, modele: Option<&str>) -> Re
     };
     let t = Instant::now();
     // Titre : première ligne de l'ordre du jour (souvent le nom de l'instance), sauf un en-tête
-    // de page de PDF (« Page 1 sur 1 »).
+    // de page de PDF (« Page 1 sur 1 », « 1 de 2 | P a g e »).
     let title = agenda
         .lines()
         .map(str::trim)
-        .find(|l| !l.is_empty() && !(l.starts_with("Page ") && l.contains(" sur ")))
+        .find(|l| !l.is_empty() && !entete_de_page(l))
         .map(|l| {
             let l = l.strip_suffix("Ordre du jour").or_else(|| l.strip_suffix("ordre du jour")).unwrap_or(l);
             l.trim_end_matches(|c: char| c == '–' || c == '-' || c == ':' || c.is_whitespace()).to_string()
@@ -225,6 +248,13 @@ pub fn compte_rendu(agenda_path: &str, source: &str, modele: Option<&str>) -> Re
         points,
         hors_point,
         reprendre: false,
+        // Essai : TOURDETABLE_LEXIQUE désigne un fichier qui remplace le Lexique des paramètres.
+        lexique: crate::quebec::Glossary::parse(&match std::env::var("TOURDETABLE_LEXIQUE") {
+            Ok(f) => std::fs::read_to_string(f)?,
+            Err(_) => crate::config::Config::load().glossary,
+        })
+        .termes()
+        .to_vec(),
     };
     let cr = crate::summary::compte_rendu(&req)?;
     println!("{cr}");
@@ -241,4 +271,21 @@ pub fn compte_rendu(agenda_path: &str, source: &str, modele: Option<&str>) -> Re
         eprintln!("Total : nettoyage {n:.1} s + compte rendu {duree_cr:.0} s = {:.1} min", (n + duree_cr) / 60.0);
     }
     Ok(())
+}
+
+/// En-tête ou pied de page d'un PDF : « Page 1 sur 1 », « 1 de 2 | P a g e ».
+fn entete_de_page(ligne: &str) -> bool {
+    let serre: String = ligne.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_lowercase();
+    serre.chars().count() <= 20 && serre.contains("page") && serre.chars().any(|c| c.is_ascii_digit())
+}
+
+#[cfg(test)]
+mod tests_entete {
+    #[test]
+    fn entete_de_page_du_pdf() {
+        assert!(super::entete_de_page("1 de 2 | P a g e"));
+        assert!(super::entete_de_page("Page 1 sur 1"));
+        assert!(!super::entete_de_page("Comité économique"));
+        assert!(!super::entete_de_page("Agence régionale de mise en valeur des forêts privées"));
+    }
 }

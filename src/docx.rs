@@ -79,6 +79,7 @@ fn document(md: &str) -> String {
                 corps.push_str(&paragraphe("", &texte.join(" — ")));
             }
         } else if let Some(citation) = sans_retrait.strip_prefix("> ") {
+            let citation = citation.strip_prefix("- ").map_or_else(|| citation.to_string(), |r| format!("• {r}"));
             corps.push_str(&paragraphe(r#"<w:ind w:left="360"/>"#, &format!("*{citation}*")));
         } else if t.starts_with("**Date**") {
             // « **Date** : … · **Heure** : … » : une ligne chacun.

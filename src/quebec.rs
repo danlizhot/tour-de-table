@@ -36,6 +36,11 @@ pub struct Glossary {
 }
 
 impl Glossary {
+    /// Termes (noms propres, organismes, sigles), corrections comprises.
+    pub fn termes(&self) -> &[String] {
+        &self.terms
+    }
+
     /// Une entrée par ligne : `terme` (ajouté à l'invite) ou `mauvais => bon`.
     pub fn parse(text: &str) -> Self {
         let mut terms = Vec::new();
