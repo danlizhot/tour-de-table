@@ -2,7 +2,7 @@
 name = "tourdetable-redaction"
 description = "Rédaction locale des comptes rendus de Tour de table (llama.cpp)"
 license = "MIT"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 
 [dependencies]
