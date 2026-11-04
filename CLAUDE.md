@@ -35,7 +35,9 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
 * `storage.rs` : une rencontre = un dossier de Musique/Tour de table (nom fixé à la création,
   champ `dossier`) avec `rencontre.json`, sauvegardé après chaque
   segment (écriture atomique `.tmp` + `rename`).
-* `summary.rs` : compte rendu par le programme auxiliaire.
+* `summary.rs` : compte rendu par le programme auxiliaire. Par défaut, chaque point est rédigé avec la
+  transcription complète, après une répartition des sujets ; `TOURDETABLE_DECOUPE` revient à la transcription
+  du point seulement. Le préfixe commun (ordre du jour + transcription) est gardé par le programme auxiliaire.
 * `nettoyage.rs` : nettoyage de la transcription, par règles seulement (`data/nettoyage.txt`) ;
   une passe par le modèle a été retirée, trop lente sur processeur seul (plus que le temps
   réel avec un 8B). Enchaînement : transcription → nettoyage →
