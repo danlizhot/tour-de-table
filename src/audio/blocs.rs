@@ -41,6 +41,8 @@ use crate::storage::Meeting;
 pub const SEUIL: u64 = 120 * SAMPLE_RATE as u64;
 /// Durée maximale d'un bloc : coupe forcée, même en pleine parole.
 pub const MAXIMUM: u64 = 135 * SAMPLE_RATE as u64;
+/// Intervalle entre deux écritures forcées du bloc ouvert sur le disque.
+const SYNCHRONISATION: u64 = 10 * SAMPLE_RATE as u64;
 
 pub const INDEX: &str = "index-audio.json";
 
@@ -90,14 +92,25 @@ pub fn existe(dir: &Path) -> bool {
 
 pub fn lire_index(dir: &Path) -> Result<Index> {
     let json = std::fs::read(dir.join(INDEX)).context("index-audio.json introuvable")?;
-    serde_json::from_slice(&json).context("index-audio.json illisible")
+    let index: Index = serde_json::from_slice(&json).context("index-audio.json illisible")?;
+    // Les fichiers de l'index sont lus, recoupés et supprimés : un index modifié (dossier de
+    // rencontre reçu d'ailleurs) ne doit désigner aucun fichier hors du dossier de la rencontre.
+    if let Some(b) = index.blocs.iter().find(|b| !chemin_interne(&b.fichier)) {
+        bail!("index-audio.json désigne un fichier hors du dossier de la rencontre : {}", b.fichier);
+    }
+    Ok(index)
 }
 
-/// Écriture atomique, comme `Meeting::save`.
+/// Chemin relatif qui reste dans le dossier : ni absolu, ni « .. », ni lecteur Windows.
+fn chemin_interne(fichier: &str) -> bool {
+    !fichier.is_empty()
+        && std::path::Path::new(fichier).components().all(|c| matches!(c, std::path::Component::Normal(_)))
+        && !fichier.split(['/', '\\']).any(|p| p == ".." || p.contains(':'))
+}
+
+/// Écriture atomique et forcée sur le disque, comme `Meeting::save`.
 pub fn ecrire_index(dir: &Path, index: &Index) -> Result<()> {
-    let tmp = dir.join(format!("{INDEX}.tmp"));
-    std::fs::write(&tmp, serde_json::to_vec_pretty(index)?)?;
-    std::fs::rename(&tmp, dir.join(INDEX)).context("Sauvegarde de index-audio.json")
+    crate::storage::ecrire_durable(&dir.join(INDEX), &serde_json::to_vec_pretty(index)?).context("Sauvegarde de index-audio.json")
 }
 
 /// Dossier d'un point : rang dans l'ordre du jour (00 : hors point) et titre réduit.
@@ -183,6 +196,8 @@ pub struct Ecrivain {
     numero: u32,
     /// Premier échantillon du bloc en cours.
     debut: u64,
+    /// Échantillons du bloc en cours déjà forcés sur le disque (coupure de courant).
+    synchronise: u64,
     ouverts: Vec<(Wav, String)>,
     /// Premier échantillon du passage en cours (dernier changement de point).
     debut_passage: u64,
@@ -230,6 +245,7 @@ impl Ecrivain {
             passage: None,
             numero: 0,
             debut: 0,
+            synchronise: 0,
             ouverts: Vec::new(),
             debut_passage: 0,
             coupes: VecDeque::new(),
@@ -489,6 +505,16 @@ impl Ecrivain {
                 w.write_sample(quantifier(x))?;
             }
         }
+        // Toutes les 10 s, le bloc ouvert est forcé sur le disque : une coupure de courant n'en
+        // perd que les dernières secondes.
+        if self.ecrits - self.synchronise.max(self.debut) >= SYNCHRONISATION {
+            self.synchronise = self.ecrits;
+            for (w, fichier) in &mut self.ouverts {
+                if let Err(e) = w.flush().map_err(anyhow::Error::from).and_then(|()| Ok(crate::storage::synchroniser(&self.dir.join(&*fichier))?)) {
+                    log::warn!("Synchronisation de {fichier} : {e:#}");
+                }
+            }
+        }
         Ok(())
     }
 
@@ -530,7 +556,8 @@ impl Ecrivain {
         let passage = self.passage.as_ref().map_or(1, |(n, _)| *n);
         let mut erreur = None;
         for ((w, fichier), &source) in std::mem::take(&mut self.ouverts).into_iter().zip(&self.sources) {
-            let sha = w.finalize().map_err(anyhow::Error::from).and_then(|()| empreinte(&self.dir.join(&fichier)));
+            let chemin = self.dir.join(&fichier);
+            let sha = w.finalize().and_then(|()| Ok(crate::storage::synchroniser(&chemin)?)).map_err(anyhow::Error::from).and_then(|()| empreinte(&chemin));
             match sha {
                 Ok(sha256) => self.index.blocs.push(Bloc {
                     point: self.point,
@@ -1295,6 +1322,19 @@ mod tests {
         for d in [dir, abime] {
             let _ = std::fs::remove_dir_all(d);
         }
+    }
+
+    #[test]
+    fn index_hors_du_dossier_refuse() {
+        assert!(chemin_interne("01-budget/bloc-001-salle.wav"));
+        assert!(chemin_interne("bloc-001.wav"));
+        for f in ["../secret.wav", "01/../../x.wav", "/etc/passwd", "C:\\x.wav", "..\\x.wav", ""] {
+            assert!(!chemin_interne(f), "{f}");
+        }
+        let dir = temporaire("index-hors");
+        std::fs::write(dir.join(INDEX), r#"{"blocs":[{"point":null,"passage":1,"numero":1,"source":"Salle","decalage":0,"echantillons":0,"duree_ms":0,"fichier":"../x.wav","sha256":""}]}"#).unwrap();
+        assert!(lire_index(&dir).unwrap_err().to_string().contains("hors du dossier"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
