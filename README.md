@@ -23,8 +23,9 @@ Inspiré de [Meetily](https://github.com/Zackriya-Solutions/meetily), réécrit 
 |---|---|---|
 | Pile | Tauri + Next.js + serveur Python FastAPI | **Un seul exécutable Rust** |
 | Interface | WebView (navigateur embarqué) | egui natif (rendu GPU) |
-| Taille | Plusieurs centaines de Mo | **~12 Mo**, whisper.cpp inclus |
-| RAM au repos | WebView + Python | **~90 Mo** |
+| Taille | Plusieurs centaines de Mo | **42 Mo** à télécharger sous Windows, 11 Mo sous macOS et Linux (whisper.cpp et llama.cpp inclus) |
+| RAM au repos | WebView + Python | **~0,7 Go**, modèle Whisper déjà chargé (démarrage instantané) |
+| Compte rendu | Ollama ou service infonuagique à configurer | **Qwen3.5 9B intégré**, rédigé point par point selon l'ordre du jour |
 | Langue | Générique | **Français québécois** (invite, typographie OQLF, lexique) |
 
 ## Pourquoi Rust?
