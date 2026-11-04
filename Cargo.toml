@@ -29,6 +29,7 @@ zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2
 egui-wgpu = { version = "0.37", default-features = false }
 symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "aac", "alac", "isomp4", "flac", "ogg", "vorbis", "wav", "pcm", "adpcm"] }
 sysinfo = { version = "0.39.6", default-features = false, features = ["system", "disk"] }
+cfb = "0.16.0"
 
 [dev-dependencies]
 resvg = "0.48.1"
