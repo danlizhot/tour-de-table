@@ -41,6 +41,8 @@ use crate::storage::Meeting;
 pub const SEUIL: u64 = 120 * SAMPLE_RATE as u64;
 /// Durée maximale d'un bloc : coupe forcée, même en pleine parole.
 pub const MAXIMUM: u64 = 135 * SAMPLE_RATE as u64;
+/// Intervalle entre deux écritures forcées du bloc ouvert sur le disque.
+const SYNCHRONISATION: u64 = 10 * SAMPLE_RATE as u64;
 
 pub const INDEX: &str = "index-audio.json";
 
@@ -106,11 +108,9 @@ fn chemin_interne(fichier: &str) -> bool {
         && !fichier.split(['/', '\\']).any(|p| p == ".." || p.contains(':'))
 }
 
-/// Écriture atomique, comme `Meeting::save`.
+/// Écriture atomique et forcée sur le disque, comme `Meeting::save`.
 pub fn ecrire_index(dir: &Path, index: &Index) -> Result<()> {
-    let tmp = dir.join(format!("{INDEX}.tmp"));
-    std::fs::write(&tmp, serde_json::to_vec_pretty(index)?)?;
-    std::fs::rename(&tmp, dir.join(INDEX)).context("Sauvegarde de index-audio.json")
+    crate::storage::ecrire_durable(&dir.join(INDEX), &serde_json::to_vec_pretty(index)?).context("Sauvegarde de index-audio.json")
 }
 
 /// Dossier d'un point : rang dans l'ordre du jour (00 : hors point) et titre réduit.
@@ -196,6 +196,8 @@ pub struct Ecrivain {
     numero: u32,
     /// Premier échantillon du bloc en cours.
     debut: u64,
+    /// Échantillons du bloc en cours déjà forcés sur le disque (coupure de courant).
+    synchronise: u64,
     ouverts: Vec<(Wav, String)>,
     /// Premier échantillon du passage en cours (dernier changement de point).
     debut_passage: u64,
@@ -243,6 +245,7 @@ impl Ecrivain {
             passage: None,
             numero: 0,
             debut: 0,
+            synchronise: 0,
             ouverts: Vec::new(),
             debut_passage: 0,
             coupes: VecDeque::new(),
@@ -502,6 +505,16 @@ impl Ecrivain {
                 w.write_sample(quantifier(x))?;
             }
         }
+        // Toutes les 10 s, le bloc ouvert est forcé sur le disque : une coupure de courant n'en
+        // perd que les dernières secondes.
+        if self.ecrits - self.synchronise.max(self.debut) >= SYNCHRONISATION {
+            self.synchronise = self.ecrits;
+            for (w, fichier) in &mut self.ouverts {
+                if let Err(e) = w.flush().map_err(anyhow::Error::from).and_then(|()| Ok(crate::storage::synchroniser(&self.dir.join(&*fichier))?)) {
+                    log::warn!("Synchronisation de {fichier} : {e:#}");
+                }
+            }
+        }
         Ok(())
     }
 
@@ -543,7 +556,8 @@ impl Ecrivain {
         let passage = self.passage.as_ref().map_or(1, |(n, _)| *n);
         let mut erreur = None;
         for ((w, fichier), &source) in std::mem::take(&mut self.ouverts).into_iter().zip(&self.sources) {
-            let sha = w.finalize().map_err(anyhow::Error::from).and_then(|()| empreinte(&self.dir.join(&fichier)));
+            let chemin = self.dir.join(&fichier);
+            let sha = w.finalize().and_then(|()| Ok(crate::storage::synchroniser(&chemin)?)).map_err(anyhow::Error::from).and_then(|()| empreinte(&chemin));
             match sha {
                 Ok(sha256) => self.index.blocs.push(Bloc {
                     point: self.point,

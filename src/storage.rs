@@ -163,10 +163,7 @@ impl Meeting {
     fn save_dans(&self, racine: &Path) -> Result<()> {
         let dir = self.dir_dans(racine);
         std::fs::create_dir_all(&dir)?;
-        let tmp = dir.join("rencontre.json.tmp");
-        std::fs::write(&tmp, serde_json::to_vec_pretty(self)?)?;
-        std::fs::rename(&tmp, dir.join("rencontre.json")).context("Sauvegarde de la rencontre")?;
-        Ok(())
+        ecrire_durable(&dir.join("rencontre.json"), &serde_json::to_vec_pretty(self)?).context("Sauvegarde de la rencontre")
     }
 
     /// Insère en gardant l'ordre chronologique (les deux sources sont
@@ -505,6 +502,34 @@ impl Meeting {
         }
         Ok(dir)
     }
+}
+
+/// Écriture atomique qui résiste à une coupure de courant : le fichier temporaire est forcé sur
+/// le disque avant de remplacer l'ancien, puis le renommage lui-même (sinon le système peut
+/// garder l'écriture en attente et laisser un fichier vide ou tronqué).
+pub fn ecrire_durable(chemin: &Path, octets: &[u8]) -> Result<()> {
+    let mut nom = chemin.file_name().unwrap_or_default().to_os_string();
+    nom.push(".tmp");
+    let tmp = chemin.with_file_name(nom);
+    {
+        use std::io::Write as _;
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(octets)?;
+        f.sync_all()?;
+    }
+    std::fs::rename(&tmp, chemin)?;
+    // Sous Windows, le renommage est déjà journalisé ; sous Linux et macOS, c'est le dossier qui
+    // le garde.
+    #[cfg(unix)]
+    if let Some(dir) = chemin.parent() {
+        std::fs::File::open(dir)?.sync_all()?;
+    }
+    Ok(())
+}
+
+/// Force sur le disque ce qui a déjà été écrit dans un fichier (ouvert ailleurs).
+pub fn synchroniser(chemin: &Path) -> std::io::Result<()> {
+    std::fs::OpenOptions::new().write(true).open(chemin)?.sync_data()
 }
 
 pub fn list() -> Vec<Meeting> {
@@ -998,6 +1023,20 @@ mod tests {
         assert_eq!(v[0].dossier, "ailleurs");
         assert_eq!(v[0].dir_dans(&racine), racine.join("ailleurs"));
         let _ = std::fs::remove_dir_all(&racine);
+    }
+
+    #[test]
+    fn ecriture_durable_remplace_sans_fichier_temporaire() {
+        let dir = std::env::temp_dir().join(format!("tdt-durable-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let chemin = dir.join("rencontre.json");
+        ecrire_durable(&chemin, b"ancien").unwrap();
+        ecrire_durable(&chemin, b"nouveau").unwrap();
+        assert_eq!(std::fs::read(&chemin).unwrap(), b"nouveau");
+        assert!(!dir.join("rencontre.json.tmp").exists());
+        synchroniser(&chemin).unwrap();
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
