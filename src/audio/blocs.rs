@@ -90,7 +90,20 @@ pub fn existe(dir: &Path) -> bool {
 
 pub fn lire_index(dir: &Path) -> Result<Index> {
     let json = std::fs::read(dir.join(INDEX)).context("index-audio.json introuvable")?;
-    serde_json::from_slice(&json).context("index-audio.json illisible")
+    let index: Index = serde_json::from_slice(&json).context("index-audio.json illisible")?;
+    // Les fichiers de l'index sont lus, recoupés et supprimés : un index modifié (dossier de
+    // rencontre reçu d'ailleurs) ne doit désigner aucun fichier hors du dossier de la rencontre.
+    if let Some(b) = index.blocs.iter().find(|b| !chemin_interne(&b.fichier)) {
+        bail!("index-audio.json désigne un fichier hors du dossier de la rencontre : {}", b.fichier);
+    }
+    Ok(index)
+}
+
+/// Chemin relatif qui reste dans le dossier : ni absolu, ni « .. », ni lecteur Windows.
+fn chemin_interne(fichier: &str) -> bool {
+    !fichier.is_empty()
+        && std::path::Path::new(fichier).components().all(|c| matches!(c, std::path::Component::Normal(_)))
+        && !fichier.split(['/', '\\']).any(|p| p == ".." || p.contains(':'))
 }
 
 /// Écriture atomique, comme `Meeting::save`.
@@ -1295,6 +1308,19 @@ mod tests {
         for d in [dir, abime] {
             let _ = std::fs::remove_dir_all(d);
         }
+    }
+
+    #[test]
+    fn index_hors_du_dossier_refuse() {
+        assert!(chemin_interne("01-budget/bloc-001-salle.wav"));
+        assert!(chemin_interne("bloc-001.wav"));
+        for f in ["../secret.wav", "01/../../x.wav", "/etc/passwd", "C:\\x.wav", "..\\x.wav", ""] {
+            assert!(!chemin_interne(f), "{f}");
+        }
+        let dir = temporaire("index-hors");
+        std::fs::write(dir.join(INDEX), r#"{"blocs":[{"point":null,"passage":1,"numero":1,"source":"Salle","decalage":0,"echantillons":0,"duree_ms":0,"fichier":"../x.wav","sha256":""}]}"#).unwrap();
+        assert!(lire_index(&dir).unwrap_err().to_string().contains("hors du dossier"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
