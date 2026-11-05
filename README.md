@@ -15,6 +15,9 @@ Tour de table capte en même temps le **micro de la salle** et le **son des part
 (Teams, Zoom, Meet, Webex… tout ce qui sort de l'ordinateur), puis transcrit en français québécois
 avec Whisper, directement sur votre machine. Aucun son ni texte ne quitte l'ordinateur.
 
+**[Guide d'utilisation](https://danlizhot.github.io/tour-de-table/guide/)**, avec des captures d'écran, à imprimer ou à
+enregistrer en PDF au besoin.
+
 ![Capture d'écran](assets/capture.png)
 
 Inspiré de [Meetily](https://github.com/Zackriya-Solutions/meetily), réécrit entièrement en Rust :
@@ -179,6 +182,9 @@ La capture loopback de Windows ne livre rien quand aucun son ne joue. Tour de ta
 source sur l'horloge pour garder des horodatages justes.
 
 ## Utilisation
+
+Le [guide d'utilisation](https://danlizhot.github.io/tour-de-table/guide/) reprend ces étapes pas à pas, avec des captures d'écran.
+Sa source est `docs/guide/index.html` (captures dans `docs/guide/images/`, rencontre fictive).
 
 1. Lancez Tour de table. Au premier démarrage, il installe tout seul ses deux modèles, sans rien
    demander : reconnaissance de la parole (574 Mo), puis rédaction des comptes rendus (5,7 Go).
