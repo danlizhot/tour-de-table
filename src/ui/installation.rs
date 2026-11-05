@@ -150,7 +150,13 @@ impl Installation {
                     (None, Some(reste)) => format!("{} sur {} · {reste}", taille(fait), taille(total)),
                     (None, None) => format!("{} sur {} · estimation du temps restant…", taille(fait), taille(total)),
                 };
-                ui.add(egui::ProgressBar::new(fait as f32 / total.max(1) as f32).text(texte).fill(BLEU));
+                // Texte à côté d'une barre fine, comme les lignes : dans la barre, le début du remplissage
+                // (arrondi, de toute la hauteur) cachait les premiers chiffres.
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Total").strong());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| ui.label(texte));
+                });
+                ui.add(egui::ProgressBar::new(fait as f32 / total.max(1) as f32).desired_height(8.0).fill(BLEU));
                 if let Some(pb) = &p.probleme {
                     ui.add_space(16.0);
                     reessayer = probleme(ui, pb);
