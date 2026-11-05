@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guide d'utilisation · Tour de table</title>
+<meta name="description" content="Guide d'utilisation de Tour de table : installation, ordre du jour, enregistrement, transcription et compte rendu d'une rencontre, sur votre ordinateur.">
+<link rel="icon" href="logo.png">
+<style>
+:root { --fond:#ffffff; --texte:#1b1f24; --doux:#57606a; --bleu:#003DA5; --ligne:#d8dee4; --code:#f2f4f7; --encadre:#eef3fb; }
+@media (prefers-color-scheme: dark) {
+  :root { --fond:#111418; --texte:#e6e9ed; --doux:#9aa4af; --bleu:#6fa0ff; --ligne:#2c333b; --code:#1d2228; --encadre:#17202c; }
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--fond); color:var(--texte);
+  font:17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+header { display:flex; align-items:center; gap:14px; margin-bottom: 8px; }
+header img { width:56px; height:56px; }
+header .nom { font-size: 1.35rem; font-weight: 700; }
+header .slogan { color: var(--doux); font-size: .95rem; }
+h1 { font-size: 1.8rem; margin: 24px 0 4px; line-height: 1.25; }
+h2 { font-size: 1.35rem; margin: 48px 0 8px; color: var(--bleu); padding-top: 8px; border-top: 1px solid var(--ligne); }
+h3 { font-size: 1.08rem; margin: 24px 0 6px; }
+a { color: var(--bleu); }
+code, kbd { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: .9em; word-break: break-word; }
+kbd { border: 1px solid var(--ligne); border-bottom-width: 2px; font-family: inherit; white-space: nowrap; }
+.bouton { font-weight: 600; white-space: nowrap; }
+table { width:100%; border-collapse: collapse; margin: 12px 0; font-size: .93rem; display:block; overflow-x:auto; }
+th, td { text-align:left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--ligne); }
+th { white-space: nowrap; }
+li { margin: 4px 0; }
+figure { margin: 18px 0 24px; }
+figure img { display:block; width:100%; height:auto; border: 1px solid var(--ligne); border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+figcaption { color: var(--doux); font-size: .88rem; margin-top: 8px; }
+.encadre { background: var(--encadre); border-left: 4px solid var(--bleu); padding: 10px 14px; border-radius: 4px; margin: 16px 0; }
+.encadre p { margin: 4px 0; }
+nav.sommaire { background: var(--code); border-radius: 8px; padding: 12px 18px; margin: 20px 0 8px; }
+nav.sommaire ol { margin: 6px 0; padding-left: 22px; columns: 2; column-gap: 32px; }
+nav.sommaire li { margin: 2px 0; break-inside: avoid; }
+.imprimer { margin: 8px 0 0; font-size: .92rem; color: var(--doux); }
+footer { margin-top: 48px; color: var(--doux); font-size: .85rem; border-top: 1px solid var(--ligne); padding-top: 12px; }
+@media (max-width: 640px) { nav.sommaire ol { columns: 1; } }
+
+/* Impression et « Enregistrer en PDF » : noir sur blanc, une section par page, captures jamais coupées. */
+@page { size: letter; margin: 18mm 16mm 18mm; }
+@media print {
+  :root { --fond:#ffffff; --texte:#000000; --doux:#444444; --bleu:#003DA5; --ligne:#cccccc; --code:#f2f2f2; --encadre:#f3f6fb; }
+  body { font-size: 11pt; line-height: 1.45; }
+  main { max-width: none; padding: 0; }
+  .imprimer { display: none; }
+  h2 { break-before: page; border-top: none; margin-top: 0; padding-top: 0; }
+  h2, h3 { break-after: avoid; }
+  figure, table, .encadre, nav.sommaire { break-inside: avoid; }
+  figure img { box-shadow: none; max-height: 125mm; width: auto; max-width: 100%; margin: 0 auto; }
+  figcaption { text-align: center; }
+  p, li { orphans: 3; widows: 3; }
+  a { color: inherit; text-decoration: none; }
+  main a[href^="http"]::after { content: " (" attr(href) ")"; font-size: .85em; color: var(--doux); word-break: break-all; }
+  nav.sommaire a::after { content: none; }
+}
+</style>
+</head>
+<body>
+<main>
+<header><img src="logo.png" alt=""><div><div class="nom">Tour de table</div>
+<div class="slogan">Tout le monde parle, rien ne se perd.</div></div></header>
+
+<h1>Guide d'utilisation</h1>
+<p><em>Version 0.1.4 · mis à jour le 4 novembre 2026</em></p>
+<p>Tour de table enregistre vos rencontres de travail, les transcrit en français québécois et rédige un brouillon de compte rendu
+qui suit votre ordre du jour. Tout se fait <strong>sur votre ordinateur</strong> : rien n'est envoyé en ligne.</p>
+<p class="imprimer">Pour une version papier ou PDF : menu <span class="bouton">Imprimer</span> de votre navigateur
+(<kbd>Ctrl</kbd> + <kbd>P</kbd>, ou <kbd>Cmd</kbd> + <kbd>P</kbd> sur Mac), puis « Enregistrer en PDF ».</p>
+
+<nav class="sommaire" aria-label="Sommaire"><strong>Sommaire</strong>
+<ol>
+<li><a href="#installation">Installation et premier démarrage</a></li>
+<li><a href="#accueil">L'écran d'accueil</a></li>
+<li><a href="#ordre-du-jour">Préparer l'ordre du jour</a></li>
+<li><a href="#enregistrer">Enregistrer une rencontre</a></li>
+<li><a href="#importer">Importer un enregistrement</a></li>
+<li><a href="#fiche">La fiche d'une rencontre</a></li>
+<li><a href="#points">Modifier les points</a></li>
+<li><a href="#compte-rendu">Le compte rendu</a></li>
+<li><a href="#parametres">Les paramètres</a></li>
+<li><a href="#fichiers">Où sont mes fichiers?</a></li>
+<li><a href="#depannage">Dépannage</a></li>
+</ol>
+</nav>
+
+<h2 id="installation">1. Installation et premier démarrage</h2>
+<h3>Ce qu'il vous faut</h3>
+<ul>
+<li>Windows 10 ou 11, macOS 14.6 ou plus récent (Mac à puce Apple), ou Linux.</li>
+<li><strong>16 Go de mémoire vive</strong> au minimum. Sous ce seuil, Tour de table l'indique au démarrage.</li>
+<li>Environ 7 Go d'espace disque pour les deux modèles, plus l'audio de vos rencontres.</li>
+<li>Une connexion Internet, <strong>une seule fois</strong>, au premier démarrage.</li>
+</ul>
+<h3>Installer l'application</h3>
+<ul>
+<li><strong>Windows</strong> : installez Tour de table depuis le Microsoft Store, ou décompressez le fichier
+<code>tourdetable-windows-x64.zip</code> de la <a href="https://github.com/danlizhot/tour-de-table/releases/latest">page des versions</a>
+et lancez <code>TourDeTable.exe</code>.</li>
+<li><strong>macOS</strong> : décompressez <code>tourdetable-macos-arm64.zip</code> et glissez l'application dans le dossier Applications.</li>
+<li><strong>Linux</strong> : décompressez <code>tourdetable-linux-x64.tar.gz</code> et lancez <code>tourdetable</code>.</li>
+</ul>
+<h3>Le premier démarrage</h3>
+<p>Au premier lancement, Tour de table télécharge tout seul les deux modèles dont il a besoin, sans rien vous demander :
+la reconnaissance de la parole (574 Mo), puis la rédaction des comptes rendus (5,7 Go). L'écran « Installation… » montre
+l'avancement et le temps restant.</p>
+<figure>
+<img src="images/installation.png" alt="Écran Installation : deux barres de progression, reconnaissance de la parole et rédaction des comptes rendus, puis le total téléchargé et le temps restant." width="1280" height="800">
+<figcaption>Le téléchargement des modèles, au premier démarrage seulement.</figcaption>
+</figure>
+<div class="encadre">
+<p>Vous pouvez fermer l'application pendant l'installation : elle reprend là où elle s'était arrêtée au démarrage suivant.</p>
+<p>En organisation, si les postes n'ont pas accès à Internet, les modèles peuvent être copiés d'avance : voir la section
+« Déploiement en organisation » du <a href="https://github.com/danlizhot/tour-de-table#d%C3%A9ploiement-en-organisation">README</a>.</p>
+</div>
+
+<h2 id="accueil">2. L'écran d'accueil</h2>
+<figure>
+<img src="images/accueil.png" alt="Écran d'accueil : à gauche, les boutons Nouvelle rencontre et Importer un enregistrement, l'historique et Paramètres ; à droite, la zone Ordre du jour ; en bas, le bouton Démarrer et les deux sources audio." width="1280" height="800">
+<figcaption>L'écran d'accueil, prêt pour une nouvelle rencontre.</figcaption>
+</figure>
+<ul>
+<li><span class="bouton">+ Nouvelle rencontre</span> : revient à cet écran pour préparer la rencontre suivante.</li>
+<li><span class="bouton">Importer un enregistrement…</span> : transcrit un fichier audio ou vidéo existant (voir <a href="#importer">section 5</a>).</li>
+<li><strong>Historique</strong> : toutes vos rencontres, la plus récente en haut, avec leur date et leur durée. Cliquez sur
+une rencontre pour ouvrir sa fiche.</li>
+<li><span class="bouton">Paramètres</span>, en bas à gauche : micro, sortie audio et lexique (voir <a href="#parametres">section 9</a>).</li>
+<li>Le bouton rond en haut à droite change l'apparence : celle du système, claire ou foncée.</li>
+<li>La zone <strong>Ordre du jour</strong> et le bouton <span class="bouton">Démarrer</span> servent à la rencontre qui commence.</li>
+</ul>
+
+<h2 id="ordre-du-jour">3. Préparer l'ordre du jour</h2>
+<p>L'ordre du jour est facultatif, mais il change beaucoup le résultat : la transcription est découpée par point, la
+reconnaissance des noms propres s'améliore, et le compte rendu suit la même numérotation.</p>
+<h3>Ajouter l'ordre du jour</h3>
+<ul>
+<li>Glissez le document dans la fenêtre, ou cliquez sur <span class="bouton">Parcourir…</span>.</li>
+<li>Formats acceptés : Word (<code>.docx</code>, ou <code>.doc</code> de Word 97-2003), PDF, texte (<code>.txt</code>, <code>.md</code>).
+Un PDF numérisé en image n'a pas de texte lisible : utilisez plutôt le document Word d'origine.</li>
+<li><span class="bouton">Saisir</span> permet aussi de l'écrire à la main.</li>
+</ul>
+<figure>
+<img src="images/ordre-du-jour.png" alt="L'ordre du jour d'un conseil d'administration déposé sur l'écran d'accueil : huit points numérotés, dont deux sous-points, chacun avec un bouton Débuter le point." width="1280" height="800">
+<figcaption>L'ordre du jour déposé avant la rencontre : chaque point reconnu a son bouton « Débuter le point ».</figcaption>
+</figure>
+<p>Tour de table reconnaît les numérotations courantes (« 1. », « 1) », « Point 1 : », « I. », « a) », les puces et les
+sous-points comme « 4.1 »). Vérifiez la liste : si un point manque ou est mal découpé, cliquez sur
+<span class="bouton">Modifier les points</span> (voir <a href="#points">section 7</a>). <span class="bouton">Remplacer…</span>
+change de document, et <span class="bouton">Retirer</span> enlève l'ordre du jour.</p>
+<div class="encadre"><p>Vous avez oublié l'ordre du jour? Vous pouvez aussi le déposer <strong>après</strong> la rencontre, dans sa fiche.</p></div>
+
+<h2 id="enregistrer">4. Enregistrer une rencontre</h2>
+<h3>Choisir les sources</h3>
+<p>Sous le bouton <span class="bouton">Démarrer</span>, deux cases indiquent ce qui est capté :</p>
+<ul>
+<li><strong>Micro de la salle</strong> : les personnes présentes autour de l'ordinateur.</li>
+<li><strong>Son de l'ordinateur (Teams, Zoom…)</strong> : les participants à distance, tels que vous les entendez.
+Aucun pilote à installer. Sur Mac, l'autorisation est demandée au premier usage.</li>
+</ul>
+<p>Pour une rencontre hybride, gardez les deux cases cochées. Si les participants à distance sortent dans les haut-parleurs
+de la salle, répondez « Oui » à la question des <a href="#parametres">Paramètres</a> pour éviter qu'ils soient transcrits deux fois.</p>
+<h3>Pendant la rencontre</h3>
+<ol>
+<li>Cliquez sur <span class="bouton">Démarrer</span>, ou directement sur <span class="bouton">Débuter le point</span> du premier
+point : l'enregistrement démarre aussitôt.</li>
+<li>La transcription s'affiche au fil de la rencontre. Elle est <strong>sauvegardée après chaque phrase</strong> : une panne ou
+une coupure de courant ne fait rien perdre.</li>
+<li>Quand on change de sujet, cliquez sur <span class="bouton">Débuter le point</span> du point abordé. Quand quelqu'un annonce
+« on passe au point 4 », Tour de table met ce bouton en évidence. Vous pouvez revenir sur un point déjà traité avec
+<span class="bouton">Revenir au point</span>.</li>
+<li><span class="bouton">Pause</span> suspend la captation (huis clos, discussion hors sujet) : rien n'est capté, ni transcrit
+ni conservé, jusqu'à <span class="bouton">Reprendre</span>.</li>
+<li><span class="bouton">Arrêter</span> termine la rencontre. Elle apparaît alors dans l'historique.</li>
+</ol>
+<h3>Raccourcis clavier</h3>
+<table>
+<thead><tr><th>Action</th><th>Windows et Linux</th><th>macOS</th></tr></thead>
+<tbody>
+<tr><td>Point suivant</td><td><kbd>Ctrl</kbd> + <kbd>→</kbd></td><td><kbd>Cmd</kbd> + <kbd>→</kbd></td></tr>
+<tr><td>Point précédent</td><td><kbd>Ctrl</kbd> + <kbd>←</kbd></td><td><kbd>Cmd</kbd> + <kbd>←</kbd></td></tr>
+<tr><td>Hors point (discussion en dehors de l'ordre du jour)</td><td><kbd>Ctrl</kbd> + <kbd>H</kbd></td><td><kbd>Cmd</kbd> + <kbd>H</kbd></td></tr>
+</tbody>
+</table>
+<h3>Après la rencontre</h3>
+<p>Dès l'arrêt, la transcription est nettoyée en quelques secondes (phrases recollées, répétitions et hésitations retirées).
+Si un ordre du jour est joint, le <strong>compte rendu se rédige ensuite tout seul</strong>, en arrière-plan : vous pouvez
+continuer à utiliser l'ordinateur. Un avis s'affiche quand il est prêt.</p>
+
+<h2 id="importer">5. Importer un enregistrement</h2>
+<p>Vous avez déjà l'enregistrement d'une rencontre (Teams, Zoom, téléphone, enregistreuse)? Cliquez sur
+<span class="bouton">Importer un enregistrement…</span>, ou glissez le fichier dans la fenêtre.</p>
+<ul>
+<li>Formats : MP4 (enregistrements Teams), M4A (Zoom, téléphones), MP3, WAV, FLAC et OGG.</li>
+<li>Rien à installer : même un enregistrement de plusieurs heures est lu sans difficulté. Une copie intacte du fichier est gardée.</li>
+<li>L'avancement s'affiche par tranche de 2 minutes. L'application reste utilisable pendant ce temps.</li>
+</ul>
+<div class="encadre">
+<p><strong>Le plus simple</strong> : déposez d'abord l'ordre du jour, puis importez l'enregistrement, et revenez plus tard.
+Tour de table transcrit, range l'audio par point d'après les annonces reconnues (« on passe au point 3… ») et rédige le compte rendu.</p>
+</div>
+<p>Si le rangement par point n'est pas juste, le bouton <span class="bouton">Découper par points</span> de la fiche ouvre un écran
+de vérification. Vous y voyez l'heure de début de chaque point et la phrase qui l'a déclenché. Vous pouvez écouter 10 secondes
+autour de chaque frontière, la déplacer, en ajouter ou en retirer, puis valider.</p>
+
+<h2 id="fiche">6. La fiche d'une rencontre</h2>
+<p>Cliquez sur une rencontre de l'historique pour ouvrir sa fiche : ordre du jour, compte rendu et transcription.</p>
+<figure>
+<img src="images/fiche.png" alt="Fiche d'une rencontre : titre modifiable et boutons Copier, Exporter, Dossier, Supprimer ; ordre du jour avec la durée de chaque point ; compte rendu ; transcription avec les choix Brute et Nettoyée." width="1280" height="990">
+<figcaption>La fiche d'une rencontre fictive : l'ordre du jour avec le temps passé sur chaque point, le compte rendu, puis la transcription.</figcaption>
+</figure>
+<h3>En haut de la fiche</h3>
+<ul>
+<li>Le <strong>titre</strong> se modifie directement : cliquez dessus et tapez.</li>
+<li><span class="bouton">Copier</span> : copie la transcription, à coller dans un courriel ou un document.</li>
+<li><span class="bouton">Exporter</span> : écrit la transcription en Markdown, en texte et en sous-titres (SRT), et ouvre le dossier.</li>
+<li><span class="bouton">Dossier</span> : ouvre le dossier de la rencontre (audio, transcription, compte rendu Word).</li>
+<li><span class="bouton">Supprimer</span> : place la rencontre dans la corbeille de Tour de table.</li>
+</ul>
+<h3>L'ordre du jour</h3>
+<p>Chaque point traité porte un crochet vert et le temps qui lui a été consacré. Pour un point, vous pouvez exporter son audio
+seul (tous les passages sur ce point, bout à bout), ou l'audio complet de la rencontre.</p>
+<h3>La transcription</h3>
+<ul>
+<li><strong>Nettoyée</strong> (par défaut) : phrases recollées, répétitions et hésitations retirées. C'est cette version que lit le compte rendu.</li>
+<li><strong>Brute</strong> : telle que transcrite, jamais modifiée.</li>
+<li>Chaque phrase porte son heure et sa source : <strong>Salle</strong> ou <strong>À distance</strong>.</li>
+</ul>
+
+<h2 id="points">7. Modifier les points</h2>
+<p><span class="bouton">Modifier les points</span> permet de corriger la liste reconnue dans l'ordre du jour, avant, pendant ou
+après la rencontre.</p>
+<figure>
+<img src="images/points.png" alt="Modification des points : chaque point est un champ modifiable, avec les boutons Monter, Descendre et Supprimer ; en bas, Ajouter un point et Terminé." width="1280" height="990">
+<figcaption>Chaque point se renomme, se déplace ou se supprime. « Terminé » referme la modification.</figcaption>
+</figure>
+<ul>
+<li>Cliquez dans un titre pour le renommer.</li>
+<li><span class="bouton">Monter</span> et <span class="bouton">Descendre</span> changent l'ordre ; <span class="bouton">Supprimer</span> retire un point.</li>
+<li><span class="bouton">Ajouter un point</span> en ajoute un à la fin.</li>
+<li><span class="bouton">Voir et modifier le texte</span> affiche le texte complet de l'ordre du jour. Après une correction,
+<span class="bouton">Relire le texte</span> reconnaît à nouveau les points.</li>
+</ul>
+
+<h2 id="compte-rendu">8. Le compte rendu</h2>
+<p>Le compte rendu suit la forme habituelle des comptes rendus d'organisme : en-tête (titre, date et heure), présences,
+puis chaque point de l'ordre du jour avec la même numérotation, et la levée de la séance.</p>
+<ul>
+<li>Chaque point est rédigé au présent et à la troisième personne : une phrase d'introduction, les éléments principaux en puces,
+puis ce qui est convenu (« Il est convenu que… »).</li>
+<li>Un point qui a des sous-points devient un intertitre ; une adoption tient en une phrase ; un point non abordé est indiqué comme tel.</li>
+<li>Sans ordre du jour, Tour de table produit un résumé structuré.</li>
+<li>Durée de rédaction : de 0,8 à 1,2 fois la durée de la rencontre, selon l'ordinateur.</li>
+</ul>
+<h3>Les boutons du compte rendu</h3>
+<ul>
+<li><span class="bouton">Rédiger le compte rendu</span> : lance la rédaction, si elle ne s'est pas faite toute seule.</li>
+<li><span class="bouton">Régénérer</span> : rédige tout à nouveau, par exemple après une correction de l'ordre du jour.</li>
+<li><span class="bouton">Visualiser</span> : ouvre le compte rendu dans Word (<code>compte-rendu.docx</code>), prêt à relire et à diffuser.</li>
+<li><span class="bouton">Copier</span> : copie le compte rendu.</li>
+</ul>
+<div class="encadre">
+<p><strong>C'est un brouillon à relire.</strong> Le modèle a pour consigne de ne rien inventer, mais il peut se tromper :</p>
+<p>• Tout montant ou nombre absent de la transcription et de l'ordre du jour est signalé dans un encadré « À vérifier », regroupé par point.</p>
+<p>• Tour de table ne reconnaît pas les voix : la liste des présences reprend les personnes qui prennent la parole, et porte la
+mention « à vérifier ». Relisez aussi les « Mme » et « M. », et qui a dit quoi.</p>
+</div>
+
+<h2 id="parametres">9. Les paramètres</h2>
+<figure>
+<img src="images/parametres.png" alt="Fenêtre Paramètres : micro de la salle et sortie audio, question sur les haut-parleurs de la salle, passage automatique au point annoncé, et lexique." width="1280" height="800">
+<figcaption>Les paramètres : le son, l'ordre du jour et le lexique. Tout le reste est réglé par l'application.</figcaption>
+</figure>
+<ul>
+<li><strong>Micro de la salle</strong> et <strong>Sortie audio à enregistrer</strong> : « Par défaut » convient le plus souvent.</li>
+<li><strong>Les participants à distance sortent-ils dans les haut-parleurs de la salle?</strong>
+« Non » (casque, ou haut-parleur de conférence) : la transcription distingue « Salle » et « À distance ».
+« Oui » : le micro capte aussi les participants à distance, et les deux sources sont réunies pour éviter les doublons.</li>
+<li><strong>Passer automatiquement au point annoncé</strong> : quand on entend « on passe au point 4 », la rencontre passe seule
+à ce point (annulable pendant 10 secondes). Décoché, le bouton du point annoncé est seulement mis en évidence.</li>
+<li><strong>Lexique</strong> : noms propres, organismes et sigles, un par ligne, pour guider la reconnaissance. On peut aussi
+y mettre une correction, sous la forme <code>mauvais =&gt; bon</code>, par exemple <code>hydro québec =&gt; Hydro-Québec</code>.</li>
+</ul>
+
+<h2 id="fichiers">10. Où sont mes fichiers?</h2>
+<p>Chaque rencontre a son propre dossier dans <strong>Musique › Tour de table</strong>, nommé d'après sa date et son titre
+(par exemple <code>2026-11-12-rencontre-ca-lac-vert</code>). Vous y trouvez :</p>
+<table>
+<thead><tr><th>Fichier</th><th>Contenu</th></tr></thead>
+<tbody>
+<tr><td><code>compte-rendu.docx</code></td><td>Le compte rendu, en Word</td></tr>
+<tr><td><code>compte-rendu.md</code></td><td>Le compte rendu, en texte Markdown</td></tr>
+<tr><td><code>transcription.md</code>, <code>.txt</code>, <code>.srt</code></td><td>La transcription brute, en Markdown, en texte et en sous-titres</td></tr>
+<tr><td><code>transcription-nettoyee.md</code></td><td>La transcription nettoyée</td></tr>
+<tr><td>Un sous-dossier par point</td><td>La transcription de ce point</td></tr>
+<tr><td>Fichier <code>.wav</code></td><td>L'audio de la rencontre</td></tr>
+</tbody>
+</table>
+<table>
+<thead><tr><th>Système</th><th>Rencontres</th><th>Modèles, paramètres, journal, corbeille</th></tr></thead>
+<tbody>
+<tr><td>Windows</td><td><code>Musique\Tour de table\</code></td><td><code>%APPDATA%\TourDeTable\TourDeTable\data\</code></td></tr>
+<tr><td>macOS</td><td><code>~/Music/Tour de table/</code></td><td><code>~/Library/Application Support/ca.TourDeTable.TourDeTable/</code></td></tr>
+<tr><td>Linux</td><td><code>~/Musique/Tour de table/</code></td><td><code>~/.local/share/tourdetable/</code></td></tr>
+</tbody>
+</table>
+<div class="encadre"><p><strong>Confidentialité.</strong> L'audio, les transcriptions, les ordres du jour et les comptes rendus restent
+sur votre ordinateur. La seule connexion est le téléchargement des modèles au premier démarrage. Détails dans la
+<a href="https://danlizhot.github.io/tour-de-table/confidentialite/">politique de confidentialité</a>.</p></div>
+
+<h2 id="depannage">11. Dépannage</h2>
+<ul>
+<li><strong>Rien n'est transcrit</strong> : vérifiez que la bonne case est cochée sous <span class="bouton">Démarrer</span>, puis le micro
+et la sortie audio dans les <a href="#parametres">Paramètres</a>.</li>
+<li><strong>Les participants à distance apparaissent deux fois</strong> : répondez « Oui » à la question sur les haut-parleurs de la salle.</li>
+<li><strong>Un nom revient toujours mal écrit</strong> : ajoutez-le au <a href="#parametres">lexique</a>, ou ajoutez une correction <code>mauvais =&gt; bon</code>.</li>
+<li><strong>Le compte rendu mélange les points</strong> : vérifiez les points de l'ordre du jour, puis le découpage avec
+<span class="bouton">Découper par points</span>, et cliquez sur <span class="bouton">Régénérer</span>.</li>
+<li><strong>« Tour de table demande au moins 16 Go » s'affiche au démarrage</strong> : l'ordinateur a moins de 16 Go de mémoire vive.
+La transcription fonctionne, mais la rédaction du compte rendu risque d'être très lente ou d'échouer. Utilisez un poste de 16 Go
+ou plus pour la rédaction.</li>
+<li><strong>Demande d'aide</strong> : joignez le fichier <code>journal.txt</code> du dossier de l'application (voir le tableau ci-dessus),
+et écrivez à <a href="mailto:tourdetable.app@outlook.com">tourdetable.app@outlook.com</a>.</li>
+</ul>
+
+<footer>Tour de table · logiciel libre (licence MIT) · <a href="https://github.com/danlizhot/tour-de-table">code source</a> ·
+<a href="https://danlizhot.github.io/tour-de-table/confidentialite/">confidentialité</a>.
+Les captures montrent une rencontre fictive.</footer>
+</main>
+</body>
+</html>
