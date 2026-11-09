@@ -14,6 +14,7 @@ mod models;
 mod nettoyage;
 mod quebec;
 mod recorder;
+mod repartition;
 mod storage;
 mod stt;
 mod summary;

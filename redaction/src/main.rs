@@ -71,11 +71,16 @@ fn emettre(valeur: serde_json::Value) {
 struct Charge {
     backend: LlamaBackend,
     modele: Option<(String, bool, LlamaModel)>,
-    prefixe: Option<Prefixe>,
+    /// Au plus [`PREFIXES`] : le préfixe de base (ordre du jour et transcription) et un préfixe qui le prolonge
+    /// (consigne commune à une série de questions), pour revenir au premier sans tout relire.
+    prefixes: Vec<Prefixe>,
 }
+
+const PREFIXES: usize = 2;
 
 /// État du contexte après la lecture d'un préfixe commun.
 struct Prefixe {
+    texte: String,
     jetons: Vec<LlamaToken>,
     contexte: u32,
     etat: SeqState,
@@ -100,12 +105,12 @@ fn rediger(charge: &mut Option<Charge>, r: &Requete) -> Result<String> {
     if charge.is_none() {
         let backend = LlamaBackend::init()?;
         llama_cpp_2::send_logs_to_tracing(llama_cpp_2::LogOptions::default().with_logs_enabled(false));
-        *charge = Some(Charge { backend, modele: None, prefixe: None });
+        *charge = Some(Charge { backend, modele: None, prefixes: Vec::new() });
     }
-    let Charge { backend, modele: garde, prefixe: garde_prefixe } = charge.as_mut().expect("initialisé");
+    let Charge { backend, modele: garde, prefixes: garde_prefixes } = charge.as_mut().expect("initialisé");
     if garde.as_ref().is_none_or(|(chemin, gpu, _)| *chemin != r.modele || *gpu != r.gpu) {
         *garde = None; // libère l'ancien modèle avant de charger le suivant
-        *garde_prefixe = None;
+        garde_prefixes.clear();
         // Sans mmap : sur processeur, llama.cpp réorganise les poids (« repack ») et
         // garderait sinon deux copies du modèle en mémoire (fichier + réorganisée).
         let params_modele = LlamaModelParams::default().with_use_mmap(false).with_n_gpu_layers(if r.gpu { 999 } else { 0 });
@@ -144,15 +149,35 @@ fn rediger(charge: &mut Option<Charge>, r: &Requete) -> Result<String> {
     // Le préfixe est découpé en jetons à part, pour que son découpage ne dépende pas de la suite.
     let fin_prefixe = (!r.prefixe.is_empty()).then(|| texte_invite.find(&r.prefixe).map(|i| i + r.prefixe.len())).flatten();
     let (tete, queue) = texte_invite.split_at(fin_prefixe.unwrap_or(0));
-    let mut jetons = vocab.tokenize(tete.as_bytes(), false, true);
+    // Préfixe qui prolonge un préfixe gardé : ses jetons sont repris tels quels, seule la suite est découpée.
+    let base = garde_prefixes
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| tete.len() > p.texte.len() && tete.starts_with(&p.texte))
+        .max_by_key(|(_, p)| p.texte.len())
+        .map(|(i, _)| i);
+    let mut jetons = match base {
+        Some(i) => {
+            let p = &garde_prefixes[i];
+            let mut j = p.jetons.clone();
+            j.extend(vocab.tokenize(&tete.as_bytes()[p.texte.len()..], false, true));
+            j
+        }
+        None => vocab.tokenize(tete.as_bytes(), false, true),
+    };
     let n_prefixe = jetons.len();
     jetons.extend(vocab.tokenize(queue.as_bytes(), false, true));
     // Le contexte demandé est estimé d'après le nombre de caractères : une transcription bruitée
     // compte bien plus de jetons que prévu. On l'agrandit donc à l'invite réelle plus la réponse.
     let voulu = (jetons.len() + r.max_jetons.max(256)).max(r.contexte as usize);
     // Avec un préfixe, le même contexte pour toute la série (sinon le préfixe est relu) : calculé
-    // sur le préfixe seul, avec 8 192 jetons de marge pour la question et la réponse.
-    let voulu = if n_prefixe > 0 { voulu.max(n_prefixe + 8192).div_ceil(8192) * 8192 } else { voulu };
+    // sur le préfixe seul, avec 8 192 jetons de marge pour la question et la réponse. Un préfixe qui en
+    // prolonge un autre garde son contexte, s'il suffit.
+    let voulu = match base.map(|i| garde_prefixes[i].contexte as usize) {
+        Some(c) if c >= voulu => c,
+        _ if n_prefixe > 0 => voulu.max(n_prefixe + 8192).div_ceil(8192) * 8192,
+        _ => voulu,
+    };
     let contexte = voulu.min(modele.n_ctx_train() as usize).max(2048) as u32;
     if jetons.len() + 256 > contexte as usize {
         bail!(
@@ -180,15 +205,21 @@ fn rediger(charge: &mut Option<Charge>, r: &Requete) -> Result<String> {
     let mut lot = LlamaBatch::new(LOT, 1);
     let mut debut = 0;
     if n_prefixe > 0 && n_prefixe < jetons.len() {
-        let repris = garde_prefixe
-            .as_ref()
-            .filter(|p| p.contexte == contexte && p.jetons == jetons[..n_prefixe])
-            .is_some_and(|p| ctx.state_seq_set(&p.etat, 0).is_ok());
-        if !repris {
-            *garde_prefixe = None;
-            lire(&mut ctx, &mut lot, &jetons[..n_prefixe], 0, false)?;
+        let meme = |p: &&Prefixe| p.contexte == contexte && p.jetons.len() <= n_prefixe && p.jetons == jetons[..p.jetons.len()];
+        // Le plus long préfixe gardé qui commence l'invite : lui-même, ou celui qu'il prolonge.
+        let repris = garde_prefixes
+            .iter()
+            .filter(meme)
+            .max_by_key(|p| p.jetons.len())
+            .filter(|p| ctx.state_seq_set(&p.etat, 0).is_ok())
+            .map_or(0, |p| p.jetons.len());
+        if repris < n_prefixe {
+            lire(&mut ctx, &mut lot, &jetons[repris..n_prefixe], repris, false)?;
             let etat = ctx.state_seq_get(0, LlamaStateSeqFlags::empty()).map_err(|e| anyhow::anyhow!("{e:?}"))?;
-            *garde_prefixe = Some(Prefixe { jetons: jetons[..n_prefixe].to_vec(), contexte, etat });
+            // On garde celui qu'on prolonge ; les autres sont libérés.
+            garde_prefixes.retain(|p| repris > 0 && p.jetons.len() == repris && p.contexte == contexte);
+            garde_prefixes.truncate(PREFIXES - 1);
+            garde_prefixes.push(Prefixe { texte: tete.to_string(), jetons: jetons[..n_prefixe].to_vec(), contexte, etat });
         }
         debut = n_prefixe;
     }

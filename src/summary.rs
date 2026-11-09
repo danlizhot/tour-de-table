@@ -27,6 +27,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use anyhow::{Context, Result, bail};
 use serde_json::json;
 
+use crate::repartition;
+
 /// Qui rédige : le modèle intégré, avec ses fils de calcul.
 #[derive(Clone, Debug)]
 pub struct Moteur {
@@ -104,8 +106,6 @@ const JETONS_POINT: usize = 600;
 /// Tour de table : un paragraphe par personne, souvent une dizaine.
 const JETONS_TOUR_DE_TABLE: usize = 1200;
 const JETONS_ASSEMBLAGE: usize = 900;
-/// Répartition des sujets entre les points : une ligne courte par sujet.
-const JETONS_REPARTITION: usize = 2500;
 /// Point de procédure (adoption) : une ou deux phrases.
 const JETONS_SANS_SUJET: usize = 150;
 const JETONS_NOTES: usize = 1200;
@@ -515,7 +515,8 @@ fn presences_entendues(presences: &str, transcription: &str) -> String {
 
 /// Mot de bienvenue : rarement plus qu'une ouverture.
 const POINT_BIENVENUE: &str = "Forme : une ou deux phrases seulement (« La direction souhaite la bienvenue aux membres \
-de l'équipe et ouvre la rencontre. »), plus une phrase sur une annonce faite à l'ouverture s'il y en a une. Pas de liste.\n";
+de l'équipe et ouvre la rencontre. »), plus une phrase sur une annonce faite à l'ouverture ou sur un sujet de ce point \
+s'il y en a. Ne résume pas le reste de la rencontre. Pas de liste.\n";
 
 /// Essai : explication des marques de voix au début de chaque passage.
 const VOIX_MARQUEES: &str = "=== QUI PARLE ===\nChaque passage commence par la voix reconnue automatiquement : un prénom \
@@ -590,45 +591,7 @@ fn phrases(texte: &str, n: usize) -> String {
 /// Varia de la transcription complète : seulement ce qui ne relève d'aucun autre point.
 const VARIA_COMPLET: &str = "Le varia ne contient que les sujets qui ne relèvent d'aucun autre point de l'ordre du jour.\n";
 
-/// Répartition faite avant la rédaction : chaque sujet discuté est rangé sous un seul point,
-/// pour qu'un sujet ne soit pas rédigé deux fois (ni sous un point qui n'est pas le sien).
-const REPARTITION: &str = "Tu es secrétaire de réunion. Ci-dessus : l'ordre du jour et la transcription complète de \
-la rencontre. Avant la rédaction du compte rendu, fais la liste des sujets réellement discutés et range chacun sous le \
-seul point de l'ordre du jour où il revient le mieux, même s'il a été discuté pendant un autre point. Un sujet qui ne \
-relève d'aucun point va au varia s'il y en a un.\n\
-Points (numéro, puis titre) :\n{points}\n\
-Un sujet, c'est une seule chose : une décision, un montant ou un dossier, une explication, une annonce, une \
-échéance. Un point discuté a donc le plus souvent plusieurs lignes ; ne regroupe pas tout un point en une ligne. \
-Une même chose ne revient jamais sous deux points : la coupure d'un budget, par exemple, va sous un seul point, même \
-si on en reparle ailleurs. La date de la prochaine rencontre va seulement sous le point qui en traite. Un point de \
-procédure (adoption de l'ordre du jour, d'un compte rendu) ne reçoit que ce qui est dit de son adoption.\n\
-Écris une ligne par sujet, sous la forme « 2.1 | sujet en quelques mots, avec ses chiffres et ses noms ». Rien d'autre : \
-pas de titre, pas d'introduction. Un point sans sujet n'a pas de ligne. Ignore les conversations d'avant le début et \
-d'après la fin de la rencontre.\n";
-
-/// Sujets par point d'après la réponse à [`REPARTITION`] (lignes « 2.1 | sujet »), rangés selon `numeros`.
-/// Le numéro de l'ordre du jour plutôt qu'un rang : le modèle se trompe moins.
-fn sujets_repartis(reponse: &str, numeros: &[&str]) -> Vec<Vec<String>> {
-    let mut sujets = vec![Vec::new(); numeros.len()];
-    for ligne in reponse.lines() {
-        let ligne = ligne.trim().trim_start_matches(['-', '*', '•', ' ']).replace("**", "");
-        let Some((tete, sujet)) = ligne.split_once(['|', ':']) else { continue };
-        let tete = tete.trim();
-        let tete = tete.strip_prefix("Point ").unwrap_or(tete);
-        let mut numero = tete.split_whitespace().next().unwrap_or("").trim_end_matches('.');
-        // « 4.2 | » pour le 2e sujet d'un point 4 sans sous-points : le point 4.
-        while !numeros.contains(&numero) {
-            let Some((parent, _)) = numero.rsplit_once('.') else { break };
-            numero = parent;
-        }
-        let sujet = sujet.trim();
-        if let Some(i) = numeros.iter().position(|n| *n == numero).filter(|_| !sujet.is_empty()) {
-            sujets[i].push(sujet.to_string());
-        }
-    }
-    sujets
-}
-
+/// Sujets placés sous les autres points (voir `repartition`) : un sujet n'est pas rédigé deux fois.
 const AUTRES_POINTS: &str = "Sujets rédigés sous d'autres points : ne les rédige pas ici, même s'ils sont discutés pendant ce point-ci.\n";
 
 /// Consigne d'un point : ses sujets, et ceux des autres points à leur laisser.
@@ -684,25 +647,72 @@ fn par_point_complet(r: &Request, rediger: &mut Redacteur) -> Result<String> {
     let parents: Vec<bool> = (0..n).map(|i| a_des_sous_points(&titres, i)).collect();
     // Points rédigés, avec leur point parent pour contexte.
     let rediges: Vec<usize> = (0..n).filter(|&i| !parents[i]).collect();
-    let numeros: String = rediges
-        .iter()
-        .map(|&i| match (0..i).rev().find(|&j| parents[j]).filter(|&j| sous_point(&titres, j, i)) {
-            Some(j) => format!("{} (sous « {} »)\n", titres[i], titres[j]),
-            None => format!("{}\n", titres[i]),
+    let libelles: Vec<String> = (0..n)
+        .map(|i| match (0..i).rev().find(|&j| parents[j]).filter(|&j| sous_point(&titres, j, i)) {
+            Some(j) => format!("{} (sous « {} »)", titres[i], titres[j]),
+            None => titres[i].to_string(),
         })
         .collect();
+    let libelles: Vec<&str> = libelles.iter().map(String::as_str).collect();
+    // Placement des sujets (voir `repartition`) : liste datée, une question par sujet, contrôle de l'ordre.
+    let numeros_tous: Vec<&str> = titres.iter().map(|t| numero_du_titre(t).unwrap_or("")).collect();
     let mut prompt = prefixe.clone();
-    prompt.push_str(&REPARTITION.replace("{points}", &numeros));
+    prompt.push_str(repartition::LISTE_SUJETS);
     prompt.push_str(noms);
-    let reponse = generate(rediger, &prompt, JETONS_REPARTITION)?;
-    let mut sujets = vec![Vec::new(); n];
-    let numeros_rediges: Vec<&str> = rediges.iter().map(|&i| numero_du_titre(titres[i]).unwrap_or("")).collect();
-    for (k, v) in sujets_repartis(&reponse, &numeros_rediges).into_iter().enumerate() {
-        sujets[rediges[k]] = v;
+    let reponse = generate(rediger, &prompt, repartition::JETONS_LISTE)?;
+    let mut tous = repartition::sujets(&reponse);
+    log::info!("Liste des sujets : {}\n{reponse}", tous.len());
+    // Un sujet peut aller sous tout point rédigé, sauf la levée de la séance.
+    let choix: Vec<usize> = rediges.iter().copied().filter(|&i| !est_fin(titres[i])).collect();
+    // La consigne et la liste des points, communes à toutes les questions, sont gardées avec le préfixe.
+    let prefixe_questions = format!(
+        "{}{}{SEPARATEUR_PREFIXE}",
+        prefixe.trim_end_matches(SEPARATEUR_PREFIXE),
+        repartition::entete_questions(&libelles, &choix)
+    );
+    let demander = |s: &repartition::Sujet, entre: Option<(usize, usize)>, rediger: &mut Redacteur| -> Result<Option<usize>> {
+        let mut prompt = prefixe_questions.clone();
+        prompt.push_str(&repartition::question(s, entre, &libelles));
+        let reponse = generate(rediger, &prompt, repartition::JETONS_QUESTION)?;
+        let point = repartition::point_choisi(&reponse, &numeros_tous, &choix);
+        log::info!("Sujet « {} » → {reponse}{}", s.texte, entre.map_or(String::new(), |(a, b)| format!(" (entre « {} » et « {} »)", titres[a], titres[b])));
+        Ok(point)
+    };
+    for s in &mut tous {
+        s.point = demander(s, None, rediger)?;
     }
-    log::info!("Répartition : {} sujets\n{reponse}", sujets.iter().map(Vec::len).sum::<usize>());
+    for (k, entre) in repartition::hors_suite(&tous).into_iter().take(repartition::MAX_REPRISES) {
+        if let Some(p) = demander(&tous[k], Some(entre), rediger)? {
+            tous[k].point = Some(p);
+        }
+    }
+    let mut sujets = vec![Vec::new(); n];
+    for s in &tous {
+        if let Some(p) = s.point {
+            sujets[p].push(s.texte.clone());
+        }
+    }
     // Réponse inutilisable : chaque point cherche lui-même ce qui le concerne, comme avant.
     let reparti = sujets.iter().any(|v| !v.is_empty());
+
+    // Point sans sujet : une question ciblée, plutôt qu'une recherche qui reprendrait les sujets des autres
+    // ou inventerait une date.
+    let mut non_abordes = vec![false; n];
+    if reparti {
+        for &i in &choix {
+            let bienvenue = ["bienvenue", "ouverture"].iter().any(|m| titres[i].to_lowercase().contains(m));
+            if !sujets[i].is_empty() || bienvenue || est_adoption(titres[i]) || Forme::du_point(titres[i]) == Forme::Varia {
+                continue;
+            }
+            let autres: Vec<(&str, Vec<String>)> = (0..n).filter(|&j| j != i).map(|j| (titres[j], sujets[j].clone())).collect();
+            let mut prompt = prefixe.clone();
+            prompt.push_str(&repartition::consigne_point_vide(titres[i], &autres));
+            let reponse = generate(rediger, &prompt, repartition::JETONS_POINT_VIDE)?;
+            log::info!("Point sans sujet « {} » : {reponse}", titres[i]);
+            sujets[i] = repartition::sujets_du_point_vide(&reponse);
+            non_abordes[i] = sujets[i].is_empty();
+        }
+    }
     let mut sections = Vec::with_capacity(n);
     for (i, p) in r.points.iter().enumerate() {
         if let Some(a) = r.avancement {
@@ -711,6 +721,10 @@ fn par_point_complet(r: &Request, rediger: &mut Redacteur) -> Result<String> {
         }
         if parents[i] {
             sections.push(format!("## {}", p.titre));
+            continue;
+        }
+        if non_abordes[i] {
+            sections.push(format!("## {}\n\n{NON_ABORDE}", p.titre));
             continue;
         }
         let forme = Forme::du_point(&p.titre);
@@ -730,20 +744,21 @@ fn par_point_complet(r: &Request, rediger: &mut Redacteur) -> Result<String> {
         let bienvenue = ["bienvenue", "ouverture"].iter().any(|m| p.titre.to_lowercase().contains(m));
         let mut prompt = prefixe.clone();
         prompt.push_str(&POINT_COMPLET.replace("{point}", &p.titre).replace("{autres}", &autres.join(", ")));
+        let adoption = est_adoption(&p.titre);
+        let fin = est_fin(&p.titre);
         if reparti {
-            // Le mot de bienvenue garde sa propre consigne : un sujet mal numéroté (« 1.5 » pour le point 5) y
-            // tomberait sinon.
+            // Mot de bienvenue ou adoption sans sujet réparti : seulement la liste des sujets des autres points. La
+            // consigne d'un point vide (chercher soi-même, sinon « non abordé ») donnerait un résumé de toute la
+            // rencontre, ou une adoption dite « non abordée » parce qu'elle tient en une phrase.
             let consigne = consigne_repartition(&sujets, &titres, i);
             let consigne = match consigne.split_once(AUTRES_POINTS) {
-                _ if !bienvenue => consigne,
+                _ if !(bienvenue || adoption) || !sujets[i].is_empty() => consigne,
                 Some((_, autres)) => format!("{AUTRES_POINTS}{autres}"),
                 None => String::new(),
             };
             prompt.push_str(&consigne);
         }
         prompt.push_str(noms);
-        let adoption = est_adoption(&p.titre);
-        let fin = est_fin(&p.titre);
         if bienvenue {
             prompt.push_str(POINT_BIENVENUE);
         } else if adoption {
@@ -760,7 +775,7 @@ fn par_point_complet(r: &Request, rediger: &mut Redacteur) -> Result<String> {
         prompt.push_str(STYLE);
         let jetons = if forme == Forme::TourDeTable { 2 * JETONS_TOUR_DE_TABLE } else { 2 * JETONS_POINT };
         // Point sans sujet : une ou deux phrases au plus, jamais un résumé de toute la rencontre.
-        let court = adoption || fin;
+        let court = adoption || fin || bienvenue;
         let jetons = if court { JETONS_SANS_SUJET } else { jetons };
         let reponse = generate(rediger, &prompt, jetons)?;
         // Titre recopié en texte simple (« 5. Horaire des Fêtes ») : retiré comme un titre Markdown.
@@ -1344,9 +1359,12 @@ mod tests {
             &requete(&moteur, points, "", false),
             &mut |invite: &str, max: usize| {
                 invites.push((invite.to_string(), max));
-                Ok(if invite.contains("range chacun sous le") {
-                    // « 2.1 » pour le budget ; « 1.2 » : numéro inventé, rattaché au point 1.
-                    "2.1 | Budget de 2 500 $\n1.2 | Mot du président".into()
+                Ok(if invite.contains("fais la liste des sujets") {
+                    "00:05 | Mot du président\n00:10 | Budget de 2 500 $".into()
+                } else if invite.contains("Sujet (vers [00:05])") {
+                    "1".into()
+                } else if invite.contains("Sujet (vers [00:10])") {
+                    "Point 2.1".into()
                 } else if invite.contains("le point « 2.1. Budget »") {
                     "Le budget de 2 500 $ est présenté.".into()
                 } else if invite.contains("le point « 4. Fin de la rencontre »") {
@@ -1360,18 +1378,66 @@ mod tests {
             true,
         )
         .unwrap();
-        // Répartition, puis ouverture, budget et fin : ni le point parent ni le varia sans sujet, puis les sections de fin.
-        assert_eq!(invites.len(), 5, "{doc}");
-        let repartition = &invites[0].0;
-        assert!(repartition.contains("2.1. Budget (sous « 2. Finances »)") && !repartition.contains("2. Finances\n"), "{repartition}");
+        // Liste des sujets, une question par sujet, puis ouverture, budget et fin : ni le point parent ni le varia sans
+        // sujet, puis les sections de fin.
+        assert_eq!(invites.len(), 7, "{doc}");
+        // La question ne propose ni le point parent ni la levée de la séance ; la liste des points est gardée avec le
+        // préfixe, le sujet vient après.
+        let question = &invites[1].0;
+        assert!(question.contains("2.1. Budget (sous « 2. Finances »)\n") && !question.contains("4. Fin"), "{question}");
+        let (gardee, suite) = question.split_once(SEPARATEUR_PREFIXE).unwrap();
+        assert!(gardee.contains("=== FIN DE LA TRANSCRIPTION ===") && gardee.ends_with("3. Varia\n\n"), "{gardee}");
+        assert!(suite.starts_with("Sujet (vers [00:05]) : Mot du président\n") && !suite.contains(SEPARATEUR_PREFIXE), "{suite}");
         assert!(doc.contains("## 2. Finances\n\n## 2.1. Budget\n\nLe budget de 2 500 $ est présenté."), "{doc}");
         assert!(doc.contains("## 3. Varia\n\nAucun sujet."), "{doc}");
         assert!(doc.contains("La rencontre prend fin. Elle a duré longtemps. Tout le monde part.\n"), "{doc}");
-        // Le mot de bienvenue ne reçoit pas ses sujets répartis ; le budget ne reprend pas ceux des autres.
+        // Le mot de bienvenue reçoit ses propres sujets (le mot du président) ; le budget ne reprend pas ceux des autres.
         let ouverture = &invites.iter().find(|(i, _)| i.contains("le point « 1. Ouverture »")).unwrap().0;
-        assert!(!ouverture.contains("Sujets de ce point"), "{ouverture}");
+        assert!(ouverture.contains("Sujets de ce point") && ouverture.contains("- Mot du président"), "{ouverture}");
         let budget = &invites.iter().find(|(i, _)| i.contains("le point « 2.1. Budget »")).unwrap().0;
         assert!(budget.contains("- Budget de 2 500 $") && budget.contains("- Mot du président"), "{budget}");
+    }
+
+    /// Une question par sujet, deuxième question pour un sujet hors de l'ordre de la rencontre, point sans
+    /// sujet (voir `repartition`).
+    #[test]
+    fn sujet_deplace_et_point_non_aborde() {
+        let moteur = moteur();
+        let p = |titre: &str| PointCr { titre: titre.into(), transcription: None, resume: None };
+        let points = vec![p("4. Rapport budgétaire"), p("6. Suivi tâches"), p("8. Évaluation des travaux"), p("11. Prochaine rencontre")];
+        let r = requete(&moteur, points, "", false);
+        let mut invites: Vec<String> = Vec::new();
+        let doc = rediger_compte_rendu(
+            &r,
+            &mut |invite: &str, _| {
+                invites.push(invite.to_string());
+                Ok(if invite.contains("fais la liste des sujets") {
+                    "02:00 | Factures reçues\n12:20 | États financiers\n28:30 | Soumission reçue\n30:00 | Huit vérifications".into()
+                } else if invite.contains("Sujet (vers [02:00])") {
+                    "4".into()
+                } else if invite.contains("Sujet (vers [28:30])") || invite.contains("Sujet (vers [30:00])") {
+                    "8".into()
+                } else if invite.contains("Sujet (vers [12:20])") {
+                    // D'abord le point 11 ; avec ses voisins, le point 6.
+                    if invite.contains("après le point « 4. Rapport budgétaire » et avant le point « 8. Évaluation") { "6" } else { "11" }.into()
+                } else if invite.contains("a-t-il été discuté") {
+                    "Aucun".into()
+                } else if invite.contains("Rédige uniquement le point") {
+                    "Rédigé.".into()
+                } else {
+                    "## Présences\n- Julie Roy\n## Levée de la séance\nLa séance est levée.".into()
+                })
+            },
+            true,
+        )
+        .unwrap();
+        assert_eq!(invites.iter().filter(|i| i.contains("Sujet (vers [12:20])")).count(), 2, "{invites:?}");
+        let suivi = invites.iter().find(|i| i.contains("Rédige uniquement le point « 6. Suivi tâches »")).expect("point 6");
+        assert!(suivi.contains("- États financiers"), "{suivi}");
+        // Le point 11 n'a reçu aucun sujet : question ciblée, puis « non abordé » sans rédaction (ni date inventée).
+        assert!(invites.iter().any(|i| i.contains("« 11. Prochaine rencontre » de l'ordre du jour a-t-il")), "{invites:?}");
+        assert!(!invites.iter().any(|i| i.contains("Rédige uniquement le point « 11.")), "{invites:?}");
+        assert!(doc.contains("## 11. Prochaine rencontre\n\nPoint non abordé ou reporté."), "{doc}");
     }
 
     #[test]
@@ -1404,9 +1470,7 @@ mod tests {
 
     #[test]
     fn repartition_des_sujets() {
-        let reponse = "Voici la répartition :\n- 2.1 | Pont 00248 limité à 48 tonnes\n**1.** : Ouverture\n9 | hors limites\nPoint 2.1. Voirie|Chèques 1473 à 1477\n3.2 | Varia";
-        let sujets = sujets_repartis(reponse, &["1", "2.1", "3"]);
-        assert_eq!(sujets, vec![vec!["Ouverture".to_string()], vec!["Pont 00248 limité à 48 tonnes".into(), "Chèques 1473 à 1477".into()], vec!["Varia".into()]]);
+        let sujets = vec![vec!["Ouverture".to_string()], vec!["Pont 00248 limité à 48 tonnes".into(), "Chèques 1473 à 1477".into()], vec!["Varia".into()]];
         let c = consigne_repartition(&sujets, &["Bienvenue", "Affaires", "Varia"], 0);
         assert!(c.contains("- Ouverture") && c.contains("« Affaires » :\n- Pont") && c.contains("« Varia » :\n- Varia"), "{c}");
         assert!(consigne_repartition(&[vec![], vec![]], &["Bienvenue", "Varia"], 1).contains("Point non abordé"));
