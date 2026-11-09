@@ -102,6 +102,10 @@ pub struct Pause {
 /// Paragraphe d'export : début, source et texte.
 type Paragraphe = (u64, crate::audio::Source, String);
 
+/// Durée maximale d'un paragraphe de transcription : une seule voix (« Réunion ») donnerait sinon
+/// un seul paragraphe, avec une seule heure, et le compte rendu n'aurait aucun repère de temps.
+const PARAGRAPHE_MAX_MS: u64 = 60_000;
+
 /// Titre donné à une rencontre qu'on n'a pas encore nommée.
 const TITRE_PAR_DEFAUT: &str = "Rencontre du %Y-%m-%d à %H h %M";
 
@@ -294,12 +298,13 @@ impl Meeting {
         self.segments_par_point().into_iter().map(|(p, v)| (Some(self.intertitre(p)), v)).collect()
     }
 
-    /// Regroupe les segments consécutifs d'une même source en paragraphes.
+    /// Regroupe les segments consécutifs d'une même source en paragraphes d'au plus
+    /// [`PARAGRAPHE_MAX_MS`].
     fn paragraphs(segments: &[&Segment]) -> Vec<(u64, crate::audio::Source, String)> {
         let mut out: Vec<(u64, crate::audio::Source, String)> = Vec::new();
         for s in segments {
             match out.last_mut() {
-                Some((_, src, text)) if *src == s.source => {
+                Some((debut, src, text)) if *src == s.source && s.start_ms < *debut + PARAGRAPHE_MAX_MS => {
                     text.push(' ');
                     text.push_str(&s.text);
                 }
@@ -310,7 +315,7 @@ impl Meeting {
     }
 
     /// Paragraphes de la transcription nettoyée, par suites consécutives d'un même point : les
-    /// phrases consécutives d'une même source sont réunies.
+    /// phrases consécutives d'une même source sont réunies, en paragraphes d'au plus [`PARAGRAPHE_MAX_MS`].
     fn groupes_nettoyes(&self) -> Vec<(Option<usize>, Vec<Paragraphe>)> {
         let mut out: Vec<(Option<usize>, Vec<Paragraphe>)> = Vec::new();
         for p in self.nettoyage.iter().flat_map(|n| &n.phrases) {
@@ -319,7 +324,7 @@ impl Meeting {
             }
             let paragraphes = &mut out.last_mut().expect("groupe ajouté").1;
             match paragraphes.last_mut() {
-                Some((_, src, text)) if *src == p.source => {
+                Some((debut, src, text)) if *src == p.source && p.debut_ms < *debut + PARAGRAPHE_MAX_MS => {
                     text.push(' ');
                     text.push_str(&p.texte);
                 }
@@ -758,6 +763,16 @@ mod tests {
 
     fn seg(start_ms: u64, source: Source, text: &str) -> Segment {
         Segment { start_ms, end_ms: start_ms + 1000, source, text: text.into() }
+    }
+
+    /// Une seule voix : un paragraphe par minute au plus, pour garder des repères de temps.
+    #[test]
+    fn paragraphes_d_une_minute() {
+        let mut m = Meeting::new("test.bin");
+        for (t, texte) in [(0, "Bonjour."), (30_000, "On commence."), (65_000, "Point 7.")] {
+            m.insert(seg(t, Source::Salle, texte));
+        }
+        assert_eq!(m.plain_text(), "[00:00] Salle : Bonjour. On commence.\n\n[01:05] Salle : Point 7.");
     }
 
     #[test]
