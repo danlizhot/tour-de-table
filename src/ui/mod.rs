@@ -47,6 +47,16 @@ type TacheCompteRendu = (String, Receiver<Result<String, String>>, Arc<crate::su
 /// la transcription) et avancement.
 type TacheImport = (String, Receiver<Result<u64, String>>, Arc<audio::import::Avancement>);
 
+/// Transcription, au démarrage, de la fin d'une rencontre interrompue par une panne : l'audio qui
+/// attendait Whisper au moment de l'arrêt.
+struct FinApresPanne {
+    id: String,
+    titre: String,
+    /// Nombre d'énoncés envoyés à Whisper, une fois tous lus.
+    resultat: Receiver<Result<usize, String>>,
+    envoyes: Option<usize>,
+}
+
 pub struct TourDeTableApp {
     cfg: Config,
     engine: Engine,
@@ -75,6 +85,12 @@ pub struct TourDeTableApp {
     draft_agenda: Option<Agenda>,
     /// Fichier audio en cours d'import (nom affiché, résultat : durée, avancement).
     import_job: Option<TacheImport>,
+    /// Rencontres interrompues dont la fin reste à transcrire, et celle en cours.
+    fins_a_transcrire: Vec<String>,
+    fin_apres_panne: Option<FinApresPanne>,
+    /// La rencontre en cours a été poursuivie après une panne : elle a déjà son audio et sa
+    /// transcription, et n'est jamais supprimée, même sans parole dans la nouvelle partie.
+    poursuivie: bool,
     /// Écran de vérification du découpage par point (fin d'un import, « Découper par points »).
     verification: Option<verification::Verification>,
     /// Rangement de l'audio par point après validation.
@@ -126,6 +142,9 @@ impl TourDeTableApp {
             notices: Vec::new(),
             draft_agenda: None,
             import_job: None,
+            fins_a_transcrire: Vec::new(),
+            fin_apres_panne: None,
+            poursuivie: false,
             verification: None,
             decoupage_job: None,
             edit_points: false,
@@ -224,15 +243,87 @@ impl TourDeTableApp {
                 continue;
             }
             if !crate::audio::blocs::interrompue(&self.meetings[i], &dir) {
+                // Application fermée pendant la rencontre : audio intact, mais la fin attendait Whisper.
+                if self.meetings[i].interrompue {
+                    self.fins_a_transcrire.push(self.meetings[i].id.clone());
+                }
                 continue;
             }
             let m = &mut self.meetings[i];
             let titre = m.title.clone();
+            m.interrompue = true;
+            let id = m.id.clone();
             match crate::audio::blocs::reprendre(m, &dir).and_then(|()| m.save()) {
-                Ok(()) => self.notify(format!("La rencontre « {titre} » s'est interrompue brusquement : son audio a été réparé."), false),
+                Ok(()) => {
+                    self.notify(
+                        format!("La rencontre « {titre} » s'est interrompue brusquement : son audio a été réparé. « Poursuivre la rencontre », dans sa fiche, reprend l'enregistrement."),
+                        false,
+                    );
+                    self.fins_a_transcrire.push(id);
+                }
                 Err(e) => self.notify(format!("Reprise de la rencontre « {titre} » : {e:#}"), true),
             }
         }
+    }
+
+    /// Fin d'une rencontre interrompue : ses énoncés non transcrits passent par Whisper, une
+    /// rencontre à la fois, quand rien d'autre n'utilise la transcription.
+    fn pump_fin_apres_panne(&mut self) {
+        if let Some(f) = self.fin_apres_panne.as_mut() {
+            if f.envoyes.is_none() {
+                match f.resultat.try_recv() {
+                    Ok(Ok(n)) => f.envoyes = Some(n),
+                    Ok(Err(e)) => {
+                        let titre = f.titre.clone();
+                        self.fin_apres_panne = None;
+                        self.notify(format!("Transcription de la fin de « {titre} » : {e}"), true);
+                        return;
+                    }
+                    Err(_) => return,
+                }
+            }
+            if self.in_flight > 0 || !self.utt_rx.is_empty() {
+                return;
+            }
+            let Some(f) = self.fin_apres_panne.take() else { return };
+            if f.envoyes.unwrap_or(0) > 0
+                && let Some(m) = self.meetings.iter().find(|m| m.id == f.id)
+            {
+                if let Err(e) = m.save().and_then(|_| m.export_all().map(|_| ())) {
+                    self.notify(format!("Sauvegarde : {e:#}"), true);
+                }
+                self.notify(format!("La fin de « {} », interrompue par la panne, est maintenant transcrite.", f.titre), false);
+            }
+            return;
+        }
+        let libre = matches!(self.model, ModelState::Ready)
+            && self.recorder.is_none()
+            && self.live.is_none()
+            && !self.finishing
+            && self.import_job.is_none();
+        if !libre || self.fins_a_transcrire.is_empty() {
+            return;
+        }
+        let id = self.fins_a_transcrire.remove(0);
+        let Some(m) = self.meetings.iter().find(|m| m.id == id).cloned() else { return };
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        let utt_tx = self.utt_tx.clone();
+        std::thread::spawn(move || {
+            let r = (|| -> anyhow::Result<usize> {
+                let enonces = crate::audio::blocs::enonces_non_transcrits(&m, &m.dir(), crate::config::VAD_SENSITIVITY)?;
+                let n = enonces.len();
+                for u in enonces {
+                    utt_tx.send(u).map_err(|_| anyhow::anyhow!("Application fermée"))?;
+                }
+                Ok(n)
+            })();
+            if let Ok(n) = &r {
+                log::info!("Fin de « {} » après une panne : {n} énoncés à transcrire", m.title);
+            }
+            let _ = tx.send(r.map_err(|e| format!("{e:#}")));
+        });
+        let titre = self.meetings.iter().find(|m| m.id == id).map(|m| m.title.clone()).unwrap_or_default();
+        self.fin_apres_panne = Some(FinApresPanne { id, titre, resultat: rx, envoyes: None });
     }
 
     /// Traitement hors affichage : canaux des fils audio, Whisper et tâches.
@@ -279,7 +370,11 @@ impl TourDeTableApp {
             }
         }
         while let Ok(u) = self.utt_rx.try_recv() {
-            let context = self.live.as_ref().map(|m| m.recent_text()).unwrap_or_default();
+            let context = match (&self.live, &self.fin_apres_panne) {
+                (Some(m), _) => m.recent_text(),
+                (None, Some(f)) => self.meetings.iter().find(|m| m.id == f.id).map(|m| m.recent_text()).unwrap_or_default(),
+                (None, None) => String::new(),
+            };
             // En chargement : la requête `Load` précède, le fil Whisper les traite dans l'ordre.
             if matches!(self.model, ModelState::Ready | ModelState::Loading) {
                 self.in_flight += 1;
@@ -296,7 +391,12 @@ impl TourDeTableApp {
                 Reply::Segments { segments, handled } => {
                     self.in_flight = self.in_flight.saturating_sub(handled);
                     self.compter_import(handled);
-                    if let Some(m) = self.live.as_mut() {
+                    let id_fin = self.fin_apres_panne.as_ref().map(|f| f.id.clone());
+                    let cible = match self.live.as_mut() {
+                        Some(m) => Some(m),
+                        None => self.meetings.iter_mut().find(|m| Some(&m.id) == id_fin.as_ref()),
+                    };
+                    if let Some(m) = cible {
                         for s in segments.iter().cloned() {
                             m.insert(s);
                         }
@@ -316,6 +416,7 @@ impl TourDeTableApp {
         if self.finishing && self.in_flight == 0 && self.utt_rx.is_empty() {
             self.finalize();
         }
+        self.pump_fin_apres_panne();
 
         if self.installation.as_ref().is_some_and(installation::Installation::terminee) {
             self.installation = None;
@@ -334,6 +435,8 @@ impl TourDeTableApp {
                     if let Some(i) = self.meetings.iter().position(|m| m.id == id) {
                         let m = &mut self.meetings[i];
                         m.summary = Some(text);
+                        // Compte rendu rédigé : la rencontre est terminée, on ne la poursuit plus.
+                        m.interrompue = false;
                         let _ = m.save().and_then(|_| m.export_all().map(|_| ()));
                         let titre = m.title.clone();
                         self.notify(format!("Le compte rendu de « {titre} » est prêt : « Visualiser » l'ouvre dans Word."), false);
@@ -614,7 +717,10 @@ impl Drop for TourDeTableApp {
         // Fermeture pendant une rencontre : on garde ce qui a été transcrit.
         if let Some(rec) = self.recorder.take() {
             if let Some(m) = self.live.as_mut() {
-                m.duration_s = rec.started.elapsed().as_secs();
+                m.duration_s = rec.origine_ms / 1000 + rec.started.elapsed().as_secs();
+                // Les derniers énoncés n'auront pas le temps d'être transcrits : ils le seront au
+                // prochain démarrage, et la rencontre pourra être poursuivie.
+                m.interrompue = true;
             }
             let echantillons = rec.echantillons.clone();
             rec.stop();
