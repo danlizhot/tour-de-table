@@ -72,12 +72,24 @@ fois, ses modèles de reconnaissance vocale (574 Mo) et de rédaction (5,7 Go), 
 12. Rédaction intégrée : aucun logiciel supplémentaire à installer
 13. Accélération par la puce graphique, gardée seulement si elle est plus rapide et fiable
 14. Bouton Pause : rien n'est capté pendant un huis clos ou une discussion hors sujet
+15. Rencontre poursuivie après une panne ou une coupure de courant
 
 ## Mots-clés (jusqu'à 7)
 
 transcription · compte rendu · réunion · procès-verbal · québécois · ordre du jour · Teams
 
 ## Notes de version (≤ 1 500 caractères)
+
+Version 0.2.0
+* Compte rendu mieux organisé : chaque sujet discuté est rangé sous le bon point de l'ordre du
+  jour, et il se rédige plus vite.
+* Après une panne ou une coupure de courant, la fin de la rencontre est transcrite au redémarrage,
+  et le bouton « Poursuivre la rencontre » reprend l'enregistrement là où il s'était arrêté, dans
+  la même rencontre.
+* À l'ouverture, un avis indique quand une nouvelle version est disponible dans le Microsoft Store.
+* Barre d'installation des modèles plus lisible.
+
+### Versions précédentes
 
 Version 0.1.4
 * Compte rendu plus complet et sans répétitions : chaque sujet discuté est d'abord rangé sous un
@@ -88,8 +100,6 @@ Version 0.1.4
 * Les chiffres à vérifier sont regroupés par point du compte rendu.
 * Rencontre mieux protégée contre les coupures de courant.
 * Sécurité renforcée.
-
-### Versions précédentes
 
 Version 0.1.3
 * Bouton Pause pendant la rencontre : rien n'est capté pendant la pause, ni transcrit ni conservé
