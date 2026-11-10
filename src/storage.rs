@@ -46,6 +46,9 @@ pub struct Meeting {
     /// Pauses de l'enregistrement, dans l'ordre chronologique.
     #[serde(default)]
     pub pauses: Vec<Pause>,
+    /// Arrêtée par une panne (plantage, coupure de courant) : la fiche offre « Poursuivre la rencontre ».
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub interrompue: bool,
 }
 
 /// Ordre du jour déposé avant ou après la rencontre.
@@ -135,6 +138,7 @@ impl Meeting {
             periodes: Vec::new(),
             nettoyage: None,
             pauses: Vec::new(),
+            interrompue: false,
         }
     }
 

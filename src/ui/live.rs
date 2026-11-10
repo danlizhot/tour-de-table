@@ -21,6 +21,61 @@ impl TourDeTableApp {
         }
         let mut meeting = Meeting::new(models::RECOMMENDED);
         meeting.nommer_d_apres(self.draft_agenda.as_ref());
+        meeting.agenda = self.draft_agenda.take();
+        if let Err(echec) = self.demarrer(meeting, None) {
+            let (meeting, e) = *echec;
+            let _ = std::fs::remove_dir_all(meeting.dir());
+            self.draft_agenda = meeting.agenda;
+            self.notify(format!("Impossible de démarrer : {e:#}"), true);
+        }
+    }
+
+    /// « Poursuivre la rencontre » : une rencontre arrêtée par une panne reprend dans son dossier,
+    /// au point où l'on était rendu, à la suite de son audio et de sa transcription.
+    pub(super) fn poursuivre(&mut self, idx: usize) {
+        if self.recorder.is_some() || self.live.is_some() || self.finishing || self.import_job.is_some() || self.fin_apres_panne.is_some() {
+            self.notify("Attendez la fin de la transcription en cours avant de poursuivre la rencontre.", true);
+            return;
+        }
+        if self.fins_a_transcrire.contains(&self.meetings[idx].id) {
+            self.notify("La fin de la rencontre, interrompue par la panne, va d'abord être transcrite : réessayez dans un instant.", false);
+            return;
+        }
+        self.suspendre_nettoyage();
+        if !self.whisper_disponible() {
+            return;
+        }
+        let dir = self.meetings[idx].dir();
+        let index = match crate::audio::blocs::lire_index(&dir) {
+            Ok(i) => i,
+            Err(e) => {
+                self.notify(format!("Impossible de poursuivre la rencontre : {e:#}"), true);
+                return;
+            }
+        };
+        let mut meeting = self.meetings.remove(idx);
+        let fin_texte = meeting.segments.iter().map(|s| s.end_ms).max().unwrap_or(0) * audio::SAMPLE_RATE as u64 / 1000;
+        let origine = crate::audio::blocs::fin(&index).max(fin_texte);
+        let origine_ms = origine * 1000 / audio::SAMPLE_RATE as u64;
+        let point = meeting.periodes.last().and_then(|p| p.point);
+        meeting.debuter_point(point, origine_ms, crate::storage::Declenchement::Manuel);
+        meeting.interrompue = false;
+        log::info!("Rencontre « {} » poursuivie à {}", meeting.title, clock(origine_ms));
+        let reprise = crate::recorder::Reprise { index, origine, point };
+        self.poursuivie = true;
+        if let Err(echec) = self.demarrer(meeting, Some(reprise)) {
+            self.poursuivie = false;
+            let (mut meeting, e) = *echec;
+            meeting.fermer_periode(origine_ms);
+            meeting.interrompue = true;
+            let _ = meeting.save();
+            self.meetings.insert(idx, meeting);
+            self.notify(format!("Impossible de poursuivre la rencontre : {e:#}"), true);
+        }
+    }
+
+    /// Ouvre les sources et commence à enregistrer `meeting` ; en cas d'échec, la rend avec l'erreur.
+    fn demarrer(&mut self, meeting: Meeting, reprise: Option<crate::recorder::Reprise>) -> Result<(), Box<(Meeting, anyhow::Error)>> {
         // L'audio est toujours conservé : en blocs rangés par point de l'ordre du jour pendant la
         // rencontre, puis en un seul fichier par source.
         let dossier = meeting.dir();
@@ -33,15 +88,15 @@ impl TourDeTableApp {
             mode: self.cfg.mode,
             sensitivity: config::VAD_SENSITIVITY,
             dossier,
-            points: titres_points(self.draft_agenda.as_ref()),
+            points: titres_points(meeting.agenda.as_ref()),
             date: meeting.started_at.date_naive(),
+            reprise,
         };
         match Recorder::start(opts, self.utt_tx.clone()) {
             Ok(rec) => {
                 for w in rec.warnings.clone() {
                     self.notify(w, true);
                 }
-                meeting.agenda = self.draft_agenda.take();
                 meeting.save().ok();
                 self.live = Some(meeting);
                 self.push_settings();
@@ -51,18 +106,16 @@ impl TourDeTableApp {
                 self.bandeau = None;
                 self.view = View::Live;
                 self.notices.retain(|a| a.erreur);
+                Ok(())
             }
-            Err(e) => {
-                let _ = std::fs::remove_dir_all(meeting.dir());
-                self.notify(format!("Impossible de démarrer : {e:#}"), true);
-            }
+            Err(e) => Err(Box::new((meeting, e))),
         }
     }
 
     pub(super) fn stop_recording(&mut self) {
         if let Some(rec) = self.recorder.take() {
             if let Some(m) = self.live.as_mut() {
-                m.duration_s = rec.started.elapsed().as_secs();
+                m.duration_s = rec.origine_ms / 1000 + rec.started.elapsed().as_secs();
             }
             let echantillons = rec.echantillons.clone();
             rec.stop();
@@ -96,8 +149,9 @@ impl TourDeTableApp {
 
     pub(super) fn finalize(&mut self) {
         self.finishing = false;
+        let poursuivie = std::mem::take(&mut self.poursuivie);
         if let Some(m) = self.live.take() {
-            if m.segments.is_empty() {
+            if m.segments.is_empty() && !poursuivie {
                 self.notify("Aucune parole détectée : rien n'a été enregistré.", false);
                 self.signaler();
                 let _ = std::fs::remove_dir_all(m.dir());
@@ -204,7 +258,7 @@ impl TourDeTableApp {
         ui.add_space(6.0);
         let recording = self.recorder.is_some();
         ui.horizontal(|ui| {
-            let can_start = matches!(self.model, ModelState::Ready) && !self.finishing;
+            let can_start = matches!(self.model, ModelState::Ready) && !self.finishing && self.import_job.is_none() && self.fin_apres_panne.is_none();
             let resp = record_button(ui, recording, recording || can_start);
             if resp.clicked() {
                 if recording {
@@ -221,7 +275,7 @@ impl TourDeTableApp {
             }
             ui.add_space(10.0);
             if let Some(rec) = &self.recorder {
-                ui.label(RichText::new(clock(rec.started.elapsed().as_millis() as u64)).size(22.0).monospace());
+                ui.label(RichText::new(clock(rec.origine_ms + rec.started.elapsed().as_millis() as u64)).size(22.0).monospace());
                 ui.add_space(10.0);
                 if rec.en_pause() {
                     ui.label(RichText::new("En pause : rien n'est capté").strong());

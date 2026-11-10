@@ -253,6 +253,19 @@ impl Ecrivain {
         }
     }
 
+    /// Reprise d'une rencontre interrompue : les nouveaux blocs suivent ceux de `index`, à partir de
+    /// l'échantillon `origine` (fin de l'audio déjà enregistré), sous `point`.
+    pub fn reprendre(dir: PathBuf, sources: Vec<Source>, titres: Vec<String>, index: Index, origine: u64, point: Option<usize>) -> Self {
+        let mut e = Self::new(dir, sources, titres);
+        e.index = index;
+        e.ecrits = origine;
+        e.debut = origine;
+        e.synchronise = origine;
+        e.debut_passage = origine;
+        e.point = point;
+        e
+    }
+
     /// Blocs déjà fermés et inscrits à l'index.
     pub fn blocs_fermes(&self) -> usize {
         self.index.blocs.len()
@@ -530,7 +543,9 @@ impl Ecrivain {
                         .unwrap_or(0)
                 })
                 .unwrap_or(0);
-            let n = deja + 1;
+            // Et de l'index : après une reprise, les passages déjà consolidés n'ont plus de dossier.
+            let indexes = self.index.blocs.iter().filter(|b| b.point == self.point).map(|b| b.passage).max().unwrap_or(0);
+            let n = deja.max(indexes) + 1;
             self.passage = Some((n, format!("{dossier}/passage-{n:02}")));
         }
         let rel = self.passage.as_ref().map(|(_, r)| r.clone()).unwrap_or_default();
@@ -908,6 +923,59 @@ fn fichiers_blocs(dir: &Path) -> Vec<Trouve> {
 fn orphelins(dir: &Path, index: &Index) -> Vec<Trouve> {
     let connus: HashSet<&str> = index.blocs.iter().map(|b| b.fichier.as_str()).collect();
     fichiers_blocs(dir).into_iter().filter(|t| !connus.contains(t.fichier.as_str())).collect()
+}
+
+/// Fin de l'audio enregistré, en échantillons (horloge des segments).
+pub fn fin(index: &Index) -> u64 {
+    index.blocs.iter().map(|b| b.decalage + b.echantillons).max().unwrap_or(0)
+}
+
+/// Audio de `source` entre les échantillons `debut` et `fin` (horloge des segments), d'après
+/// l'index ; un trou ou un bloc illisible est remplacé par du silence.
+pub fn lire_plage(dir: &Path, index: &Index, source: Source, debut: u64, fin: u64) -> Vec<f32> {
+    let mut v = vec![0.0f32; fin.saturating_sub(debut) as usize];
+    for b in index.blocs.iter().filter(|b| b.source == source && b.decalage < fin && b.decalage + b.echantillons > debut) {
+        let echantillons = match lire_bloc(dir, b) {
+            Ok(e) => e,
+            Err(e) => {
+                log::warn!("{} illisible ({e:#}) : remplacé par du silence", b.fichier);
+                continue;
+            }
+        };
+        for (k, &x) in echantillons.iter().enumerate() {
+            let t = b.decalage + k as u64;
+            if (debut..fin).contains(&t) {
+                v[(t - debut) as usize] = dequantifier(x);
+            }
+        }
+    }
+    v
+}
+
+/// Énoncés de l'audio qui suit la dernière phrase transcrite de chaque source : ils attendaient
+/// Whisper au moment d'une panne. Lus par tranches, pour qu'une longue fin ne prenne pas toute la mémoire.
+pub fn enonces_non_transcrits(rencontre: &Meeting, dir: &Path, sensibilite: f32) -> Result<Vec<super::dsp::Utterance>> {
+    const TRANCHE: u64 = 120 * SAMPLE_RATE as u64;
+    let index = lire_index(dir)?;
+    let fin = fin(&index);
+    let mut enonces = Vec::new();
+    for source in sources(&index) {
+        let fin_texte = rencontre.segments.iter().filter(|s| s.source == source).map(|s| s.end_ms).max().unwrap_or(0);
+        let debut = fin_texte * SAMPLE_RATE as u64 / 1000;
+        if fin <= debut + SAMPLE_RATE as u64 {
+            continue;
+        }
+        let mut seg = super::dsp::Segmenter::new(source, sensibilite).a_partir_de(debut);
+        let mut t = debut;
+        while t < fin {
+            let b = (t + TRANCHE).min(fin);
+            seg.push(&lire_plage(dir, &index, source, t, b), &mut enonces);
+            t = b;
+        }
+        seg.flush(&mut enonces);
+    }
+    enonces.sort_by_key(|u| u.start);
+    Ok(enonces)
 }
 
 /// Une rencontre est incomplète si sa dernière période n'a pas de fin, ou si des blocs
@@ -1322,6 +1390,70 @@ mod tests {
         for d in [dir, abime] {
             let _ = std::fs::remove_dir_all(d);
         }
+    }
+
+    /// Panne vers 60 s (fichiers jamais fermés, comme lors d'une coupure de courant) : l'audio est
+    /// réparé, la fin non transcrite (voix de 40 à 45 s) est retrouvée, puis la rencontre reprend à la
+    /// suite, dans un nouveau passage du même point, et se consolide en un seul fichier.
+    #[test]
+    fn reprise_apres_une_panne() {
+        let dir = temporaire("reprise");
+        let titres = vec!["Budget".to_string()];
+        let ecrire = |e: &mut Ecrivain, audio: &[f32]| {
+            for morceau in audio.chunks(160) {
+                e.pousser(Source::Mixte, morceau);
+                e.avancer(false).unwrap();
+            }
+        };
+        let avant = signal(60, &[(10, 14), (40, 45)], 3, 250.0);
+        let mut e = Ecrivain::new(dir.clone(), vec![Source::Mixte], titres.clone());
+        e.changer_point(Some(0), 0);
+        ecrire(&mut e, &avant);
+        // Panne : rien n'est fermé ni vidé ; seul ce qui a été forcé sur le disque reste.
+        std::mem::forget(e);
+
+        let mut m = Meeting::nouvelle("m", None, chrono::Local::now());
+        let date = m.started_at.date_naive();
+        m.debuter_point(Some(0), 0, Declenchement::Manuel);
+        // Seule la phrase de 10 à 14 s avait été transcrite.
+        m.segments.push(crate::stt::Segment { start_ms: 10_000, end_ms: 14_500, source: Source::Mixte, text: "Bonjour.".into() });
+        assert!(interrompue(&m, &dir));
+        reprendre(&mut m, &dir).unwrap();
+        assert!(!interrompue(&m, &dir));
+        let index = lire_index(&dir).unwrap();
+        let origine = fin(&index);
+        assert!((50 * SR..=60 * SR).contains(&origine), "{}", origine / SR);
+        assert_eq!(m.periodes.last().unwrap().fin_ms, Some(origine * 1000 / SR));
+
+        let enonces = enonces_non_transcrits(&m, &dir, 0.5).unwrap();
+        assert_eq!(enonces.len(), 1, "{:?}", enonces.iter().map(|u| u.start).collect::<Vec<_>>());
+        assert!((39..=40).contains(&(enonces[0].start / SR)), "{}", enonces[0].start);
+        // Tout transcrit : rien à reprendre.
+        m.segments.push(crate::stt::Segment { start_ms: 40_000, end_ms: 45_500, source: Source::Mixte, text: "Suite.".into() });
+        assert!(enonces_non_transcrits(&m, &dir, 0.5).unwrap().is_empty());
+
+        // Reprise : 30 s de plus, à partir de la fin de l'audio réparé.
+        let apres = signal(30, &[(5, 10)], 4, 250.0);
+        let mut e = Ecrivain::reprendre(dir.clone(), vec![Source::Mixte], titres, index.clone(), origine, Some(0));
+        ecrire(&mut e, &apres);
+        let nouvel = e.terminer().unwrap();
+        let passages: Vec<u32> = nouvel.blocs.iter().filter(|b| b.decalage >= origine).map(|b| b.passage).collect();
+        let anciens = index.blocs.iter().map(|b| b.passage).max().unwrap();
+        assert!(!passages.is_empty() && passages.iter().all(|&p| p > anciens), "{passages:?}");
+        assert_eq!(&nouvel.blocs[..index.blocs.len()], &index.blocs[..]);
+        consolider(&dir, date).unwrap();
+        let index = lire_index(&dir).unwrap();
+        assert!(index.blocs.iter().all(|b| b.position.is_some()));
+        let fichier = lire(&dir.join(format!("{}.wav", nom_consolide(date))));
+        let avant_q: Vec<i16> = avant.iter().map(|&x| quantifier(x)).collect();
+        let apres_q: Vec<i16> = apres.iter().map(|&x| quantifier(x)).collect();
+        assert_eq!(fichier.len() as u64, origine + 30 * SR);
+        assert_eq!(&fichier[..origine as usize], &avant_q[..origine as usize]);
+        assert_eq!(&fichier[origine as usize..], &apres_q[..]);
+        let plage = lire_plage(&dir, &index, Source::Mixte, origine - 5 * SR, origine + 5 * SR);
+        let plage: Vec<i16> = plage.iter().map(|&x| quantifier(x)).collect();
+        assert_eq!(&plage[..], &fichier[(origine - 5 * SR) as usize..(origine + 5 * SR) as usize]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

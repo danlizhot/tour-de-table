@@ -141,6 +141,13 @@ impl Segmenter {
         }
     }
 
+    /// Découpeur dont l'horloge commence à l'échantillon `origine` : reprise d'une rencontre, ou
+    /// transcription d'une partie seulement de son audio.
+    pub fn a_partir_de(mut self, origine: u64) -> Self {
+        self.clock = origine;
+        self
+    }
+
     pub fn push(&mut self, samples: &[f32], out: &mut Vec<Utterance>) {
         self.pending.extend_from_slice(samples);
         let mut offset = 0;

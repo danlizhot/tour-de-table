@@ -97,10 +97,15 @@ impl TourDeTableApp {
     pub(super) fn past_view(&mut self, ui: &mut Ui, idx: usize) {
         let mut action = None;
         let occupe = self.decoupage_job.is_some() || self.import_job.is_some() || self.finishing;
+        let peut_poursuivre = !occupe
+            && self.recorder.is_none()
+            && self.live.is_none()
+            && self.fin_apres_panne.is_none()
+            && matches!(self.model, super::ModelState::Ready);
         {
             let m = &mut self.meetings[idx];
             ui.horizontal(|ui| {
-                let resp = ui.add(egui::TextEdit::singleline(&mut m.title).font(egui::TextStyle::Heading).desired_width(ui.available_width() - 640.0));
+                let resp = ui.add(egui::TextEdit::singleline(&mut m.title).font(egui::TextStyle::Heading).desired_width(ui.available_width() - if m.interrompue { 820.0 } else { 640.0 }));
                 if resp.lost_focus() {
                     let _ = m.save();
                 }
@@ -110,6 +115,15 @@ impl TourDeTableApp {
                     }
                     if ui.button("Dossier").clicked() {
                         action = Some("reveal");
+                    }
+                    if m.interrompue
+                        && crate::audio::blocs::existe(&m.dir())
+                        && ui
+                            .add_enabled(peut_poursuivre, egui::Button::new("Poursuivre la rencontre"))
+                            .on_hover_text("La rencontre a été interrompue : l'enregistrement reprend à la suite, au point où vous étiez rendus")
+                            .clicked()
+                    {
+                        action = Some("poursuivre");
                     }
                     if crate::audio::blocs::existe(&m.dir())
                         && m.agenda.as_ref().is_some_and(|a| !a.points.is_empty())
@@ -257,6 +271,7 @@ impl TourDeTableApp {
                 Err(e) => self.notify(format!("Export : {e:#}"), true),
             },
             Some("decouper") => self.ouvrir_verification(self.meetings[idx].clone(), false),
+            Some("poursuivre") => self.poursuivre(idx),
             _ => {}
         }
     }

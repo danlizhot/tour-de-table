@@ -30,6 +30,17 @@ pub struct Options {
     pub points: Vec<String>,
     /// Date de la rencontre, pour nommer le fichier audio consolidé à la fin.
     pub date: chrono::NaiveDate,
+    /// « Poursuivre la rencontre » après une panne : l'audio et les segments continuent ceux déjà
+    /// enregistrés, sur la même horloge.
+    pub reprise: Option<Reprise>,
+}
+
+pub struct Reprise {
+    pub index: crate::audio::blocs::Index,
+    /// Fin de ce qui est déjà enregistré, en échantillons : la nouvelle partie commence là.
+    pub origine: u64,
+    /// Point où l'on était rendu.
+    pub point: Option<usize>,
 }
 
 /// Messages de l'interface au fil audio.
@@ -54,6 +65,8 @@ pub struct Recorder {
     pub mic_level: Arc<Level>,
     pub sys_level: Arc<Level>,
     pub started: Instant,
+    /// Début de cette partie de la rencontre sur l'horloge des segments (0, sauf après une reprise).
+    pub origine_ms: u64,
     /// Échantillons alignés transmis au découpage en énoncés : même horloge que
     /// `Utterance::start`, donc que `Segment::start_ms`. Écrit par le fil audio seulement.
     pub echantillons: Arc<AtomicU64>,
@@ -76,7 +89,8 @@ impl Recorder {
         let pause = Arc::new(AtomicBool::new(false));
         let mic_level = Arc::new(Level::default());
         let sys_level = Arc::new(Level::default());
-        let echantillons = Arc::new(AtomicU64::new(0));
+        let origine = opts.reprise.as_ref().map_or(0, |r| r.origine);
+        let echantillons = Arc::new(AtomicU64::new(origine));
         let (ready_tx, ready_rx) = crossbeam_channel::bounded(1);
         let (commandes, commandes_rx) = crossbeam_channel::unbounded();
 
@@ -103,6 +117,7 @@ impl Recorder {
             mic_level,
             sys_level,
             started: Instant::now(),
+            origine_ms: origine * 1000 / SAMPLE_RATE as u64,
             echantillons,
             active,
             warnings,
@@ -221,14 +236,20 @@ fn run(
     }
 
     let mixed = opts.mode == CaptureMode::Mixe;
+    // Toutes les positions données aux découpeurs et à l'écrivain sont sur l'horloge des segments :
+    // `origine` les décale après une reprise ; l'alignement des sources, lui, part de zéro.
+    let origine = opts.reprise.as_ref().map_or(0, |r| r.origine);
     let mut segmenters: HashMap<Source, Segmenter> = if mixed {
-        HashMap::from([(Source::Mixte, Segmenter::new(Source::Mixte, opts.sensitivity))])
+        HashMap::from([(Source::Mixte, Segmenter::new(Source::Mixte, opts.sensitivity).a_partir_de(origine))])
     } else {
-        active.iter().map(|&s| (s, Segmenter::new(s, opts.sensitivity))).collect()
+        active.iter().map(|&s| (s, Segmenter::new(s, opts.sensitivity).a_partir_de(origine))).collect()
     };
     let mut sources: Vec<Source> = segmenters.keys().copied().collect();
     sources.sort_by_key(|s| *s as u8);
-    let mut ecrivain = Ecrivain::new(opts.dossier.clone(), sources, opts.points.clone());
+    let mut ecrivain = match opts.reprise {
+        Some(r) => Ecrivain::reprendre(opts.dossier.clone(), sources, opts.points.clone(), r.index, r.origine, r.point),
+        None => Ecrivain::new(opts.dossier.clone(), sources, opts.points.clone()),
+    };
     let mut erreur_signalee = false;
     let mut signaler = |r: Result<()>| {
         if let Err(e) = r
@@ -305,7 +326,7 @@ fn run(
         }
 
         // Ce qui a été transmis aux découpeurs (le reste attend le mixage).
-        let transmis = tracks.values().map(|t| t.aligner.written - t.mix_buf.len() as u64).max().unwrap_or(0);
+        let transmis = origine + tracks.values().map(|t| t.aligner.written - t.mix_buf.len() as u64).max().unwrap_or(0);
         echantillons.store(transmis, Ordering::Relaxed);
 
         // Coupes des blocs : ici, jamais dans le fil de l'interface. Un changement de point
