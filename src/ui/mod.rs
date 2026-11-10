@@ -112,6 +112,9 @@ pub struct TourDeTableApp {
     /// Étalonnage de la puce graphique en cours, et début de la période sans tâche.
     etalonnage: Option<crate::gpu::Etalonnage>,
     inoccupe_depuis: Instant,
+    /// Version du Microsoft Store : réponse attendue du Store, puis mise à jour offerte (bannière).
+    verification_mise_a_jour: Receiver<bool>,
+    mise_a_jour_offerte: bool,
     ctx: egui::Context,
 }
 
@@ -157,6 +160,11 @@ impl TourDeTableApp {
             vue_brute: false,
             etalonnage: None,
             inoccupe_depuis: Instant::now(),
+            verification_mise_a_jour: {
+                let ctx = cc.egui_ctx.clone();
+                crate::mise_a_jour::verifier(move || ctx.request_repaint())
+            },
+            mise_a_jour_offerte: false,
             ctx: cc.egui_ctx.clone(),
             cfg,
         };
@@ -176,6 +184,33 @@ impl TourDeTableApp {
             );
         }
         app
+    }
+
+    /// Bannière « Une nouvelle version est disponible » (version du Microsoft Store). La mise à jour
+    /// ferme l'application : elle attend la fin de la rencontre et des travaux en cours.
+    fn bandeau_mise_a_jour(&mut self, ui: &mut Ui) {
+        let occupe = self.recorder.is_some()
+            || self.finishing
+            || self.import_job.is_some()
+            || self.summary_job.is_some()
+            || self.decoupage_job.is_some()
+            || self.verification.is_some();
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Une nouvelle version de Tour de table est disponible.").strong());
+            let bouton = ui
+                .add_enabled(!occupe, egui::Button::new("Mettre à jour"))
+                .on_hover_text("Ouvre le Microsoft Store, qui installe la nouvelle version")
+                .on_disabled_hover_text("Après la rencontre et les travaux en cours : la mise à jour ferme Tour de table");
+            if bouton.clicked() {
+                crate::mise_a_jour::ouvrir_store();
+                self.mise_a_jour_offerte = false;
+            }
+            if ui.button("Plus tard").clicked() {
+                self.mise_a_jour_offerte = false;
+            }
+        });
+        ui.add_space(4.0);
     }
 
     fn appliquer_theme(&self) {
@@ -329,6 +364,9 @@ impl TourDeTableApp {
     /// Traitement hors affichage : canaux des fils audio, Whisper et tâches.
     fn pump(&mut self) {
         self.surveiller_puce();
+        if let Ok(oui) = self.verification_mise_a_jour.try_recv() {
+            self.mise_a_jour_offerte = oui;
+        }
         if let Some(rx) = &self.audio_export
             && let Ok(res) = rx.try_recv()
         {
@@ -626,6 +664,9 @@ impl eframe::App for TourDeTableApp {
             self.top_bar(ui);
             ui.add_space(4.0);
         });
+        if self.mise_a_jour_offerte {
+            egui::Panel::top("mise_a_jour").show(ui, |ui| self.bandeau_mise_a_jour(ui));
+        }
         egui::Panel::left("history").resizable(true).default_size(240.0).show(ui, |ui| self.side_list(ui));
         if matches!(self.view, View::Live) && self.verification.is_none() {
             self.raccourcis_points(&ctx);

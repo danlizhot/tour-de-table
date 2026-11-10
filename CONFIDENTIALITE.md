@@ -1,6 +1,6 @@
 # Politique de confidentialité — Tour de table
 
-*Dernière mise à jour : 25 octobre 2026*
+*Dernière mise à jour : 10 novembre 2026*
 
 Tour de table est une application de transcription de rencontres qui fonctionne **entièrement
 sur votre ordinateur**. Cette politique explique quelles données l'application traite, où elles
@@ -32,7 +32,8 @@ Aucun service infonuagique de transcription n'est utilisé.
 
 ## Connexions réseau
 
-La seule connexion Internet de Tour de table a lieu à l'installation des modèles :
+Tour de table ne se connecte à Internet que pour installer ses modèles et, dans la version du
+Microsoft Store, pour savoir si une mise à jour existe :
 
 * **Téléchargement des modèles** (reconnaissance vocale et rédaction), automatiquement au premier
    démarrage, puis seulement si un modèle manque (fichier effacé ou endommagé, mémoire vive du
@@ -41,6 +42,11 @@ La seule connexion Internet de Tour de table a lieu à l'installation des modèl
    Comme tout site Web, ces serveurs peuvent journaliser votre adresse IP. Aucune de vos données
    n'est transmise. Si les modèles ont été copiés à l'avance par votre service informatique,
    aucune connexion n'a lieu.
+* **Vérification des mises à jour** (version du Microsoft Store seulement), à l'ouverture de
+   l'application : Tour de table demande à Windows si le Microsoft Store offre une nouvelle
+   version, comme le fait Windows pour ses mises à jour automatiques. Seuls l'identifiant et la
+   version de l'application sont en jeu ; aucune de vos données n'est transmise. Si une version
+   existe, une bannière l'indique ; « Mettre à jour » ouvre le Microsoft Store, qui l'installe.
 
 Les comptes rendus sont rédigés **par le modèle intégré, sur votre ordinateur, sans aucune
 connexion**.

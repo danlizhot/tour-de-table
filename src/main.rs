@@ -10,6 +10,7 @@ mod decoupage;
 mod diagnostic;
 mod docx;
 mod gpu;
+mod mise_a_jour;
 mod models;
 mod nettoyage;
 mod quebec;
