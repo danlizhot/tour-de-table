@@ -302,8 +302,8 @@ pub struct Request<'a> {
     pub lexique: Vec<String>,
 }
 
-/// Chaque point est rédigé avec toute la transcription (méthode par défaut) ; TOURDETABLE_DECOUPE
-/// revient à l'ancienne méthode (la transcription du point seulement), pour comparer.
+/// Les sujets sont répartis avec toute la transcription, puis chaque point est rédigé d'après ses passages (méthode
+/// par défaut) ; TOURDETABLE_DECOUPE revient à l'ancienne méthode (la transcription du point seulement), pour comparer.
 pub fn transcription_complete() -> bool {
     std::env::var_os("TOURDETABLE_DECOUPE").is_none()
 }
@@ -327,31 +327,41 @@ pub fn points_de(m: &crate::storage::Meeting) -> (Vec<PointCr>, String) {
 }
 
 pub fn compte_rendu(r: &Request) -> Result<String> {
-    let mut session: Option<Session> = None;
-    let mut moteur = r.moteur.clone();
-    let mut rediger = |prompt: &str, max_jetons: usize| -> Result<String> {
+    let mut local = Local { r, session: None, moteur: r.moteur.clone() };
+    rediger_compte_rendu(r, &mut local, transcription_complete())
+}
+
+/// Le programme de rédaction, ouvert à la première requête et gardé pour toute la série.
+struct Local<'a> {
+    r: &'a Request<'a>,
+    session: Option<Session>,
+    moteur: Moteur,
+}
+
+impl Modele for Local<'_> {
+    fn rediger(&mut self, prefixe: &str, invites: &[(String, usize)], postes: usize, finies: &mut dyn FnMut(usize)) -> Result<Vec<String>> {
         loop {
-            if session.is_none() {
-                session = Some(Session::ouvrir(&moteur)?);
+            if self.session.is_none() {
+                self.session = Some(Session::ouvrir(&self.moteur)?);
             }
-            let s = session.as_mut().expect("ouverte");
-            if let Some(a) = r.avancement {
+            let s = self.session.as_mut().expect("ouverte");
+            let avancement = self.r.avancement;
+            if let Some(a) = avancement {
                 a.jetons.store(0, Ordering::Relaxed);
             }
-            let annuler = r.avancement.map(|a| &a.annuler);
-            let reponse = s.rediger(prompt, max_jetons, r.avancement.map(|a| &a.jetons), annuler);
+            let annuler = avancement.map(|a| &a.annuler);
+            let reponse = s.rediger_lot(prefixe, invites, postes, avancement.map(|a| &a.jetons), finies, annuler);
             // Plantage sur la puce graphique (pilote) : on reprend la même requête sur le processeur.
             let annule = annuler.is_some_and(|a| a.load(Ordering::Relaxed));
-            if reponse.is_err() && moteur.gpu && s.arrete() && !annule {
+            if reponse.is_err() && self.moteur.gpu && s.arrete() && !annule {
                 crate::gpu::redaction_plantee();
-                moteur.gpu = false;
-                session = None;
+                self.moteur.gpu = false;
+                self.session = None;
                 continue;
             }
             return reponse;
         }
-    };
-    rediger_compte_rendu(r, &mut rediger, transcription_complete())
+    }
 }
 
 /// `complet` : chaque point rédigé avec la transcription complète, sinon avec la sienne seulement.
@@ -374,8 +384,26 @@ fn rediger_compte_rendu(r: &Request, rediger: &mut Redacteur, complet: bool) -> 
     Ok(doc)
 }
 
-/// Appel au modèle : invite et longueur maximale de la réponse (jetons) → réponse. Simulé dans les tests.
-type Redacteur<'a> = dyn FnMut(&str, usize) -> Result<String> + 'a;
+/// Appel au modèle, simulé dans les tests.
+trait Modele {
+    /// Des invites (texte, longueur maximale de la réponse en jetons) à la suite d'un même `prefixe`, `postes` à la
+    /// fois → les réponses, dans le même ordre. `finies` reçoit le nombre de réponses terminées, à mesure.
+    fn rediger(&mut self, prefixe: &str, invites: &[(String, usize)], postes: usize, finies: &mut dyn FnMut(usize)) -> Result<Vec<String>>;
+}
+
+/// Modèle simulé : une fonction qui reçoit l'invite entière (préfixe, [`SEPARATEUR_PREFIXE`], suite) et sa limite.
+impl<F: FnMut(&str, usize) -> Result<String>> Modele for F {
+    fn rediger(&mut self, prefixe: &str, invites: &[(String, usize)], _postes: usize, finies: &mut dyn FnMut(usize)) -> Result<Vec<String>> {
+        let mut reponses = Vec::with_capacity(invites.len());
+        for (k, (invite, max)) in invites.iter().enumerate() {
+            reponses.push(if prefixe.is_empty() { self(invite, *max)? } else { self(&format!("{prefixe}{SEPARATEUR_PREFIXE}{invite}"), *max)? });
+            finies(k + 1);
+        }
+        Ok(reponses)
+    }
+}
+
+type Redacteur<'a> = dyn Modele + 'a;
 
 /// Comportement d'avant le découpage par point : toute la transcription d'un coup (condensée
 /// par tranches si elle est longue).
@@ -489,6 +517,16 @@ peut avoir été discuté sans être annoncé, avant ou après sa marque, ou en 
 transcription ce qui se rapporte à ce point. Écris « Point non abordé ou reporté. » seulement si rien ne s'y rapporte.\n\
 Les autres points de l'ordre du jour sont rédigés à part : {autres}. Laisse-leur ce qui les concerne, même si on en \
 parle pendant ce point-ci. Ignore les conversations d'avant le début et d'après la fin de la rencontre.\n\
+Garde les détails utiles : dates, échéances, chiffres, noms de dossiers, explications et raisons, décisions et suivis. \
+N'additionne pas de montants : un total n'apparaît que s'il est dit.\n";
+
+/// Le point est rédigé à partir des seuls passages de la transcription où ses sujets sont discutés, pour qu'il ne
+/// reprenne pas les sujets des autres points.
+const POINT_EXTRAITS: &str = "Tu es secrétaire de réunion. Ci-dessus : l'ordre du jour et les passages de la \
+transcription de la rencontre où le point « {point} » est discuté. Rédige uniquement ce point, sans titre, à partir de \
+ces passages.\n\
+Les autres points de l'ordre du jour sont rédigés à part, à partir d'autres passages : {autres}. Laisse-leur ce qui les \
+concerne. Ignore les conversations d'avant le début et d'après la fin de la rencontre.\n\
 Garde les détails utiles : dates, échéances, chiffres, noms de dossiers, explications et raisons, décisions et suivis. \
 N'additionne pas de montants : un total n'apparaît que s'il est dit.\n";
 
@@ -670,20 +708,47 @@ fn par_point_complet(r: &Request, rediger: &mut Redacteur) -> Result<String> {
         prefixe.trim_end_matches(SEPARATEUR_PREFIXE),
         repartition::entete_questions(&libelles, &choix)
     );
-    let demander = |s: &repartition::Sujet, entre: Option<(usize, usize)>, rediger: &mut Redacteur| -> Result<Option<usize>> {
-        let mut prompt = prefixe_questions.clone();
-        prompt.push_str(&repartition::question(s, entre, &libelles));
-        let reponse = generate(rediger, &prompt, repartition::JETONS_QUESTION)?;
-        let point = repartition::point_choisi(&reponse, &numeros_tous, &choix);
-        log::info!("Sujet « {} » → {reponse}{}", s.texte, entre.map_or(String::new(), |(a, b)| format!(" (entre « {} » et « {} »)", titres[a], titres[b])));
-        Ok(point)
+    // Questions : réponses de quelques jetons, le coût est la reprise du préfixe ; deux fois plus à la fois.
+    let demander = |questions: &[(&repartition::Sujet, Option<(usize, usize)>)], rediger: &mut Redacteur| -> Result<Vec<Option<usize>>> {
+        let invites: Vec<(String, usize)> =
+            questions.iter().map(|(s, entre)| (repartition::question(s, *entre, &libelles), repartition::JETONS_QUESTION)).collect();
+        let reponses = generer_lot(rediger, &prefixe_questions, &invites, 2 * POSTES, &mut |_| {})?;
+        Ok(questions
+            .iter()
+            .zip(&reponses)
+            .map(|((s, entre), reponse)| {
+                log::info!("Sujet « {} » → {reponse}{}", s.texte, entre.map_or(String::new(), |(a, b)| format!(" (entre « {} » et « {} »)", titres[a], titres[b])));
+                repartition::point_choisi(reponse, &numeros_tous, &choix)
+            })
+            .collect())
     };
-    for s in &mut tous {
-        s.point = demander(s, None, rediger)?;
+    let premiers = demander(&tous.iter().map(|s| (s, None)).collect::<Vec<_>>(), rediger)?;
+    for (s, p) in tous.iter_mut().zip(premiers) {
+        s.point = p;
     }
-    for (k, entre) in repartition::hors_suite(&tous).into_iter().take(repartition::MAX_REPRISES) {
-        if let Some(p) = demander(&tous[k], Some(entre), rediger)? {
-            tous[k].point = Some(p);
+    let mut reprises: Vec<(usize, (usize, usize))> = repartition::hors_suite(&tous).into_iter().take(repartition::MAX_REPRISES).collect();
+    // Un sujet d'avant le premier sujet de la suite, ou d'après le dernier, peut relever de tout point jusqu'à
+    // celui-là, ou à partir de celui-là ; sans quoi la question ne lui laisse que le point voisin.
+    {
+        let dates: Vec<(u64, usize)> = {
+            let pris: std::collections::HashSet<usize> = reprises.iter().map(|r| r.0).collect();
+            tous.iter().enumerate().filter(|(k, _)| !pris.contains(k)).filter_map(|(_, s)| Some((s.debut_ms?, s.point?))).collect()
+        };
+        let (premier, dernier) = (choix.first().copied(), choix.last().copied());
+        for (k, entre) in &mut reprises {
+            let Some(t) = tous[*k].debut_ms else { continue };
+            if !dates.iter().any(|&(d, _)| d < t) {
+                entre.0 = premier.unwrap_or(entre.0).min(entre.0);
+            }
+            if !dates.iter().any(|&(d, _)| d > t) {
+                entre.1 = dernier.unwrap_or(entre.1).max(entre.1);
+            }
+        }
+    }
+    let seconds = demander(&reprises.iter().map(|&(k, entre)| (&tous[k], Some(entre))).collect::<Vec<_>>(), rediger)?;
+    for (&(k, _), p) in reprises.iter().zip(seconds) {
+        if p.is_some() {
+            tous[k].point = p;
         }
     }
     let mut sujets = vec![Vec::new(); n];
@@ -713,24 +778,48 @@ fn par_point_complet(r: &Request, rediger: &mut Redacteur) -> Result<String> {
             non_abordes[i] = sujets[i].is_empty();
         }
     }
-    let mut sections = Vec::with_capacity(n);
-    for (i, p) in r.points.iter().enumerate() {
-        if let Some(a) = r.avancement {
-            a.points.store(n, Ordering::Relaxed);
-            a.point.store(i + 1, Ordering::Relaxed);
+    // Chaque point est rédigé d'après ses passages : un paragraphe de la transcription va au point du dernier sujet
+    // daté qui le précède (au premier sujet, pour ce qui vient avant).
+    let mut passages: Vec<Vec<&str>> = vec![Vec::new(); n];
+    {
+        let mut dates: Vec<(u64, usize)> = tous.iter().filter_map(|s| Some((s.debut_ms?, s.point?))).collect();
+        dates.sort_by_key(|d| d.0);
+        let mut courant = dates.first().map(|d| d.1);
+        for ligne in &transcription {
+            if let Some((t, _)) = repartition::heure(ligne) {
+                courant = dates.iter().rev().find(|d| d.0 <= t).or(dates.first()).map(|d| d.1);
+            }
+            if let Some(c) = courant {
+                passages[c].push(ligne.as_str());
+            }
         }
+    }
+    let prefixe_court = format!("=== ORDRE DU JOUR ===\n{}\n\n{lexique}{SEPARATEUR_PREFIXE}", r.agenda.unwrap_or(""));
+    /// Point à rédiger : son invite vient à la suite du préfixe.
+    struct Travail {
+        point: usize,
+        invite: String,
+        jetons: usize,
+        /// Une ou deux phrases au plus.
+        court: bool,
+        /// Rédigé d'après ses passages, à la suite du préfixe court.
+        par_passages: bool,
+    }
+    let mut sections: Vec<Option<String>> = vec![None; n];
+    let mut travaux: Vec<Travail> = Vec::new();
+    for (i, p) in r.points.iter().enumerate() {
         if parents[i] {
-            sections.push(format!("## {}", p.titre));
+            sections[i] = Some(format!("## {}", p.titre));
             continue;
         }
         if non_abordes[i] {
-            sections.push(format!("## {}\n\n{NON_ABORDE}", p.titre));
+            sections[i] = Some(format!("## {}\n\n{NON_ABORDE}", p.titre));
             continue;
         }
         let forme = Forme::du_point(&p.titre);
         // Varia sans sujet réparti : cherché par le modèle, il reprendrait toute la rencontre.
         if forme == Forme::Varia && reparti && sujets[i].is_empty() {
-            sections.push(format!("## {}\n\nAucun sujet.", p.titre));
+            sections[i] = Some(format!("## {}\n\nAucun sujet.", p.titre));
             continue;
         }
         let consigne = forme
@@ -742,10 +831,29 @@ fn par_point_complet(r: &Request, rediger: &mut Redacteur) -> Result<String> {
             .replace("50 mots au plus par personne", "80 mots au plus par personne");
         let autres: Vec<String> = r.points.iter().filter(|q| q.titre != p.titre).map(|q| format!("« {} »", q.titre)).collect();
         let bienvenue = ["bienvenue", "ouverture"].iter().any(|m| p.titre.to_lowercase().contains(m));
-        let mut prompt = prefixe.clone();
+        let mut prompt = String::new();
         prompt.push_str(&POINT_COMPLET.replace("{point}", &p.titre).replace("{autres}", &autres.join(", ")));
         let adoption = est_adoption(&p.titre);
         let fin = est_fin(&p.titre);
+        if reparti && !(bienvenue || adoption || fin) && !passages[i].is_empty() {
+            let mut prompt = format!("=== PASSAGES DE LA TRANSCRIPTION ===\n{}\n=== FIN DES PASSAGES ===\n\n", passages[i].join("\n"));
+            prompt.push_str(&POINT_EXTRAITS.replace("{point}", &p.titre).replace("{autres}", &autres.join(", ")));
+            prompt.push_str("Sujets de ce point, d'après la répartition faite d'avance (rédige-les tous, en détail, avec ce qu'en disent les passages) :\n");
+            for sujet in &sujets[i] {
+                prompt.push_str(&format!("- {sujet}\n"));
+            }
+            prompt.push_str(noms);
+            prompt.push_str(&consigne);
+            if forme == Forme::Varia {
+                prompt.push_str(VARIA_COMPLET);
+            }
+            prompt.push_str(FORME);
+            prompt.push_str(STYLE);
+            let jetons = if forme == Forme::TourDeTable { 2 * JETONS_TOUR_DE_TABLE } else { 2 * JETONS_POINT };
+            log::info!("Passages de « {} » : {} paragraphes", p.titre, passages[i].len());
+            travaux.push(Travail { point: i, invite: prompt, jetons, court: false, par_passages: true });
+            continue;
+        }
         if reparti {
             // Mot de bienvenue ou adoption sans sujet réparti : seulement la liste des sujets des autres points. La
             // consigne d'un point vide (chercher soi-même, sinon « non abordé ») donnerait un résumé de toute la
@@ -777,7 +885,30 @@ fn par_point_complet(r: &Request, rediger: &mut Redacteur) -> Result<String> {
         // Point sans sujet : une ou deux phrases au plus, jamais un résumé de toute la rencontre.
         let court = adoption || fin || bienvenue;
         let jetons = if court { JETONS_SANS_SUJET } else { jetons };
-        let reponse = generate(rediger, &prompt, jetons)?;
+        travaux.push(Travail { point: i, invite: prompt, jetons, court, par_passages: false });
+    }
+    // Plusieurs points s'écrivent en même temps : l'avancement compte les points finis.
+    let avance = |faits: usize| {
+        if let Some(a) = r.avancement {
+            a.points.store(travaux.len(), Ordering::Relaxed);
+            a.point.store(faits + 1, Ordering::Relaxed);
+        }
+    };
+    avance(0);
+    // D'abord les points rédigés avec toute la transcription (préfixe gardé), puis ceux rédigés d'après leurs passages.
+    let mut reponses: Vec<String> = vec![String::new(); travaux.len()];
+    let mut faits = 0;
+    for (par_passages, prefixe) in [(false, &prefixe), (true, &prefixe_court)] {
+        let rangs: Vec<usize> = (0..travaux.len()).filter(|&k| travaux[k].par_passages == par_passages).collect();
+        let invites: Vec<(String, usize)> = rangs.iter().map(|&k| (travaux[k].invite.clone(), travaux[k].jetons)).collect();
+        for (k, reponse) in rangs.iter().zip(generer_lot(rediger, prefixe, &invites, POSTES, &mut |finies| avance(faits + finies))?) {
+            reponses[*k] = reponse;
+        }
+        faits += rangs.len();
+    }
+    for (travail, reponse) in travaux.iter().zip(reponses) {
+        let (i, court) = (travail.point, travail.court);
+        let p = &r.points[i];
         // Titre recopié en texte simple (« 5. Horaire des Fêtes ») : retiré comme un titre Markdown.
         let reponse = reponse.trim_start().strip_prefix(p.titre.as_str()).unwrap_or(&reponse).to_string();
         // Titre recopié autrement (« 6. Suivi des tâches à effectuer » pour « 6. Suivi tâches à effectuer »).
@@ -798,8 +929,9 @@ fn par_point_complet(r: &Request, rediger: &mut Redacteur) -> Result<String> {
         let corps = if corps.contains(NON_ABORDE.trim_end_matches('.')) { NON_ABORDE.to_string() } else { corps };
         let corps = if court { phrases(&corps, 3) } else { corps };
         log::info!("Compte rendu complet : « {} » rédigé", p.titre);
-        sections.push(format!("## {}\n\n{corps}", p.titre));
+        sections[i] = Some(format!("## {}\n\n{corps}", p.titre));
     }
+    let sections: Vec<String> = sections.into_iter().flatten().collect();
     let sections = sections.join("\n\n");
     let point_prochaine = titres.iter().any(|t| est_prochaine_rencontre(t));
     let mut prompt = prefixe.clone();
@@ -1178,12 +1310,30 @@ fn condense(texte: &str, agenda: Option<&str>, precision: &str, rediger: &mut Re
     Ok(notes)
 }
 
-fn generate(rediger: &mut Redacteur, prompt: &str, max_jetons: usize) -> Result<String> {
-    let texte = sans_gabarits(&rediger(prompt, max_jetons)?);
-    Ok(tidy_answer(&crate::quebec::normalize_document(texte.trim())))
+/// Nombre d'invites rédigées en même temps par le programme de rédaction. L'écriture d'un jeton est limitée par la
+/// relecture du modèle en mémoire : 4 invites à la fois s'écrivent 2,8 fois plus vite qu'une à une (mesure du
+/// 11 novembre 2026), et le gain plafonne là.
+const POSTES: usize = 4;
+
+/// Plusieurs invites (texte, limite de jetons) à la suite du même `prefixe` (terminé par [`SEPARATEUR_PREFIXE`]),
+/// `postes` à la fois : dès qu'une réponse finit, l'invite suivante prend sa place. Les réponses dans le même ordre.
+fn generer_lot(rediger: &mut Redacteur, prefixe: &str, invites: &[(String, usize)], postes: usize, finies: &mut dyn FnMut(usize)) -> Result<Vec<String>> {
+    if invites.is_empty() {
+        return Ok(Vec::new());
+    }
+    let textes = rediger.rediger(prefixe.trim_end_matches(SEPARATEUR_PREFIXE), invites, postes, finies)?;
+    if textes.len() != invites.len() {
+        bail!("Rédaction par lot : {} réponses pour {} invites", textes.len(), invites.len());
+    }
+    Ok(textes.iter().map(|t| tidy_answer(&crate::quebec::normalize_document(sans_gabarits(t).trim()))).collect())
 }
 
-/// Un exemple des consignes recopié tel quel (« Mme [Nom] présente… ») : « la direction ».
+fn generate(rediger: &mut Redacteur, prompt: &str, max_jetons: usize) -> Result<String> {
+    let (prefixe, invite) = prompt.split_once(SEPARATEUR_PREFIXE).unwrap_or(("", prompt));
+    let texte = rediger.rediger(prefixe, &[(invite.to_string(), max_jetons)], 1, &mut |_| {})?.pop().context("Rédaction sans réponse")?;
+    Ok(tidy_answer(&crate::quebec::normalize_document(sans_gabarits(&texte).trim())))
+}
+
 fn sans_gabarits(texte: &str) -> String {
     let mut t = texte.to_string();
     for gabarit in ["Mme [Nom]", "M. [Nom]", "[Prénom Nom]", "[Nom]"] {
@@ -1251,20 +1401,62 @@ impl Session {
     /// Une requête. `annuler` arrête le programme dès sa prochaine ligne de sortie ; la session
     /// est alors inutilisable.
     pub fn rediger(&mut self, prompt: &str, max_jetons: usize, progress: Option<&AtomicUsize>, annuler: Option<&AtomicBool>) -> Result<String> {
-        // Contexte de travail : invite (≈ 3 caractères par jeton en français) + réponse.
-        // Seulement un minimum : le programme de rédaction l'agrandit selon les jetons réels.
-        let contexte = (prompt.chars().count() / 3 + max_jetons + 256).clamp(4096, 12288);
         let (prefixe, invite) = prompt.split_once(SEPARATEUR_PREFIXE).unwrap_or(("", prompt));
-        let requete = json!({
-            "modele": self.modele,
-            "prefixe": prefixe,
-            "invite": invite,
-            "contexte": contexte,
-            "max_jetons": max_jetons,
-            "temperature": 0.2,
-            "fils": self.fils,
-            "gpu": self.gpu,
-        });
+        self.rediger_lot(prefixe, &[(invite.to_string(), max_jetons)], 1, progress, &mut |_| {}, annuler)?.pop().context("Rédaction sans réponse")
+    }
+
+    /// Des invites (texte, limite de jetons) à la suite d'un même `prefixe`, que le programme de rédaction garde d'une
+    /// requête à l'autre ; `postes` à la fois. `finies` reçoit le nombre de réponses terminées, à mesure.
+    pub fn rediger_lot(
+        &mut self,
+        prefixe: &str,
+        invites: &[(String, usize)],
+        postes: usize,
+        progress: Option<&AtomicUsize>,
+        finies: &mut dyn FnMut(usize),
+        annuler: Option<&AtomicBool>,
+    ) -> Result<Vec<String>> {
+        let (modele, fils, gpu) = (self.modele.clone(), self.fils, self.gpu);
+        let requete = |invite: &str, max_jetons: usize| {
+            // Contexte de travail : invite (≈ 3 caractères par jeton en français) + réponse.
+            // Seulement un minimum : le programme de rédaction l'agrandit selon les jetons réels.
+            let contexte = ((prefixe.chars().count() + invite.chars().count() + usize::from(!prefixe.is_empty())) / 3 + max_jetons + 256).clamp(4096, 12288);
+            json!({
+                "modele": modele,
+                "prefixe": prefixe,
+                "invite": invite,
+                "contexte": contexte,
+                "max_jetons": max_jetons,
+                "temperature": 0.2,
+                "fils": fils,
+                "gpu": gpu,
+            })
+        };
+        // Une à une : la requête d'origine, avec sa réponse `texte`.
+        if postes <= 1 || invites.len() == 1 || prefixe.is_empty() {
+            let mut reponses = Vec::with_capacity(invites.len());
+            for (k, (invite, max_jetons)) in invites.iter().enumerate() {
+                let r = requete(invite, *max_jetons);
+                reponses.extend(self.echanger(&r, progress, &mut |_| {}, annuler)?);
+                finies(k + 1);
+            }
+            return Ok(reponses);
+        }
+        let mut r = requete("", invites.iter().map(|i| i.1).max().unwrap_or(0));
+        r["invites"] = json!(invites.iter().map(|i| i.0.as_str()).collect::<Vec<_>>());
+        r["max_jetons_lot"] = json!(invites.iter().map(|i| i.1).collect::<Vec<_>>());
+        r["simultanees"] = json!(postes);
+        self.echanger(&r, progress, finies, annuler)
+    }
+
+    /// Envoie une requête et attend sa réponse : `texte`, ou `textes` pour un lot.
+    fn echanger(
+        &mut self,
+        requete: &serde_json::Value,
+        progress: Option<&AtomicUsize>,
+        finies: &mut dyn FnMut(usize),
+        annuler: Option<&AtomicBool>,
+    ) -> Result<Vec<String>> {
         let entree = self.entree.as_mut().context("Programme de rédaction arrêté")?;
         writeln!(entree, "{requete}").and_then(|()| entree.flush()).context("Envoi au programme de rédaction")?;
         for line in self.sortie.by_ref() {
@@ -1278,8 +1470,17 @@ impl Session {
             if let (Some(n), Some(p)) = (v["progres"].as_u64(), progress) {
                 p.store(n as usize, Ordering::Relaxed);
             }
+            if let Some(n) = v["finies"].as_u64() {
+                finies(n as usize);
+            }
+            if let Some(j) = v["journal"].as_str() {
+                log::info!("Rédaction : {j}");
+            }
             if let Some(t) = v["texte"].as_str() {
-                return Ok(t.to_string());
+                return Ok(vec![t.to_string()]);
+            }
+            if let Some(textes) = v["textes"].as_array() {
+                return Ok(textes.iter().map(|t| t.as_str().unwrap_or("").to_string()).collect());
             }
             if let Some(e) = v["erreur"].as_str() {
                 bail!("Rédaction : {e}");
@@ -1400,6 +1601,41 @@ mod tests {
 
     /// Une question par sujet, deuxième question pour un sujet hors de l'ordre de la rencontre, point sans
     /// sujet (voir `repartition`).
+    #[test]
+    fn point_redige_d_apres_ses_passages() {
+        let moteur = moteur();
+        let p = |titre: &str| PointCr { titre: titre.into(), transcription: None, resume: None };
+        let mut r = requete(&moteur, vec![p("1. Ouverture"), p("2. Budget"), p("3. Varia")], "", false);
+        r.transcript = "[00:05] Bonjour à tous.\n[00:10] Budget de 2 500 $.\n[00:20] Julie publie l'annonce.";
+        let mut invites: Vec<String> = Vec::new();
+        rediger_compte_rendu(
+            &r,
+            &mut |invite: &str, _: usize| {
+                invites.push(invite.to_string());
+                Ok(if invite.contains("fais la liste des sujets") {
+                    "00:05 | Mot du président\n00:10 | Budget de 2 500 $".into()
+                } else if invite.contains("Sujet (vers [00:05])") {
+                    "1".into()
+                } else if invite.contains("Sujet (vers [00:10])") {
+                    "2".into()
+                } else {
+                    "Texte.".into()
+                })
+            },
+            true,
+        )
+        .unwrap();
+        // Le budget reçoit ses passages (jusqu'au sujet suivant, ici la fin), sans le reste de la transcription.
+        let budget = invites.iter().find(|i| i.contains("le point « 2. Budget »")).unwrap();
+        let (prefixe, suite) = budget.split_once(SEPARATEUR_PREFIXE).unwrap();
+        assert!(prefixe.contains("=== ORDRE DU JOUR ===") && !prefixe.contains("TRANSCRIPTION"), "{prefixe}");
+        assert!(suite.starts_with("=== PASSAGES DE LA TRANSCRIPTION ===\n[00:10] Budget de 2 500 $.\n[00:20] Julie publie l'annonce.\n=== FIN"), "{suite}");
+        assert!(suite.contains("- Budget de 2 500 $\n"), "{suite}");
+        // Le mot de bienvenue garde la transcription complète.
+        let ouverture = invites.iter().find(|i| i.contains("le point « 1. Ouverture »")).unwrap();
+        assert!(ouverture.contains("=== TRANSCRIPTION COMPLÈTE ==="), "{ouverture}");
+    }
+
     #[test]
     fn sujet_deplace_et_point_non_aborde() {
         let moteur = moteur();
