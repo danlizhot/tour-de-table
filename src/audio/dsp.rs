@@ -88,6 +88,7 @@ impl Resampler {
 }
 
 /// Un énoncé prêt pour Whisper.
+#[derive(Clone)]
 pub struct Utterance {
     pub source: Source,
     /// Position du début, en échantillons depuis le début de la rencontre.

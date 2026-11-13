@@ -51,7 +51,8 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   à part lancé par `ui/puce.rs` quand l'application est inoccupée) ; sentinelle autour des transcriptions
   sur la puce, repli de la rédaction sur le processeur après un plantage. Sans verdict : processeur, et
   `GGML_VK_VISIBLE_DEVICES` vide pour que ggml n'y touche pas. Pas de *flash attention* avec Vulkan
-  (charabia sur Intel).
+  (charabia sur Intel). Un énoncé que Whisper fait tourner en boucle sur la puce (`stt::en_boucle`) est retranscrit sur le
+  processeur : 16 min d'audio sur 68 bouclaient sur une Intel Iris Xe (13 novembre 2026).
 
 ### Crate auxiliaire `tourdetable-redaction` (`redaction/`)
 

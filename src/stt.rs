@@ -66,6 +66,8 @@ impl Engine {
 
 struct Loaded {
     name: String,
+    /// Fichier du modèle, pour en charger une copie sur le processeur au besoin.
+    chemin: PathBuf,
     /// Sur la puce graphique.
     gpu: bool,
     state: WhisperState,
@@ -74,6 +76,8 @@ struct Loaded {
 
 fn worker(rx: Receiver<Request>, tx: Sender<Reply>, wake: impl Fn()) {
     let mut model: Option<Loaded> = None;
+    // Copie du modèle sur le processeur, chargée au premier énoncé que la puce fait tourner en boucle.
+    let mut repli: Option<Loaded> = None;
     let mut settings = Settings { threads: 4, beam_size: 1, glossary: Glossary::parse(""), agenda_hint: String::new() };
     let mut deferred: VecDeque<Request> = VecDeque::new();
     loop {
@@ -95,6 +99,7 @@ fn worker(rx: Receiver<Request>, tx: Sender<Reply>, wake: impl Fn()) {
                     Reply::Loaded(Ok(name))
                 } else {
                     model = None; // libère la mémoire avant de charger le suivant
+                    repli = None;
                     match load(&path, use_gpu) {
                         Ok(m) => {
                             model = Some(m);
@@ -110,10 +115,22 @@ fn worker(rx: Receiver<Request>, tx: Sender<Reply>, wake: impl Fn()) {
                 let t = std::time::Instant::now();
                 let reply = match model.as_mut() {
                     None => Reply::Error { message: "Aucun modèle chargé".into(), handled },
-                    Some(m) => match sur_la_puce(m.gpu, || transcribe(&mut m.state, &settings, utterance, &context)) {
-                        Ok(segments) => Reply::Segments { segments, handled },
-                        Err(e) => Reply::Error { message: format!("Transcription : {e:#}"), handled },
-                    },
+                    Some(m) => {
+                        // Sur la puce, on garde l'énoncé : il est retranscrit sur le processeur s'il tourne en boucle.
+                        let copie = m.gpu.then(|| utterance.clone());
+                        match sur_la_puce(m.gpu, || transcribe(&mut m.state, &settings, utterance, &context)) {
+                            Ok(segments) => {
+                                let segments = match copie {
+                                    Some(u) if segments.iter().any(|s| en_boucle(&s.text)) => {
+                                        retranscrire_sur_le_processeur(&mut repli, &m.chemin, &settings, u, &context).unwrap_or(segments)
+                                    }
+                                    _ => segments,
+                                };
+                                Reply::Segments { segments, handled }
+                            }
+                            Err(e) => Reply::Error { message: format!("Transcription : {e:#}"), handled },
+                        }
+                    }
                 };
                 // Vitesse : un rapport au-dessus de 1 signifie que la transcription prend du retard.
                 let calcul_s = t.elapsed().as_secs_f32();
@@ -158,6 +175,55 @@ fn batch(mut first: Utterance, rx: &Receiver<Request>, deferred: &mut VecDeque<R
     (first, handled)
 }
 
+/// Texte où Whisper tourne en boucle : plus de 30 mots, et un même groupe de trois mots revient six fois ou plus
+/// (« l'examen final, l'examen final… », « ha ha ha… »). Sur certaines puces Intel avec Vulkan, ces boucles
+/// remplacent des minutes entières de discussion ; le processeur, lui, transcrit le même audio correctement.
+pub fn en_boucle(texte: &str) -> bool {
+    let mots: Vec<String> = texte.split_whitespace().map(|m| m.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase()).collect();
+    if mots.len() <= 30 {
+        return false;
+    }
+    let mut vus: std::collections::HashMap<&[String], usize> = std::collections::HashMap::new();
+    mots.windows(3).any(|g| {
+        let n = vus.entry(g).or_default();
+        *n += 1;
+        *n >= 6
+    })
+}
+
+/// Énoncé que la puce a fait tourner en boucle : transcrit de nouveau sur le processeur. `None` si la copie du
+/// modèle n'a pas pu être chargée ou si la transcription échoue : on garde alors le texte de la puce.
+fn retranscrire_sur_le_processeur(
+    repli: &mut Option<Loaded>,
+    chemin: &std::path::Path,
+    s: &Settings,
+    utt: Utterance,
+    context: &str,
+) -> Option<Vec<Segment>> {
+    let audio_s = utt.samples.len() as f32 / SAMPLE_RATE as f32;
+    let t = std::time::Instant::now();
+    if repli.is_none() {
+        match load(chemin, false) {
+            Ok(m) => *repli = Some(m),
+            Err(e) => {
+                log::warn!("Boucle de Whisper sur la puce : copie du modèle sur le processeur impossible ({e:#})");
+                return None;
+            }
+        }
+    }
+    let m = repli.as_mut()?;
+    match transcribe(&mut m.state, s, utt, context) {
+        Ok(segments) => {
+            log::info!("Boucle de Whisper sur la puce : {audio_s:.1} s d'audio retranscrites sur le processeur en {:.1} s", t.elapsed().as_secs_f32());
+            Some(segments)
+        }
+        Err(e) => {
+            log::warn!("Boucle de Whisper sur la puce : retranscription sur le processeur en échec ({e:#})");
+            None
+        }
+    }
+}
+
 /// Une transcription sur la puce graphique est encadrée par la sentinelle de `gpu` : si le
 /// pilote fait planter l'application, la puce est écartée au prochain démarrage.
 fn sur_la_puce<T>(gpu: bool, f: impl FnOnce() -> T) -> T {
@@ -195,6 +261,7 @@ fn load(path: &std::path::Path, use_gpu: bool) -> Result<Loaded> {
     let state = ctx.create_state().context("Création de l'état Whisper")?;
     Ok(Loaded {
         name: path.file_name().unwrap().to_string_lossy().into_owned(),
+        chemin: path.to_path_buf(),
         gpu: use_gpu,
         state,
         _ctx: ctx,
@@ -274,6 +341,21 @@ fn transcribe(state: &mut WhisperState, s: &Settings, utt: Utterance, context: &
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn boucles_de_whisper() {
+        let boucle = format!("T'es un pompier accrédité, {}", "l'examen final, ".repeat(35));
+        assert!(super::en_boucle(&boucle));
+        assert!(super::en_boucle(&"ha ha ha ".repeat(60)));
+        assert!(super::en_boucle(&format!("Bon, on commence. {}", "Ben... ".repeat(80))));
+        // Un vrai énoncé, même long, avec des mots qui reviennent.
+        assert!(!super::en_boucle(
+            "On a 400 000 $ de réserve, mais dans le fond, c'est parce qu'on a reçu les deux premiers versements du \
+             ministère. On avait plus rien de compte, on a fait l'attente pour payer les sociétés. Il n'y a plus de \
+             surplus, il y a vraiment plus de surplus, et là, même là, vous voyez que mon budget est au niveau des revenus."
+        ));
+        assert!(!super::en_boucle("Non. Non. Non. Non. Non. Non. Non."));
+    }
 
     fn utt(source: Source, start_s: f32, len_s: f32) -> Request {
         Request::Transcribe {

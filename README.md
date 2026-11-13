@@ -64,7 +64,9 @@ Tour de table l'indique au démarrage.
   puce (Intel UHD 630) reste écartée : plus lente, texte erroné. Un plantage du pilote en cours d'usage
   ramène le moteur sur le processeur pour de bon (la rédaction reprend aussitôt sur le processeur). Verdict
   dans `puce-graphique.json`, dans le dossier de données ; il est refait à chaque nouvelle version. Sur Mac,
-  Metal est toujours utilisé.
+  Metal est toujours utilisé. Sur certaines puces Intel, Whisper tourne parfois en boucle sur un passage
+  (« l'examen final, l'examen final… ») là où le processeur transcrit juste : un énoncé qui boucle sur la
+  puce est retranscrit sur le processeur, avec une copie du modèle chargée à la première boucle.
 
 ## Spécialisation québécoise
 
