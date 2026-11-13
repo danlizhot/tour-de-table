@@ -94,7 +94,9 @@ reprend ensuite là où il en était (même après une fermeture de l'applicatio
   répondent à une question ou à une proposition (un « Oui. » après « Je propose… » est un vote).
   Puis lexique et typographie. Les québécismes porteurs de sens (« tsé », « pantoute »,
   « correct ») sont gardés, comme un prénom (« avec Ben hier »). Les listes sont dans
-  `data/nettoyage.txt`.
+  `data/nettoyage.txt`. Une année dite en deux nombres (« en 20-24 », « depuis vingt vingt-quatre »)
+  est récrite « 2024 », seulement après un mot de temps et jamais devant une unité (« 20-25 hectares »
+  reste une fourchette).
 * Le modèle de langue sert seulement au compte rendu : une correction de chaque phrase par le
   modèle prenait plus que la durée de la rencontre sur un ordinateur sans carte graphique.
 * Le compte rendu part de la version nettoyée. Exports : `transcription-nettoyee.md`, et un

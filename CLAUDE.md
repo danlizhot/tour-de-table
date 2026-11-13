@@ -41,7 +41,8 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   transcription complète. `TOURDETABLE_DECOUPE` revient à la transcription du point seulement. Le préfixe commun
   (ordre du jour + transcription) est gardé par le programme auxiliaire. Banc d'essai : 25/32 contre 24/32 avant
   les passages (12 novembre 2026), surtout moins de doublons.
-* `nettoyage.rs` : nettoyage de la transcription, par règles seulement (`data/nettoyage.txt`) ;
+* `nettoyage.rs` : nettoyage de la transcription, par règles seulement (`data/nettoyage.txt`, et `annees.rs` pour
+  les années dites en deux nombres) ;
   une passe par le modèle a été retirée, trop lente sur processeur seul (plus que le temps
   réel avec un 8B). Enchaînement : transcription → nettoyage →
   compte rendu. `Meeting::segments` (brut) n'est jamais modifié ; résultat dans
