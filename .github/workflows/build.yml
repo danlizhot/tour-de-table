@@ -113,10 +113,12 @@ jobs:
           echo "LLAMA_STATIC_CRT=1" >> $GITHUB_ENV
 
       - name: Tests
-        run: cargo test --workspace ${{ matrix.features }}
+        # --locked : la résolution des dépendances doit correspondre à Cargo.lock (versionné et
+        # revu) ; sinon la compilation échoue au lieu de choisir une version plus récente.
+        run: cargo test --locked --workspace ${{ matrix.features }}
 
       - name: Compilation
-        run: cargo build --release --workspace ${{ matrix.features }}
+        run: cargo build --locked --release --workspace ${{ matrix.features }}
 
       # Garde-fou : l'exécutable doit démarrer sur un Windows neuf, sans le
       # « Redistribuable Visual C++ » (erreur VCRUNTIME140_1.dll introuvable).
