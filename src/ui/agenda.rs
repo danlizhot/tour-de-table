@@ -185,6 +185,17 @@ impl TourDeTableApp {
         self.agenda_changed();
     }
 
+    /// Texte de l'ordre du jour, replié ; vrai quand on vient de le modifier.
+    fn texte_agenda(&mut self, ui: &mut Ui) -> bool {
+        let mut modifie = false;
+        egui::CollapsingHeader::new("Voir et modifier le texte").id_salt("agenda_text").show(ui, |ui| {
+            if let Some(a) = self.agenda_slot().as_mut() {
+                modifie = ui.add(egui::TextEdit::multiline(&mut a.text).desired_rows(6).desired_width(f32::INFINITY)).lost_focus();
+            }
+        });
+        modifie
+    }
+
     /// `en_onglet` : la carte occupe un onglet, qui porte déjà son titre et défile en entier.
     pub(super) fn agenda_card(&mut self, ui: &mut Ui, en_onglet: bool) {
         let mut browse = false;
@@ -232,6 +243,10 @@ impl TourDeTableApp {
                             browse = ui.small_button("Parcourir…").clicked();
                         });
                     }
+                    // Dans un onglet, les boutons sont sous l'encadré : toujours visibles, sans cacher le nom du fichier.
+                    Some(a) if en_onglet => {
+                        ui.add(egui::Label::new(RichText::new(&a.file).weak()).truncate());
+                    }
                     Some(a) => {
                         ui.label(RichText::new(&a.file).weak());
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -251,7 +266,9 @@ impl TourDeTableApp {
             });
             let Some(a) = &slot else { return };
             // Un long ordre du jour défile plutôt que de cacher la transcription.
-            let hauteur = if en_onglet { f32::INFINITY } else { ui.ctx().content_rect().height() * 0.4 };
+            // Dans un onglet, l'encadré s'arrête assez haut pour laisser ses boutons visibles dessous.
+            let reserve = if editer { 96.0 } else { 62.0 };
+            let hauteur = if en_onglet { (ui.available_height() - reserve).max(120.0) } else { ui.ctx().content_rect().height() * 0.4 };
             if editer && a.points.is_empty() {
                 ui.label(RichText::new("Aucun point reconnu dans l'ordre du jour : ajoutez-les ici pour découper la rencontre par point.").weak());
             }
@@ -272,6 +289,10 @@ impl TourDeTableApp {
                         }
                     }
                 }
+                // Dans un onglet, le texte défile avec les points.
+                if en_onglet {
+                    edited = self.texte_agenda(ui);
+                }
             });
             // Hors de la zone qui défile : toujours visibles.
             if editer {
@@ -291,14 +312,23 @@ impl TourDeTableApp {
                     }
                 });
             }
-            egui::CollapsingHeader::new("Voir et modifier le texte").id_salt("agenda_text").show(ui, |ui| {
-                if let Some(a) = self.agenda_slot().as_mut() {
-                    edited = ui
-                        .add(egui::TextEdit::multiline(&mut a.text).desired_rows(6).desired_width(f32::INFINITY))
-                        .lost_focus();
+            if !en_onglet {
+                edited = self.texte_agenda(ui);
+            }
+        });
+        if en_onglet && slot.is_some() {
+            ui.add_space(2.0);
+            ui.horizontal_wrapped(|ui| {
+                if !editer && ui.button("Modifier les points").clicked() {
+                    self.edit_points = true;
+                }
+                browse = ui.button("Remplacer…").on_hover_text("Choisir un autre document comme ordre du jour").clicked();
+                remove = ui.button("Retirer").on_hover_text("Enlève l'ordre du jour de cette rencontre").clicked();
+                if actif.is_some() && ui.button("Hors point").on_hover_text(RACCOURCIS).clicked() {
+                    debuter = Some(None);
                 }
             });
-        });
+        }
         if manual {
             *self.agenda_slot() = Some(Agenda::new("Saisi à la main".into(), String::new()));
         }

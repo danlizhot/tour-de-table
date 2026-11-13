@@ -16,6 +16,11 @@ pub(super) enum Onglet {
     CompteRendu,
 }
 
+/// Dans un volet, le texte reste aligné à gauche : les colonnes d'egui le justifieraient, mots écartés.
+fn aligne_a_gauche() -> egui::Layout {
+    egui::Layout::top_down(egui::Align::Min)
+}
+
 const TOUS: [Onglet; 3] = [Onglet::OrdreDuJour, Onglet::Transcription, Onglet::CompteRendu];
 
 /// Largeur de la fiche sous laquelle deux volets seraient trop étroits pour être lus.
@@ -187,17 +192,15 @@ impl TourDeTableApp {
         let assez_large = ui.available_width() >= LARGEUR_COTE_A_COTE;
         let cote_a_cote = onglets.droite.is_some() && assez_large;
         let aide = if cote_a_cote { "Revenir à un seul volet" } else { "Affiche l'ordre du jour à côté de la transcription" };
-        let ordre_du_jour = |app: &mut Self, ui: &mut Ui| {
-            egui::ScrollArea::vertical().id_salt("direct_oj").auto_shrink(false).show(ui, |ui| app.agenda_card(ui, true));
-        };
+        let ordre_du_jour = |app: &mut Self, ui: &mut Ui| app.agenda_card(ui, true);
         if cote_a_cote {
             ui.columns(2, |colonnes| {
-                colonnes[0].push_id("gauche", |ui| {
+                colonnes[0].with_layout(aligne_a_gauche(), |ui| {
                     ui.horizontal(|ui| bouton_onglet(ui, "Ordre du jour", true, false));
                     trait_sous_la_barre(ui);
                     ordre_du_jour(self, ui);
                 });
-                colonnes[1].push_id("droite", |ui| {
+                colonnes[1].with_layout(aligne_a_gauche(), |ui| {
                     ui.horizontal(|ui| {
                         bouton_onglet(ui, "Transcription", true, false);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -253,11 +256,11 @@ impl TourDeTableApp {
             Some(d) => {
                 let gauche = onglets.gauche;
                 ui.columns(2, |colonnes| {
-                    colonnes[0].push_id("gauche", |ui| {
+                    colonnes[0].with_layout(aligne_a_gauche(), |ui| {
                         self.barre_onglets(ui, idx, &mut onglets, false);
                         action = self.volet(ui, idx, gauche).or(action);
                     });
-                    colonnes[1].push_id("droite", |ui| {
+                    colonnes[1].with_layout(aligne_a_gauche(), |ui| {
                         self.barre_onglets(ui, idx, &mut onglets, true);
                         action = self.volet(ui, idx, d).or(action);
                     });
@@ -294,7 +297,7 @@ impl TourDeTableApp {
     fn volet(&mut self, ui: &mut Ui, idx: usize, onglet: Onglet) -> Option<&'static str> {
         match onglet {
             Onglet::OrdreDuJour => {
-                egui::ScrollArea::vertical().id_salt("volet_oj").auto_shrink(false).show(ui, |ui| self.agenda_card(ui, true));
+                self.agenda_card(ui, true);
                 None
             }
             Onglet::Transcription => {
