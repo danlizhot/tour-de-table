@@ -14,7 +14,7 @@ use super::TourDeTableApp;
 use crate::nettoyage::{self, Avancement, Etape};
 
 pub(super) struct TacheNettoyage {
-    id: String,
+    pub(super) id: String,
     rx: Receiver<Etape>,
     avancement: Arc<Avancement>,
     /// Compte rendu à rédiger ensuite (rencontre qui vient de finir, avec un ordre du jour).
@@ -159,8 +159,7 @@ impl TourDeTableApp {
         let puis_compte_rendu = m.agenda.is_some() && m.summary.is_none();
         let mut action = None;
 
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Transcription").strong());
+        ui.horizontal_wrapped(|ui| {
             if etat.is_some() {
                 ui.selectable_value(&mut self.vue_brute, true, "Brute").on_hover_text("Telle que transcrite, jamais modifiée");
                 ui.selectable_value(&mut self.vue_brute, false, "Nettoyée")

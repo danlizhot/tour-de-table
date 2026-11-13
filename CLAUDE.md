@@ -28,7 +28,8 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   (`try_recv`) dans `TourDeTableApp::pump`. L'avancement passe par des atomiques.
 * `src/ui/` : `mod.rs` (état `TourDeTableApp`, boucle `eframe::App`, `pump`, barre du haut et
   historique), `live.rs` (rencontre en cours, import, contrôles), `past.rs` (fiche d'une
-  rencontre, compte rendu), `agenda.rs` (ordre du jour), `verification.rs` (frontières à
+  rencontre, compte rendu), `onglets.rs` (onglets de la fiche : ordre du jour, transcription, compte rendu, un volet
+  ou deux côte à côte), `agenda.rs` (ordre du jour), `verification.rs` (frontières à
   corriger, « Découper par points »), `settings.rs` (Paramètres), `installation.rs` (installation automatique des
   modèles au premier démarrage, plein écran),
   `widgets.rs` (couleurs, composants, logo). Garder chaque fichier sous ~700 lignes.
