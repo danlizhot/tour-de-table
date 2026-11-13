@@ -68,14 +68,30 @@ jobs:
           Add-Content $env:GITHUB_ENV "CARGO_TARGET_DIR=C:\t"
 
       # Compilation des noyaux Vulkan (glslc) et bibliothèque d'importation de vulkan-1.dll.
+      # L'installateur n'est exécuté qu'après vérification de sa signature Authenticode (éditeur LunarG).
+      # À faire hors du dépôt : épingler aussi l'empreinte SHA-256 de l'installateur de cette version.
       - name: SDK Vulkan (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         env:
           VULKAN_VERSION: 1.4.313.2
         run: |
-          curl.exe -sSLo "$env:RUNNER_TEMP\vulkansdk.exe" "https://sdk.lunarg.com/sdk/download/$env:VULKAN_VERSION/windows/vulkansdk-windows-X64-$env:VULKAN_VERSION.exe"
-          & "$env:RUNNER_TEMP\vulkansdk.exe" --accept-licenses --default-answer --confirm-command install
+          $installateur = "$env:RUNNER_TEMP\vulkansdk.exe"
+          # --fail : une réponse HTTP d'erreur n'est jamais enregistrée comme installateur ; HTTPS et TLS 1.2 exigés,
+          # y compris lors des redirections.
+          curl.exe -sSfL --proto '=https' --proto-redir '=https' --tlsv1.2 -o $installateur "https://sdk.lunarg.com/sdk/download/$env:VULKAN_VERSION/windows/vulkansdk-windows-X64-$env:VULKAN_VERSION.exe"
+          if ($LASTEXITCODE -ne 0) { Write-Error "Téléchargement du SDK Vulkan en échec"; exit 1 }
+          # Vérification fermée avant toute exécution : signature Authenticode valide et éditeur LunarG.
+          $signature = Get-AuthenticodeSignature -FilePath $installateur
+          $editeur = if ($signature.SignerCertificate) { $signature.SignerCertificate.GetNameInfo('SimpleName', $false) } else { '' }
+          Write-Host "Signature de l'installateur : $($signature.Status) · éditeur « $editeur »"
+          if ($signature.Status -ne 'Valid' -or $editeur -notlike 'LunarG*') {
+            Remove-Item -Force $installateur
+            Write-Error "Installateur du SDK Vulkan refusé : signature invalide ou éditeur inattendu"
+            exit 1
+          }
+          & $installateur --accept-licenses --default-answer --confirm-command install
+          if ($LASTEXITCODE -ne 0) { Write-Error "Installation du SDK Vulkan en échec"; exit 1 }
           Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\$env:VULKAN_VERSION"
           Add-Content $env:GITHUB_PATH "C:\VulkanSDK\$env:VULKAN_VERSION\Bin"
 
