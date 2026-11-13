@@ -344,6 +344,7 @@ src/
   ui/mod.rs      interface egui : état, boucle, barre du haut, historique
   ui/live.rs     rencontre en cours, import, contrôles
   ui/past.rs     fiche d'une rencontre, compte rendu
+  ui/onglets.rs  onglets de la fiche (ordre du jour, transcription, compte rendu), un volet ou deux côte à côte
   ui/nettoyage.rs file du nettoyage, « Brute / Nettoyée »
   ui/agenda.rs   ordre du jour
   ui/settings.rs Paramètres

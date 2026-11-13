@@ -311,10 +311,22 @@ impl TourDeTableApp {
 
     pub(super) fn live_view(&mut self, ui: &mut Ui) {
         self.bandeau(ui);
-        if !matches!(self.model, ModelState::Missing | ModelState::Failed(_)) || self.live.is_some() {
-            self.agenda_card(ui);
+        let pret = !matches!(self.model, ModelState::Missing | ModelState::Failed(_)) || self.live.is_some();
+        // Rencontre en cours avec un ordre du jour : deux onglets. Sinon, la carte où déposer l'ordre du jour reste
+        // au-dessus de la transcription.
+        if pret && self.live.as_ref().is_some_and(|m| m.agenda.is_some()) {
+            self.volets_direct(ui, Self::transcription_directe);
+            return;
+        }
+        if pret {
+            self.agenda_card(ui, false);
             ui.add_space(6.0);
         }
+        self.transcription_directe(ui);
+    }
+
+    /// Transcription de la rencontre en cours, ou ce qu'on attend.
+    fn transcription_directe(&mut self, ui: &mut Ui) {
         match (&self.live, &self.model) {
             (Some(m), _) => {
                 if m.segments.is_empty() {

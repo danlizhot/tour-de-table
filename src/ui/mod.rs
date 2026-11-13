@@ -6,6 +6,7 @@ mod decoupage;
 mod installation;
 mod live;
 mod nettoyage;
+mod onglets;
 mod past;
 mod puce;
 mod settings;
@@ -109,6 +110,10 @@ pub struct TourDeTableApp {
     nettoyages_en_attente: Vec<(String, bool)>,
     /// Fiche d'une rencontre : transcription brute plutôt que nettoyée.
     vue_brute: bool,
+    /// Fiche d'une rencontre : onglets affichés.
+    onglets: onglets::Onglets,
+    /// Rencontre en cours avec un ordre du jour : onglets affichés.
+    onglets_direct: onglets::Onglets,
     /// Étalonnage de la puce graphique en cours, et début de la période sans tâche.
     etalonnage: Option<crate::gpu::Etalonnage>,
     inoccupe_depuis: Instant,
@@ -158,6 +163,8 @@ impl TourDeTableApp {
             nettoyage_job: None,
             nettoyages_en_attente: Vec::new(),
             vue_brute: false,
+            onglets: onglets::Onglets::default(),
+            onglets_direct: onglets::Onglets::direct(),
             etalonnage: None,
             inoccupe_depuis: Instant::now(),
             verification_mise_a_jour: {

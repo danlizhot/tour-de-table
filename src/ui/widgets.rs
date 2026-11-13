@@ -9,7 +9,7 @@ use crate::storage::{Meeting, clock};
 
 /// Bleu du drapeau du Québec.
 pub const BLEU: Color32 = Color32::from_rgb(0x00, 0x3D, 0xA5);
-const BLEU_CLAIR: Color32 = Color32::from_rgb(0x3B, 0x82, 0xF6);
+pub(super) const BLEU_CLAIR: Color32 = Color32::from_rgb(0x3B, 0x82, 0xF6);
 pub(super) const ROUGE: Color32 = Color32::from_rgb(0xDC, 0x26, 0x26);
 pub(super) const SALLE: Color32 = Color32::from_rgb(0x0E, 0x9F, 0x6E);
 pub(super) const DISTANCE: Color32 = Color32::from_rgb(0x7C, 0x3A, 0xED);

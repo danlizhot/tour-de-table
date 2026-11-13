@@ -185,7 +185,8 @@ impl TourDeTableApp {
         self.agenda_changed();
     }
 
-    pub(super) fn agenda_card(&mut self, ui: &mut Ui) {
+    /// `en_onglet` : la carte occupe un onglet, qui porte déjà son titre et défile en entier.
+    pub(super) fn agenda_card(&mut self, ui: &mut Ui, en_onglet: bool) {
         let mut browse = false;
         let mut remove = false;
         let mut edited = false;
@@ -220,7 +221,9 @@ impl TourDeTableApp {
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Ordre du jour").strong());
+                if !en_onglet {
+                    ui.label(RichText::new("Ordre du jour").strong());
+                }
                 match &slot {
                     None => {
                         ui.label(RichText::new("optionnel : glissez un document Word, PDF ou texte ici").weak());
@@ -248,7 +251,7 @@ impl TourDeTableApp {
             });
             let Some(a) = &slot else { return };
             // Un long ordre du jour défile plutôt que de cacher la transcription.
-            let hauteur = ui.ctx().content_rect().height() * 0.4;
+            let hauteur = if en_onglet { f32::INFINITY } else { ui.ctx().content_rect().height() * 0.4 };
             if editer && a.points.is_empty() {
                 ui.label(RichText::new("Aucun point reconnu dans l'ordre du jour : ajoutez-les ici pour découper la rencontre par point.").weak());
             }

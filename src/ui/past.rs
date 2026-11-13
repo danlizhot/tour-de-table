@@ -1,11 +1,9 @@
 //! Fiche d'une rencontre passée et rédaction du compte rendu.
 
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
-
 use eframe::egui::{self, Align, Layout, RichText, Ui};
 
-use super::widgets::{markdown, short_model, transcript, transcript_nettoye};
+use super::widgets::short_model;
 use super::{TourDeTableApp, View};
 use crate::audio::blocs;
 use crate::config;
@@ -102,7 +100,7 @@ impl TourDeTableApp {
             && self.live.is_none()
             && self.fin_apres_panne.is_none()
             && matches!(self.model, super::ModelState::Ready);
-        {
+        let details = {
             let m = &mut self.meetings[idx];
             ui.horizontal(|ui| {
                 let resp = ui.add(egui::TextEdit::singleline(&mut m.title).font(egui::TextStyle::Heading).desired_width(ui.available_width() - if m.interrompue { 820.0 } else { 640.0 }));
@@ -147,101 +145,21 @@ impl TourDeTableApp {
                     }
                 });
             });
-            ui.label(
-                RichText::new(format!(
-                    "{} · {} · {} segments{} · {}",
-                    m.started_at.format("%Y-%m-%d %H h %M"),
-                    clock(m.duration_s * 1000),
-                    m.segments.len(),
-                    m.liste_pauses().map(|p| format!(" · pauses : {p}")).unwrap_or_default(),
-                    short_model(&m.model)
-                ))
-                .small()
-                .weak(),
+            let details = format!(
+                "{} · {} · {} segments{} · {}",
+                m.started_at.format("%Y-%m-%d %H h %M"),
+                clock(m.duration_s * 1000),
+                m.segments.len(),
+                m.liste_pauses().map(|p| format!(" · pauses : {p}")).unwrap_or_default(),
+                short_model(&m.model)
             );
-        }
-        ui.add_space(8.0);
-
-        self.agenda_card(ui);
-        ui.add_space(6.0);
-
-        let busy = self
-            .summary_job
-            .as_ref()
-            .filter(|(id, ..)| *id == self.meetings[idx].id)
-            .map(|(_, _, a, t0)| {
-                let (point, points) = (a.point.load(Ordering::Relaxed), a.points.load(Ordering::Relaxed));
-                let etape = match (point, points) {
-                    (_, 0) => String::new(),
-                    (p, n) if p > n => "Compte rendu — assemblage · ".to_string(),
-                    (p, n) => format!("Compte rendu — point {p} sur {n} · "),
-                };
-                (etape, a.jetons.load(Ordering::Relaxed), t0.elapsed().as_secs())
-            });
-        let redaction_prete = self.redaction_prete();
-        let has_agenda = self.meetings[idx].agenda.is_some();
-        egui::Frame::group(ui.style()).show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(if has_agenda { "Compte rendu" } else { "Résumé" }).strong());
-                if let Some((etape, jetons, secs)) = busy {
-                    ui.spinner();
-                    let etat = if jetons == 0 {
-                        format!("{etape}Lecture de la transcription par le modèle local… {}", clock(secs * 1000))
-                    } else {
-                        // ≈ 0,75 mot par jeton en français
-                        format!("{etape}Rédaction : environ {} mots · {}", jetons * 3 / 4, clock(secs * 1000))
-                    };
-                    ui.label(RichText::new(etat).weak());
-                } else if !redaction_prete {
-                    let texte = if self.installation.is_some() {
-                        "Vérification du modèle de rédaction…"
-                    } else {
-                        "Modèle de rédaction introuvable : redémarrez Tour de table pour le réinstaller."
-                    };
-                    ui.label(RichText::new(texte).weak());
-                } else {
-                    let label = match (self.meetings[idx].summary.is_some(), has_agenda) {
-                        (true, _) => "Régénérer",
-                        (false, true) => "Rédiger le compte rendu",
-                        (false, false) => "Rédiger un résumé",
-                    };
-                    let hover = if has_agenda {
-                        "Suit l'ordre du jour, point par point, à partir de la transcription"
-                    } else {
-                        "Ajoutez un ordre du jour pour obtenir un compte rendu point par point"
-                    };
-                    if ui
-                        .add_enabled(!self.nettoyage_en_cours(), egui::Button::new(label).small())
-                        .on_hover_text(format!("{hover}\nModèle local : {}", config::moteur().nom()))
-                        .on_disabled_hover_text("Attendez la fin du nettoyage de la transcription")
-                        .clicked()
-                    {
-                        action = Some("summary");
-                    }
-                    if self.meetings[idx].summary.is_some()
-                        && ui.small_button("Visualiser").on_hover_text("Ouvre le compte rendu dans Word (compte-rendu.docx)").clicked()
-                    {
-                        action = Some("visualiser");
-                    }
-                    if let Some(sum) = &self.meetings[idx].summary
-                        && ui.small_button("Copier").clicked()
-                    {
-                        ui.ctx().copy_text(sum.clone());
-                    }
-                }
-            });
-            if let Some(s) = &self.meetings[idx].summary {
-                egui::ScrollArea::vertical().id_salt("cr").max_height(360.0).show(ui, |ui| markdown(ui, s));
-            }
+            RichText::new(details).small().weak()
+        };
+        ui.horizontal(|ui| {
+            ui.label(details);
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| self.bascule_cote_a_cote(ui));
         });
-        ui.add_space(8.0);
-        self.barre_nettoyage(ui, idx);
-        let m = &self.meetings[idx];
-        match m.nettoyage.as_ref().filter(|_| !self.vue_brute) {
-            Some(n) => transcript_nettoye(ui, m, n),
-            None => transcript(ui, m, false),
-        }
+        action = self.volets(ui, idx).or(action);
 
         match action {
             Some("delete") => {
