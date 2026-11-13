@@ -35,9 +35,12 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
 * `storage.rs` : une rencontre = un dossier de Musique/Tour de table (nom fixé à la création,
   champ `dossier`) avec `rencontre.json`, sauvegardé après chaque
   segment (écriture atomique `.tmp` + `rename`).
-* `summary.rs` : compte rendu par le programme auxiliaire. Par défaut, chaque point est rédigé avec la
-  transcription complète, après une répartition des sujets ; `TOURDETABLE_DECOUPE` revient à la transcription
-  du point seulement. Le préfixe commun (ordre du jour + transcription) est gardé par le programme auxiliaire.
+* `summary.rs` : compte rendu par le programme auxiliaire. Par défaut, les sujets sont d'abord répartis entre les
+  points avec la transcription complète (`repartition.rs`), puis chaque point est rédigé d'après ses sujets et ses
+  passages de la transcription, `POSTES` points à la fois ; le mot de bienvenue, les adoptions et la fin gardent la
+  transcription complète. `TOURDETABLE_DECOUPE` revient à la transcription du point seulement. Le préfixe commun
+  (ordre du jour + transcription) est gardé par le programme auxiliaire. Banc d'essai : 25/32 contre 24/32 avant
+  les passages (12 novembre 2026), surtout moins de doublons.
 * `nettoyage.rs` : nettoyage de la transcription, par règles seulement (`data/nettoyage.txt`) ;
   une passe par le modèle a été retirée, trop lente sur processeur seul (plus que le temps
   réel avec un 8B). Enchaînement : transcription → nettoyage →
@@ -56,7 +59,9 @@ whisper.cpp et llama.cpp embarquent chacun leur propre copie de **ggml** : réun
 exécutable, leurs symboles entrent en conflit. La rédaction tourne donc dans un exécutable
 séparé, livré à côté de `tourdetable`, qui reçoit une requête JSON par ligne sur stdin et répond
 à chacune par des lignes JSON sur stdout (`{"progres": n}`, puis `{"texte": …}` ou
-`{"erreur": …}`). Le modèle reste chargé entre les requêtes : `summary::Session` garde le
+`{"erreur": …}`). Une requête `invites` (plusieurs suites du même `prefixe`, `simultanees` à la fois) est rédigée
+en un seul passage du modèle par jeton, toutes invites confondues, et répond `{"textes": […]}` ; `{"journal": …}`
+donne les durées de lecture et d'écriture, recopiées dans le journal de l'application. Le modèle reste chargé entre les requêtes : `summary::Session` garde le
 programme ouvert pour toute une série (nettoyage, compte rendu par point).
 
 L'application est livrée sans modèle : `ui/installation.rs` les télécharge sans aucun clic

@@ -138,11 +138,11 @@ saisir à la main.
 * Sans ordre du jour, Tour de table produit un résumé structuré.
 * **Compte rendu par point** : quand la rencontre a un ordre du jour, le modèle lit d'abord toute la
   transcription et range chaque sujet discuté sous un seul point (« 4.1 | sujet »), pour qu'un sujet
-  ne soit pas rédigé deux fois. Chaque point est ensuite rédigé avec toute la transcription sous les
-  yeux et ses sujets (« Compte rendu — point 3 sur 8 ») ; la transcription n'est lue qu'une fois pour
-  toute la série. Un point qui a des sous-points n'est qu'un intertitre ; une adoption ou la fin de
+  ne soit pas rédigé deux fois. Chaque point est ensuite rédigé d'après ses sujets et les seuls
+  passages de la transcription où ils sont discutés, quatre points à la fois (« Compte rendu —
+  point 3 sur 8 » compte les points terminés). Un point qui a des sous-points n'est qu'un intertitre ; une adoption ou la fin de
   la rencontre tient en une ou deux phrases. Un dernier appel ajoute les présences et la levée de la
-  séance. Durée mesurée : de 0,8 à 1,2 fois la durée de la rencontre.
+  séance. Durée mesurée : de 0,7 à 1 fois la durée de la rencontre.
 * **Rencontres sans ordre du jour** : la transcription est rédigée d'un coup, condensée d'abord par
   tranches au-delà d'environ 45 min.
 * Exporté dans `compte-rendu.docx` (Word : Calibri, titres en gras, puces, prêt à relire et à
