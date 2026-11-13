@@ -434,7 +434,8 @@ fn appelle_reponse(p: &[Mot]) -> bool {
     texte.trim_end().ends_with('?') || listes().indices_decision.iter().any(|i| texte.contains(i.as_str()))
 }
 
-/// Remet la ponctuation en ordre après les retraits et met la majuscule initiale.
+/// Remet la ponctuation en ordre après les retraits, récrit les années dites en deux nombres (« en 20-24 ») et met
+/// la majuscule initiale.
 fn finaliser(texte: &str) -> String {
     let mut t = texte.to_string();
     for (a, b) in [(" ,", ","), (",,", ","), (", .", "."), (",.", "."), (", ?", "?"), (",?", "?"), (", !", "!"), (",!", "!"), (" .", "."), ("  ", " ")] {
@@ -442,7 +443,7 @@ fn finaliser(texte: &str) -> String {
             t = t.replace(a, b);
         }
     }
-    let mut t = t.trim_start_matches([',', ';', ' ', '-', '–']).trim_end_matches([',', ' ', ';']).to_string();
+    let mut t = crate::annees::recrire(t.trim_start_matches([',', ';', ' ', '-', '–']).trim_end_matches([',', ' ', ';']));
     majuscule_initiale(&mut t);
     t
 }

@@ -3,6 +3,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod agenda;
+mod annees;
 mod audio;
 mod cli;
 mod config;
