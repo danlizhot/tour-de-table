@@ -74,6 +74,25 @@ fn defaut_temperature() -> f32 {
 
 const LOT: usize = 512;
 
+/// Jetons lus par passage du modèle. Sur la puce graphique, de petits lots : un lot de 512 jetons l'occupe assez
+/// longtemps pour figer par à-coups l'affichage de tout l'ordinateur (puce intégrée, partagée avec l'écran).
+/// `TOURDETABLE_LOT_PUCE` permet d'essayer une autre taille.
+static LOT_DE_LECTURE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(LOT);
+const LOT_SUR_LA_PUCE: usize = 64;
+
+fn regler_lot_de_lecture(gpu: bool) {
+    let lot = if gpu {
+        std::env::var("TOURDETABLE_LOT_PUCE").ok().and_then(|v| v.parse().ok()).unwrap_or(LOT_SUR_LA_PUCE).clamp(8, LOT)
+    } else {
+        LOT
+    };
+    LOT_DE_LECTURE.store(lot, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn lot_de_lecture() -> usize {
+    LOT_DE_LECTURE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 fn emettre(valeur: serde_json::Value) {
     let mut out = std::io::stdout().lock();
     let _ = writeln!(out, "{valeur}");
@@ -128,6 +147,7 @@ fn charger(charge: &mut Option<Charge>, r: &Requete) -> Result<()> {
         *charge = Some(Charge { backend, modele: None, prefixes: Vec::new() });
     }
     let Charge { backend, modele: garde, prefixes: garde_prefixes } = charge.as_mut().expect("initialisé");
+    regler_lot_de_lecture(r.gpu);
     if garde.as_ref().is_none_or(|(chemin, gpu, _)| *chemin != r.modele || *gpu != r.gpu) {
         *garde = None; // libère l'ancien modèle avant de charger le suivant
         garde_prefixes.clear();
@@ -422,10 +442,11 @@ fn rediger_lot(charge: &mut Option<Charge>, r: &Requete) -> Result<Vec<String>> 
             ctx.copy_kv_cache_seq(0, seq, None, None).map_err(|e| anyhow::anyhow!("{e:?}"))?;
             let q = &queues[invite];
             let t = Instant::now();
-            for (m, morceau) in q[..q.len() - 1].chunks(LOT).enumerate() {
+            let taille = lot_de_lecture();
+            for (m, morceau) in q[..q.len() - 1].chunks(taille).enumerate() {
                 lot.clear();
                 for (j, jeton) in morceau.iter().enumerate() {
-                    lot.add(*jeton, (n_prefixe + m * LOT + j) as i32, &[seq], false)?;
+                    lot.add(*jeton, (n_prefixe + m * taille + j) as i32, &[seq], false)?;
                 }
                 ctx.decode(&mut lot).context("Lecture des invites")?;
             }
@@ -490,10 +511,11 @@ fn rediger_lot(charge: &mut Option<Charge>, r: &Requete) -> Result<Vec<String>> 
 /// Lit des jetons à partir de la position `debut` ; `logits` : ceux du dernier, pour la suite.
 fn lire(ctx: &mut LlamaContext, lot: &mut LlamaBatch, jetons: &[LlamaToken], debut: usize, logits: bool) -> Result<()> {
     let dernier = jetons.len() - 1;
-    for (i, morceau) in jetons.chunks(LOT).enumerate() {
+    let taille = lot_de_lecture();
+    for (i, morceau) in jetons.chunks(taille).enumerate() {
         lot.clear();
         for (j, jeton) in morceau.iter().enumerate() {
-            let k = i * LOT + j;
+            let k = i * taille + j;
             lot.add(*jeton, (debut + k) as i32, &[0], logits && k == dernier)?;
         }
         ctx.decode(lot).context("Lecture de l'invite")?;
