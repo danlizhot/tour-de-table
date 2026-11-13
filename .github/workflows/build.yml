@@ -1,6 +1,7 @@
 name: Compilation
 
-# Une PR compile Windows seulement (le zip à essayer au travail). Les trois systèmes ne sont
+# Une PR compile Windows seulement (zip à essayer au travail, uniquement pour une PR d'une branche
+# du dépôt : aucun artéfact n'est publié pour une PR d'un fork). Les trois systèmes ne sont
 # compilés que pour une version (tag `v*`) ou à la demande (« Run workflow » dans Actions) : sur
 # un dépôt privé, Windows compte 2× et macOS 10× dans le quota de minutes.
 on:
@@ -208,7 +209,13 @@ jobs:
           cp target/release/tourdetable target/release/tourdetable-redaction packaging/linux/tourdetable.desktop assets/icon-256.png README.md dist/
           tar -czf ${{ matrix.artifact }}.tar.gz -C dist .
 
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      # Les exécutables d'une PR provenant d'un fork (code d'un tiers non examiné) ne sont jamais
+      # publiés : la PR est compilée et testée, mais aucun zip n'est offert au téléchargement.
+      # Le zip à essayer au travail n'est produit que pour les PR d'une branche du dépôt même
+      # (auteurs ayant un accès en écriture), les poussées d'étiquette et les lancements manuels.
+      - name: Publication de l'artéfact
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}.*
