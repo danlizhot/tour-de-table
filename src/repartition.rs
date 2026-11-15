@@ -84,6 +84,69 @@ pub fn heure(texte: &str) -> Option<(u64, &str)> {
     Some((s * 1000, t[fin..].trim_start_matches(']')))
 }
 
+/// Durée visée d'une tranche de la liste des sujets, en minutes.
+const MINUTES_TRANCHE: u64 = 40;
+
+/// Tranche d'une longue rencontre pour la liste des sujets : heures du premier et du dernier paragraphe (ms) et
+/// consigne ajoutée à [`LISTE_SUJETS`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct Tranche {
+    pub debut_ms: u64,
+    pub fin_ms: u64,
+    pub consigne: String,
+}
+
+/// Rencontre d'une heure ou plus : la liste des sujets est demandée par tranches d'au plus [`MINUTES_TRANCHE`] minutes,
+/// chacune avec sa limite de jetons. D'un seul coup, le modèle écrit une ligne par paragraphe (98 sujets pour deux
+/// heures) et la liste peut être coupée à [`JETONS_LISTE`] : la fin de la rencontre reste alors sans sujet (essai du
+/// 15 novembre 2026 ; lui demander un nombre de sujets a empiré la liste). Vide pour une rencontre de moins d'une heure.
+pub fn tranches(transcription: &[String]) -> Vec<Tranche> {
+    // Paragraphes datés : heure et texte entre crochets, tel qu'écrit dans la transcription.
+    let dates: Vec<(u64, &str)> = transcription
+        .iter()
+        .filter_map(|l| {
+            let l = l.trim_start();
+            let dans = l.strip_prefix('[')?.split_once(']')?.0;
+            heure(l).map(|(ms, _)| (ms, dans))
+        })
+        .collect();
+    let fin = dates.iter().map(|d| d.0).max().unwrap_or(0);
+    let minutes = fin / 60_000;
+    if minutes < 60 {
+        return Vec::new();
+    }
+    let k = minutes.div_ceil(MINUTES_TRANCHE);
+    (0..k)
+        .filter_map(|j| {
+            let (a, b) = (fin * j / k, fin * (j + 1) / k);
+            let dedans: Vec<&(u64, &str)> = dates.iter().filter(|d| d.0 >= a && (d.0 < b || (j + 1 == k && d.0 <= b))).collect();
+            let (premier, dernier) = (dedans.first()?, dedans.last()?);
+            Some(Tranche {
+                debut_ms: premier.0,
+                fin_ms: dernier.0,
+                consigne: format!(
+                    "Cette rencontre est longue : la liste se fait en plusieurs parties. Ne fais ici que la partie qui va du \
+                     paragraphe [{}] au paragraphe [{}] inclus : seulement les sujets discutés dans ces paragraphes, avec leur \
+                     heure. Les sujets d'avant et d'après sont listés à part.\n",
+                    premier.1, dernier.1
+                ),
+            })
+        })
+        .collect()
+}
+
+/// Lignes de `reponse` dont l'heure est dans la tranche ; une ligne sans heure est gardée.
+pub fn lignes_de_la_tranche(reponse: &str, t: &Tranche) -> String {
+    reponse
+        .lines()
+        .filter(|l| {
+            let l = l.trim().trim_start_matches(['-', '*', '•', ' ']);
+            heure(l).is_none_or(|(ms, _)| ms >= t.debut_ms && ms <= t.fin_ms)
+        })
+        .map(|l| format!("{l}\n"))
+        .collect()
+}
+
 /// Sujets d'après la réponse à [`LISTE_SUJETS`] (lignes « 23:10 | sujet »), sans doublon.
 pub fn sujets(reponse: &str) -> Vec<Sujet> {
     let mut v: Vec<Sujet> = Vec::new();
@@ -210,6 +273,18 @@ pub fn sujets_du_point_vide(reponse: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tranches_seulement_apres_une_heure() {
+        let p = |h: &str| format!("[{h}] Texte.");
+        assert!(tranches(&[p("00:00"), p("59:30")]).is_empty());
+        let longue: Vec<String> = ["00:00", "20:00", "39:00", "41:00", "1:10:00", "1:25:00", "2:01:21"].iter().map(|h| p(h)).collect();
+        let t = tranches(&longue);
+        // 121 min : quatre tranches d'environ 30 min ; la troisième (1:00:40 à 1:31:00) commence à 1:10:00.
+        assert_eq!(t.iter().map(|x| (x.debut_ms / 1000, x.fin_ms / 1000)).collect::<Vec<_>>(), vec![(0, 1200), (2340, 2460), (4200, 5100), (7281, 7281)]);
+        assert!(t[2].consigne.contains("du paragraphe [1:10:00] au paragraphe [1:25:00] inclus"), "{}", t[2].consigne);
+        assert_eq!(lignes_de_la_tranche("1:05:00 | avant\n- 1:12:00 | dedans\nsans heure\n1:30:00 | après", &t[2]), "- 1:12:00 | dedans\nsans heure\n");
+    }
 
     #[test]
     fn heures_et_sujets() {

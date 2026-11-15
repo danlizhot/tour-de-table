@@ -39,7 +39,8 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
 * `summary.rs` : compte rendu par le programme auxiliaire. Par défaut, les sujets sont d'abord répartis entre les
   points avec la transcription complète (`repartition.rs`), puis chaque point est rédigé d'après ses sujets et ses
   passages de la transcription, `POSTES` points à la fois ; le mot de bienvenue, les adoptions et la fin gardent la
-  transcription complète. `TOURDETABLE_DECOUPE` revient à la transcription du point seulement. Le préfixe commun
+  transcription complète. Pour une rencontre d'une heure ou plus, la liste des sujets est demandée par tranches
+  d'au plus 40 minutes, plusieurs à la fois (`repartition::tranches`). `TOURDETABLE_DECOUPE` revient à la transcription du point seulement. Le préfixe commun
   (ordre du jour + transcription) est gardé par le programme auxiliaire. Banc d'essai : 25/32 contre 24/32 avant
   les passages (12 novembre 2026), surtout moins de doublons.
 * `nettoyage.rs` : nettoyage de la transcription, par règles seulement (`data/nettoyage.txt`, et `annees.rs` pour
