@@ -694,10 +694,19 @@ fn par_point_complet(r: &Request, rediger: &mut Redacteur) -> Result<String> {
     let libelles: Vec<&str> = libelles.iter().map(String::as_str).collect();
     // Placement des sujets (voir `repartition`) : liste datée, une question par sujet, contrôle de l'ordre.
     let numeros_tous: Vec<&str> = titres.iter().map(|t| numero_du_titre(t).unwrap_or("")).collect();
-    let mut prompt = prefixe.clone();
-    prompt.push_str(repartition::LISTE_SUJETS);
-    prompt.push_str(noms);
-    let reponse = generate(rediger, &prompt, repartition::JETONS_LISTE)?;
+    // Longue rencontre : la liste par tranches de temps, plusieurs à la fois (voir `repartition::tranches`).
+    let tranches = repartition::tranches(&transcription);
+    let reponse = if tranches.is_empty() {
+        let mut prompt = prefixe.clone();
+        prompt.push_str(repartition::LISTE_SUJETS);
+        prompt.push_str(noms);
+        generate(rediger, &prompt, repartition::JETONS_LISTE)?
+    } else {
+        let invites: Vec<(String, usize)> =
+            tranches.iter().map(|t| (format!("{}{}{noms}", repartition::LISTE_SUJETS, t.consigne), repartition::JETONS_LISTE)).collect();
+        let reponses = generer_lot(rediger, &prefixe, &invites, POSTES, &mut |_| {})?;
+        tranches.iter().zip(&reponses).map(|(t, r)| repartition::lignes_de_la_tranche(r, t)).collect()
+    };
     let mut tous = repartition::sujets(&reponse);
     log::info!("Liste des sujets : {}\n{reponse}", tous.len());
     // Un sujet peut aller sous tout point rédigé, sauf la levée de la séance.
