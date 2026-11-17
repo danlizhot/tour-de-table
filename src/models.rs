@@ -1,6 +1,6 @@
 //! Catalogue et téléchargement des modèles : Whisper (format ggml de whisper.cpp) et rédaction
-//! (GGUF, llama.cpp). Le même modèle de rédaction sur tous les postes, sans choix offert à
-//! l'utilisateur. Les deux sont installés automatiquement au premier démarrage
+//! (GGUF, llama.cpp). Le modèle de rédaction dépend de la mémoire vive du poste, sans choix offert
+//! à l'utilisateur. Les deux sont installés automatiquement au premier démarrage
 //! (`ui/installation.rs`) : l'application est distribuée sans aucun modèle.
 
 use std::io::{Read, Write};
@@ -46,6 +46,11 @@ fn memoire_suffisante(octets: u64) -> bool {
     octets >= MEMOIRE_MINIMALE
 }
 
+/// Mémoire vive à partir de laquelle le grand modèle de rédaction est utilisé : les postes de
+/// 24 Go et plus, qui en déclarent un peu moins. Il occupe jusqu'à 14,2 Go pour une rencontre de
+/// deux heures : trop pour un poste de 16 ou de 20 Go.
+const MEMOIRE_GRAND_MODELE: u64 = 22 * GIO;
+
 /// Mémoire vive du poste en Gio si elle est sous le minimum de 16 Go, calculée au lancement.
 pub fn memoire_insuffisante() -> Option<f64> {
     let ram = ram_totale();
@@ -53,20 +58,23 @@ pub fn memoire_insuffisante() -> Option<f64> {
     (!memoire_suffisante(ram)).then_some(ram as f64 / GIO as f64)
 }
 
-/// Modèle de langue du compte rendu (GGUF Q4_K_M, llama.cpp), le même sur tous les postes.
+/// Modèle de langue du compte rendu (GGUF, llama.cpp), choisi selon la mémoire vive du poste.
 /// Licence Apache 2.0 : utilisable sans restriction par un organisme. Qwen3.5 9B (architecture
 /// hybride, attention linéaire « Gated DeltaNet ») lit les longues transcriptions vite pour sa
 /// taille. Qwen3.5 4B, plus rapide (13 min de compte rendu pour une rencontre de 27 min, processeur
 /// seul), inventait trop de sujets : d'où le minimum de 16 Go. Il réfléchit par défaut : le
 /// programme de rédaction le fait répondre directement. Ministral 3 8B était plus lent ; Qwen3
-/// 30B-A3B demandait 18,6 Go.
+/// 30B-A3B demandait 18,6 Go. Sur les postes de 24 Go et plus : Qwen3.6 35B-A3B (mélange d'experts,
+/// 3 milliards de paramètres actifs) en quantification APEX I-Nano. Banc d'essai du 16 novembre
+/// 2026, quatre rencontres : 32/44 en 36 min de moyenne, contre 29,5/44 en 64 min pour le 9B, mais
+/// 12,8 à 14,2 Go de mémoire contre 7,8 à 9,8 Go.
 pub struct LlmInfo {
     pub file: &'static str,
     pub label: &'static str,
     pub url: &'static str,
     pub octets: u64,
     pub sha256: &'static str,
-    /// Mémoire vive pendant la rédaction (contexte de 8 000 jetons compris), estimée.
+    /// Mémoire vive pendant la rédaction, estimée.
     #[allow(dead_code)]
     pub ram_mb: u32,
 }
@@ -79,6 +87,14 @@ pub const LLM_CATALOG: &[LlmInfo] = &[
         octets: 5_680_522_464,
         sha256: "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
         ram_mb: 6600,
+    },
+    LlmInfo {
+        file: "Qwen3.6-35B-A3B-APEX-MTP-I-Nano.gguf",
+        label: "Qwen3.6 35B-A3B",
+        url: "https://huggingface.co/mudler/Qwen3.6-35B-A3B-APEX-MTP-GGUF/resolve/main/Qwen3.6-35B-A3B-APEX-MTP-I-Nano.gguf",
+        octets: 11_686_645_344,
+        sha256: "c41cdce38c767a13eccc65a676d28a5506ef285c31614d1e7d822979b9b3559e",
+        ram_mb: 14_200,
     },
 ];
 
@@ -95,9 +111,15 @@ pub fn llm_info(file: &str) -> Option<&'static LlmInfo> {
     LLM_CATALOG.iter().find(|m| m.file == file)
 }
 
-/// Modèle de rédaction.
+/// Modèle de rédaction de ce poste : la mémoire vive est lue une seule fois.
 pub fn modele_redaction() -> &'static LlmInfo {
-    &LLM_CATALOG[0]
+    static MODELE: OnceLock<&'static LlmInfo> = OnceLock::new();
+    MODELE.get_or_init(|| modele_pour(ram_totale()))
+}
+
+/// Qwen3.5 9B jusqu'à 20 Go de mémoire vive, Qwen3.6 35B-A3B à partir de 24 Go.
+fn modele_pour(ram: u64) -> &'static LlmInfo {
+    &LLM_CATALOG[usize::from(ram >= MEMOIRE_GRAND_MODELE)]
 }
 
 fn ram_totale() -> u64 {
@@ -393,8 +415,24 @@ mod tests {
         assert!(memoire_suffisante(14 * GIO));
         assert!(memoire_suffisante(15 * GIO + GIO / 3));
         assert!(memoire_suffisante(128 * GIO));
-        assert_eq!(modele_redaction().file, "Qwen3.5-9B-Q4_K_M.gguf");
-        assert!(!ANCIENS_MODELES_REDACTION.contains(&modele_redaction().file));
+    }
+
+    #[test]
+    fn modele_selon_la_memoire() {
+        let petit = "Qwen3.5-9B-Q4_K_M.gguf";
+        let grand = "Qwen3.6-35B-A3B-APEX-MTP-I-Nano.gguf";
+        // Postes de 16 et de 20 Go : le 9B, même sous le minimum.
+        assert_eq!(modele_pour(7 * GIO + GIO / 2).file, petit);
+        assert_eq!(modele_pour(15 * GIO + GIO / 3).file, petit);
+        assert_eq!(modele_pour(19 * GIO + GIO / 2).file, petit);
+        assert_eq!(modele_pour(22 * GIO - 1).file, petit);
+        // Poste de 24 Go : ~22,9 Gio, parfois moins avec une carte graphique intégrée.
+        assert_eq!(modele_pour(22 * GIO).file, grand);
+        assert_eq!(modele_pour(31 * GIO).file, grand);
+        assert!(LLM_CATALOG.iter().any(|m| m.file == modele_redaction().file));
+        for m in LLM_CATALOG {
+            assert!(!ANCIENS_MODELES_REDACTION.contains(&m.file));
+        }
     }
 
     #[test]

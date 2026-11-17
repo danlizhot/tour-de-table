@@ -28,7 +28,7 @@ Inspiré de [Meetily](https://github.com/Zackriya-Solutions/meetily), réécrit 
 | Interface | WebView (navigateur embarqué) | egui natif (rendu GPU) |
 | Taille | Plusieurs centaines de Mo | **42 Mo** à télécharger sous Windows, 11 Mo sous macOS et Linux (whisper.cpp et llama.cpp inclus) |
 | RAM au repos | WebView + Python | **~0,7 Go**, modèle Whisper déjà chargé (démarrage instantané) |
-| Compte rendu | Ollama ou service infonuagique à configurer | **Qwen3.5 9B intégré**, rédigé point par point selon l'ordre du jour |
+| Compte rendu | Ollama ou service infonuagique à configurer | **Qwen3.5 9B ou Qwen3.6 35B intégré**, rédigé point par point selon l'ordre du jour |
 | Langue | Générique | **Français québécois** (invite, typographie OQLF, lexique) |
 
 ## Pourquoi Rust?
@@ -154,11 +154,19 @@ saisir à la main.
 
 **Modèle de langue intégré : rien à installer.** Le programme auxiliaire `tourdetable-redaction`,
 livré avec l'application, fait tourner llama.cpp sur l'ordinateur, avec un seul chargement du
-modèle pour tout le compte rendu. Le modèle, le même sur tous les postes, est **Qwen3.5 9B**
-(licence Apache 2.0, 5,7 Go à télécharger, ~6,6 Go de mémoire pendant la rédaction). Qwen3.5 4B,
-deux fois plus rapide, inventait trop de sujets dans les comptes rendus. Il réfléchit
-par défaut avant de répondre : Tour de table désactive cette réflexion, trop lente sur un
-ordinateur sans carte graphique.
+modèle pour tout le compte rendu. Le modèle est choisi par l'application selon la mémoire vive
+du poste, jamais par l'utilisateur :
+
+* **Jusqu'à 20 Go : Qwen3.5 9B** (licence Apache 2.0, 5,7 Go à télécharger, 8 à 10 Go de mémoire
+  pendant la rédaction).
+* **24 Go et plus : Qwen3.6 35B-A3B**, en quantification APEX I-Nano (licence Apache 2.0, 11,7 Go
+  à télécharger, 13 à 14 Go de mémoire pendant la rédaction). Sur le banc d'essai du 16 novembre
+  2026 (quatre rencontres), il rédige presque deux fois plus vite pour une note équivalente
+  (32/44 en 36 min de moyenne, contre 29,5/44 en 64 min), mais il rend moins bien les décisions.
+
+Qwen3.5 4B, deux fois plus rapide que le 9B, inventait trop de sujets dans les comptes rendus. Ces
+modèles réfléchissent par défaut avant de répondre : Tour de table désactive cette réflexion, trop
+lente sur un ordinateur sans carte graphique.
 
 Chaque téléchargement reprend là où il s'était arrêté, et sa taille et son SHA-256 sont vérifiés ;
 un fichier endommagé est supprimé et téléchargé une seconde fois. À chaque démarrage, la taille
@@ -273,7 +281,8 @@ les variables d'environnement `HTTPS_PROXY`, `HTTP_PROXY` ou `ALL_PROXY` (except
 certificats sont vérifiés par le magasin du système : un proxy qui inspecte le trafic chiffré
 fonctionne si son autorité de certification est installée sur le poste.
 
-**Postes sans accès Internet.** Copiez d'avance les deux fichiers ci-dessous dans le dossier des
+**Postes sans accès Internet.** Copiez d'avance les deux fichiers du poste (la reconnaissance
+vocale, et le modèle de rédaction qui correspond à sa mémoire vive) dans le dossier des
 modèles. Au démarrage, Tour de table calcule leur empreinte (quelques secondes, sans écran
 d'installation) et les utilise directement ; un fichier dont l'empreinte ne correspond pas est
 supprimé, et l'écran d'installation tente de le télécharger.
@@ -282,6 +291,7 @@ supprimé, et l'écran d'installation tente de le télécharger.
 |---|---|---|---|
 | `ggml-large-v3-turbo-q5_0.bin` | 574 041 195 | `394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2` | https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin |
 | `Qwen3.5-9B-Q4_K_M.gguf` | 5 680 522 464 | `03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8` | https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf |
+| `Qwen3.6-35B-A3B-APEX-MTP-I-Nano.gguf` (postes de 24 Go et plus, à la place du précédent) | 11 686 645 344 | `c41cdce38c767a13eccc65a676d28a5506ef285c31614d1e7d822979b9b3559e` | https://huggingface.co/mudler/Qwen3.6-35B-A3B-APEX-MTP-GGUF/resolve/main/Qwen3.6-35B-A3B-APEX-MTP-I-Nano.gguf |
 
 | Système | Dossier des modèles (pour chaque utilisateur) |
 |---|---|
