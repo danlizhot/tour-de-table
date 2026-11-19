@@ -12,7 +12,7 @@ use crate::stt::Request;
 const DELAI: Duration = Duration::from_secs(60);
 
 impl TourDeTableApp {
-    fn occupe(&self) -> bool {
+    pub(super) fn occupe(&self) -> bool {
         self.recorder.is_some()
             || self.finishing
             || self.import_job.is_some()
@@ -25,7 +25,7 @@ impl TourDeTableApp {
 
     /// Appelé à chaque image depuis `pump`.
     pub(super) fn surveiller_puce(&mut self) {
-        if self.occupe() {
+        if self.occupe() || self.voix_job.is_some() {
             if let Some(mut e) = self.etalonnage.take() {
                 log::info!("Étalonnage de la puce graphique interrompu : il sera repris plus tard");
                 e.interrompre();

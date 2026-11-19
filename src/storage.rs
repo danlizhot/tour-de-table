@@ -49,6 +49,9 @@ pub struct Meeting {
     /// Arrêtée par une panne (plantage, coupure de courant) : la fiche offre « Poursuivre la rencontre ».
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub interrompue: bool,
+    /// Voix reconnues après la transcription (voir `voix`) : absentes des rencontres d'avant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voix: Option<crate::voix::Voix>,
 }
 
 /// Ordre du jour déposé avant ou après la rencontre.
@@ -102,8 +105,16 @@ pub struct Pause {
     pub fin_ms: Option<u64>,
 }
 
-/// Paragraphe d'export : début, source et texte.
-type Paragraphe = (u64, crate::audio::Source, String);
+/// Paragraphe d'export : début, source, voix (si les voix sont reconnues) et texte.
+type Paragraphe = (u64, crate::audio::Source, Option<u16>, String);
+
+/// Paragraphes coupés à chaque changement de voix (affichage, exports) ou seulement de source
+/// (texte lu par le compte rendu, inchangé tant que les voix n'y ont pas été mesurées).
+#[derive(Clone, Copy, PartialEq)]
+pub enum Decoupe {
+    ParVoix,
+    ParSource,
+}
 
 /// Durée maximale d'un paragraphe de transcription : une seule voix (« Réunion ») donnerait sinon
 /// un seul paragraphe, avec une seule heure, et le compte rendu n'aurait aucun repère de temps.
@@ -139,6 +150,7 @@ impl Meeting {
             nettoyage: None,
             pauses: Vec::new(),
             interrompue: false,
+            voix: None,
         }
     }
 
@@ -302,17 +314,31 @@ impl Meeting {
         self.segments_par_point().into_iter().map(|(p, v)| (Some(self.intertitre(p)), v)).collect()
     }
 
-    /// Regroupe les segments consécutifs d'une même source en paragraphes d'au plus
-    /// [`PARAGRAPHE_MAX_MS`].
-    fn paragraphs(segments: &[&Segment]) -> Vec<(u64, crate::audio::Source, String)> {
-        let mut out: Vec<(u64, crate::audio::Source, String)> = Vec::new();
+    /// Voix qui parle le plus entre `debut_ms` et `fin_ms`, si les voix sont reconnues.
+    pub fn voix_entre(&self, debut_ms: u64, fin_ms: u64) -> Option<u16> {
+        self.voix.as_ref().and_then(|v| v.voix_entre(debut_ms, fin_ms))
+    }
+
+    /// Nom affiché d'un paragraphe : la voix si elle est connue, sinon la source.
+    pub fn locuteur(&self, source: crate::audio::Source, voix: Option<u16>) -> String {
+        match (voix, &self.voix) {
+            (Some(n), Some(v)) => v.nom(n),
+            _ => source.label().to_string(),
+        }
+    }
+
+    /// Regroupe les segments consécutifs d'une même source (et d'une même voix, selon
+    /// `decoupe`) en paragraphes d'au plus [`PARAGRAPHE_MAX_MS`].
+    fn paragraphs(&self, segments: &[&Segment], decoupe: Decoupe) -> Vec<Paragraphe> {
+        let mut out: Vec<Paragraphe> = Vec::new();
         for s in segments {
+            let voix = if decoupe == Decoupe::ParVoix { self.voix_entre(s.start_ms, s.end_ms) } else { None };
             match out.last_mut() {
-                Some((debut, src, text)) if *src == s.source && s.start_ms < *debut + PARAGRAPHE_MAX_MS => {
+                Some((debut, src, v, text)) if *src == s.source && *v == voix && s.start_ms < *debut + PARAGRAPHE_MAX_MS => {
                     text.push(' ');
                     text.push_str(&s.text);
                 }
-                _ => out.push((s.start_ms, s.source, s.text.clone())),
+                _ => out.push((s.start_ms, s.source, voix, s.text.clone())),
             }
         }
         out
@@ -320,19 +346,20 @@ impl Meeting {
 
     /// Paragraphes de la transcription nettoyée, par suites consécutives d'un même point : les
     /// phrases consécutives d'une même source sont réunies, en paragraphes d'au plus [`PARAGRAPHE_MAX_MS`].
-    fn groupes_nettoyes(&self) -> Vec<(Option<usize>, Vec<Paragraphe>)> {
+    fn groupes_nettoyes(&self, decoupe: Decoupe) -> Vec<(Option<usize>, Vec<Paragraphe>)> {
         let mut out: Vec<(Option<usize>, Vec<Paragraphe>)> = Vec::new();
         for p in self.nettoyage.iter().flat_map(|n| &n.phrases) {
             if out.last().is_none_or(|(point, _)| *point != p.point) {
                 out.push((p.point, Vec::new()));
             }
+            let voix = if decoupe == Decoupe::ParVoix { self.voix_entre(p.debut_ms, p.fin_ms) } else { None };
             let paragraphes = &mut out.last_mut().expect("groupe ajouté").1;
             match paragraphes.last_mut() {
-                Some((debut, src, text)) if *src == p.source && p.debut_ms < *debut + PARAGRAPHE_MAX_MS => {
+                Some((debut, src, v, text)) if *src == p.source && *v == voix && p.debut_ms < *debut + PARAGRAPHE_MAX_MS => {
                     text.push(' ');
                     text.push_str(&p.texte);
                 }
-                _ => paragraphes.push((p.debut_ms, p.source, p.texte.clone())),
+                _ => paragraphes.push((p.debut_ms, p.source, voix, p.texte.clone())),
             }
         }
         out
@@ -346,14 +373,14 @@ impl Meeting {
     /// Texte donné au compte rendu : la version nettoyée quand elle existe, sinon la brute.
     pub fn texte_compte_rendu(&self) -> String {
         if self.nettoyage_termine().is_none() {
-            return self.plain_text();
+            return self.texte_brut(Decoupe::ParSource);
         }
         let mut blocs = Vec::new();
-        for (point, paragraphes) in self.groupes_nettoyes() {
+        for (point, paragraphes) in self.groupes_nettoyes(Decoupe::ParSource) {
             if !self.periodes.is_empty() {
                 blocs.push(format!("— {} —", self.intertitre(point)));
             }
-            blocs.extend(paragraphes.iter().map(|(t, src, text)| format!("[{}] {} : {text}", clock(*t), src.label())));
+            blocs.extend(paragraphes.iter().map(|(t, src, _, text)| format!("[{}] {} : {text}", clock(*t), src.label())));
         }
         blocs.join("\n\n")
     }
@@ -364,22 +391,24 @@ impl Meeting {
         if self.nettoyage.as_ref().is_some_and(|n| !n.termine()) {
             md.push_str("> Nettoyage partiel : la fin de la rencontre n'est pas encore nettoyée.\n\n");
         }
-        for (point, paragraphes) in self.groupes_nettoyes() {
+        for (point, paragraphes) in self.groupes_nettoyes(Decoupe::ParVoix) {
             if !self.periodes.is_empty() {
                 let _ = write!(md, "## {}\n\n", self.intertitre(point));
             }
-            for (t, src, text) in paragraphes {
-                let _ = write!(md, "[{}] **{}** : {text}\n\n", clock(t), src.label());
+            for (t, src, voix, text) in paragraphes {
+                let _ = write!(md, "[{}] **{}** : {text}\n\n", clock(t), self.locuteur(src, voix));
             }
         }
         md
     }
 
     /// transcription.md d'un point (toutes ses périodes) : nettoyée si le nettoyage est terminé.
-    fn paragraphes_du_point(&self, point: Option<usize>) -> Vec<Paragraphe> {
+    fn paragraphes_du_point(&self, point: Option<usize>, decoupe: Decoupe) -> Vec<Paragraphe> {
         match self.nettoyage_termine() {
-            Some(_) => self.groupes_nettoyes().into_iter().filter(|(p, _)| *p == point).flat_map(|(_, v)| v).collect(),
-            None => self.segments_par_point().into_iter().filter(|(p, _)| *p == point).flat_map(|(_, v)| Self::paragraphs(&v)).collect(),
+            Some(_) => self.groupes_nettoyes(decoupe).into_iter().filter(|(p, _)| *p == point).flat_map(|(_, v)| v).collect(),
+            None => {
+                self.segments_par_point().into_iter().filter(|(p, _)| *p == point).flat_map(|(_, v)| self.paragraphs(&v, decoupe)).collect()
+            }
         }
     }
 
@@ -387,9 +416,9 @@ impl Meeting {
     /// nettoyage est terminé, en paragraphes sans horodatages (des jetons de plus à lire,
     /// inutiles au résumé) ; `None` s'il n'a pas été abordé.
     pub fn texte_du_point(&self, point: Option<usize>) -> Option<String> {
-        let paragraphes = self.paragraphes_du_point(point);
+        let paragraphes = self.paragraphes_du_point(point, Decoupe::ParSource);
         // Ni horodatages ni sources : « Salle » finirait en responsable d'un suivi.
-        let lignes: Vec<String> = paragraphes.into_iter().map(|(_, _, text)| text).collect();
+        let lignes: Vec<String> = paragraphes.into_iter().map(|(_, _, _, text)| text).collect();
         (!lignes.is_empty()).then(|| lignes.join("\n\n"))
     }
 
@@ -400,7 +429,7 @@ impl Meeting {
         let debut = points.clone().map(|p| p.debut_ms).min()?;
         let fin = points.map(|p| p.fin_ms.unwrap_or(u64::MAX)).max()?;
         let lignes: Vec<String> =
-            self.paragraphes_du_point(None).into_iter().filter(|(t, _, _)| (debut..fin).contains(t)).map(|(_, _, text)| text).collect();
+            self.paragraphes_du_point(None, Decoupe::ParSource).into_iter().filter(|(t, ..)| (debut..fin).contains(t)).map(|(.., text)| text).collect();
         (!lignes.is_empty()).then(|| lignes.join("\n\n"))
     }
 
@@ -411,24 +440,29 @@ impl Meeting {
     }
 
     fn markdown_du_point(&self, point: Option<usize>) -> Option<String> {
-        let paragraphes = self.paragraphes_du_point(point);
+        let paragraphes = self.paragraphes_du_point(point, Decoupe::ParVoix);
         if paragraphes.is_empty() {
             return None;
         }
         let mut md = format!("# {}\n\n{}\n\n", self.intertitre(point), self.title);
-        for (t, src, text) in paragraphes {
-            let _ = write!(md, "[{}] **{}** : {text}\n\n", clock(t), src.label());
+        for (t, src, voix, text) in paragraphes {
+            let _ = write!(md, "[{}] **{}** : {text}\n\n", clock(t), self.locuteur(src, voix));
         }
         Some(md)
     }
 
+    /// Transcription brute en texte, avec les voix quand elles sont reconnues.
     pub fn plain_text(&self) -> String {
+        self.texte_brut(Decoupe::ParVoix)
+    }
+
+    fn texte_brut(&self, decoupe: Decoupe) -> String {
         let mut blocs = Vec::new();
         for (titre, segs) in self.groupes() {
             if let Some(t) = titre {
                 blocs.push(format!("— {t} —"));
             }
-            blocs.extend(Self::paragraphs(&segs).iter().map(|(t, src, text)| format!("[{}] {} : {text}", clock(*t), src.label())));
+            blocs.extend(self.paragraphs(&segs, decoupe).iter().map(|(t, src, voix, text)| format!("[{}] {} : {text}", clock(*t), self.locuteur(*src, *voix))));
         }
         blocs.join("\n\n")
     }
@@ -457,8 +491,8 @@ impl Meeting {
             if let Some(t) = titre {
                 let _ = write!(md, "### {t}\n\n");
             }
-            for (t, src, text) in Self::paragraphs(&segs) {
-                let _ = write!(md, "[{}] **{}** : {text}\n\n", clock(t), src.label());
+            for (t, src, voix, text) in self.paragraphs(&segs, Decoupe::ParVoix) {
+                let _ = write!(md, "[{}] **{}** : {text}\n\n", clock(t), self.locuteur(src, voix));
             }
         }
         md
@@ -477,7 +511,7 @@ impl Meeting {
                     "{i}\n{} --> {}\n{tete}{} : {}\n\n",
                     srt_time(s.start_ms),
                     srt_time(s.end_ms.max(s.start_ms + 500)),
-                    s.source.label(),
+                    self.locuteur(s.source, self.voix_entre(s.start_ms, s.end_ms)),
                     s.text
                 );
             }
@@ -777,6 +811,32 @@ mod tests {
             m.insert(seg(t, Source::Salle, texte));
         }
         assert_eq!(m.plain_text(), "[00:00] Salle : Bonjour. On commence.\n\n[01:05] Salle : Point 7.");
+    }
+
+    /// Voix reconnues : un paragraphe par voix dans les exports, mais le texte du compte rendu ne change pas.
+    #[test]
+    fn paragraphes_par_voix() {
+        use crate::voix::{Tour, Voix};
+        let mut m = Meeting::new("test.bin");
+        for (t, texte) in [(0, "Bonjour."), (1000, "On commence."), (3000, "J'ai une question."), (5000, "Vas-y.")] {
+            m.insert(seg(t, Source::Mixte, texte));
+        }
+        let avant = m.texte_compte_rendu();
+        m.voix = Some(Voix {
+            tours: vec![
+                Tour { debut_ms: 0, fin_ms: 2500, voix: 0 },
+                Tour { debut_ms: 2800, fin_ms: 4200, voix: 1 },
+                Tour { debut_ms: 4800, fin_ms: 6000, voix: 0 },
+            ],
+            noms: vec!["Présidente".into()],
+        });
+        assert_eq!(
+            m.plain_text(),
+            "[00:00] Présidente : Bonjour. On commence.\n\n[00:03] Voix 2 : J'ai une question.\n\n[00:05] Présidente : Vas-y."
+        );
+        assert!(m.to_srt().contains("00:00:03,000 --> 00:00:04,000\nVoix 2 : J'ai une question."));
+        assert_eq!(m.texte_compte_rendu(), avant);
+        assert_eq!(avant, "[00:00] Réunion : Bonjour. On commence. J'ai une question. Vas-y.");
     }
 
     #[test]

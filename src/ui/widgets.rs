@@ -22,12 +22,31 @@ fn source_color(s: Source) -> Color32 {
     }
 }
 
+/// Couleur d'une voix reconnue (tons moyens, lisibles en thème clair comme sombre), sinon de la source.
+pub(super) fn couleur_locuteur(source: Source, voix: Option<u16>) -> Color32 {
+    const VOIX: [Color32; 8] = [
+        Color32::from_rgb(0x25, 0x63, 0xEB),
+        Color32::from_rgb(0xD9, 0x77, 0x06),
+        Color32::from_rgb(0x05, 0x96, 0x69),
+        Color32::from_rgb(0xC0, 0x26, 0xD3),
+        Color32::from_rgb(0xDC, 0x26, 0x26),
+        Color32::from_rgb(0x08, 0x91, 0xB2),
+        Color32::from_rgb(0x65, 0xA3, 0x0D),
+        Color32::from_rgb(0x9D, 0x6B, 0x53),
+    ];
+    match voix {
+        Some(v) => VOIX[v as usize % VOIX.len()],
+        None => source_color(source),
+    }
+}
+
 pub(super) fn transcript(ui: &mut Ui, m: &Meeting, follow: bool) {
     egui::ScrollArea::vertical().auto_shrink(false).stick_to_bottom(follow).show(ui, |ui| {
-        let mut last: Option<Source> = None;
+        let mut last: Option<(Source, Option<u16>)> = None;
         // Intertitre à chaque changement de point, une fois la rencontre découpée.
         let mut point = None;
         for (i, s) in m.segments.iter().enumerate() {
+            let cle = (s.source, m.voix_entre(s.start_ms, s.end_ms));
             if !m.periodes.is_empty() {
                 let p = m.point_de(s.start_ms);
                 if i == 0 || p != point {
@@ -38,13 +57,13 @@ pub(super) fn transcript(ui: &mut Ui, m: &Meeting, follow: bool) {
                     ui.separator();
                 }
             }
-            if last != Some(s.source) {
+            if last != Some(cle) {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(clock(s.start_ms)).monospace().small().weak());
-                    ui.label(RichText::new(s.source.label()).strong().color(source_color(s.source)));
+                    ui.label(RichText::new(m.locuteur(cle.0, cle.1)).strong().color(couleur_locuteur(cle.0, cle.1)));
                 });
-                last = Some(s.source);
+                last = Some(cle);
             }
             ui.add(egui::Label::new(RichText::new(&s.text).size(15.0)).selectable(true).wrap());
         }
@@ -55,9 +74,10 @@ pub(super) fn transcript(ui: &mut Ui, m: &Meeting, follow: bool) {
 /// Transcription nettoyée, même présentation que `transcript`.
 pub(super) fn transcript_nettoye(ui: &mut Ui, m: &Meeting, n: &crate::nettoyage::Nettoyage) {
     egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-        let mut last: Option<Source> = None;
+        let mut last: Option<(Source, Option<u16>)> = None;
         let mut point = None;
         for (i, p) in n.phrases.iter().enumerate() {
+            let cle = (p.source, m.voix_entre(p.debut_ms, p.fin_ms));
             if !m.periodes.is_empty() && (i == 0 || p.point != point) {
                 point = p.point;
                 last = None;
@@ -65,13 +85,13 @@ pub(super) fn transcript_nettoye(ui: &mut Ui, m: &Meeting, n: &crate::nettoyage:
                 ui.label(RichText::new(m.intertitre(p.point)).strong().size(16.5).color(if p.point.is_some() { BLEU_CLAIR } else { Color32::GRAY }));
                 ui.separator();
             }
-            if last != Some(p.source) {
+            if last != Some(cle) {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(clock(p.debut_ms)).monospace().small().weak());
-                    ui.label(RichText::new(p.source.label()).strong().color(source_color(p.source)));
+                    ui.label(RichText::new(m.locuteur(cle.0, cle.1)).strong().color(couleur_locuteur(cle.0, cle.1)));
                 });
-                last = Some(p.source);
+                last = Some(cle);
             }
             ui.add(egui::Label::new(RichText::new(&p.texte).size(15.0)).selectable(true).wrap());
         }

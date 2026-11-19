@@ -302,6 +302,7 @@ impl TourDeTableApp {
             }
             Onglet::Transcription => {
                 self.barre_nettoyage(ui, idx);
+                self.barre_voix(ui, idx);
                 let m = &self.meetings[idx];
                 match m.nettoyage.as_ref().filter(|_| !self.vue_brute) {
                     Some(n) => transcript_nettoye(ui, m, n),

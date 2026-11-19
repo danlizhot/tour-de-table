@@ -29,11 +29,28 @@ struct Empreinte {
     sha256: &'static str,
 }
 
-const EMPREINTES: &[Empreinte] = &[Empreinte {
-    file: RECOMMENDED,
-    octets: 574_041_195,
-    sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
-}];
+const EMPREINTES: &[Empreinte] = &[
+    Empreinte { file: RECOMMENDED, octets: 574_041_195, sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2" },
+    Empreinte {
+        file: crate::voix::SEGMENTATION,
+        octets: 5_992_913,
+        sha256: "220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079",
+    },
+    Empreinte {
+        file: crate::voix::EMPREINTE,
+        octets: 39_593_762,
+        sha256: "f1ee61be04000b50392a63442e5dd9feaea7e81dddd494d3647cf1c3d88a1498",
+    },
+];
+
+/// Adresse des modèles de reconnaissance des voix, renommés à l'installation (« model.onnx » ne dit rien).
+const ADRESSES_VOIX: &[(&str, &str)] = &[
+    (crate::voix::SEGMENTATION, "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.onnx"),
+    (
+        crate::voix::EMPREINTE,
+        "https://huggingface.co/csukuangfj/speaker-embedding-models/resolve/main/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
+    ),
+];
 
 const GIO: u64 = 1 << 30;
 
@@ -150,11 +167,13 @@ pub struct Requis {
 }
 
 /// Modèles nécessaires sur ce poste, dans l'ordre d'installation : la reconnaissance vocale
-/// d'abord (l'application est utilisable dès qu'elle est là), puis la rédaction.
-pub fn requis() -> [Requis; 2] {
+/// d'abord (l'application est utilisable dès qu'elle est là), puis les voix, puis la rédaction.
+pub fn requis() -> [Requis; 4] {
     let redaction = modele_redaction();
     [
         Requis { file: RECOMMENDED, libelle: "Reconnaissance de la parole", octets: EMPREINTES[0].octets },
+        Requis { file: EMPREINTES[1].file, libelle: "Reconnaissance des voix (tours de parole)", octets: EMPREINTES[1].octets },
+        Requis { file: EMPREINTES[2].file, libelle: "Reconnaissance des voix (empreintes)", octets: EMPREINTES[2].octets },
         Requis { file: redaction.file, libelle: "Rédaction des comptes rendus", octets: redaction.octets },
     ]
 }
@@ -288,9 +307,10 @@ fn attendu(file: &str) -> Option<(u64, &'static str)> {
 }
 
 fn url(file: &str) -> String {
-    match llm_info(file) {
-        Some(info) => info.url.to_string(),
-        None => format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{file}"),
+    match (llm_info(file), ADRESSES_VOIX.iter().find(|(f, _)| *f == file)) {
+        (Some(info), _) => info.url.to_string(),
+        (None, Some((_, url))) => url.to_string(),
+        (None, None) => format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{file}"),
     }
 }
 
