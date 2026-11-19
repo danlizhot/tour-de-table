@@ -9,6 +9,7 @@ mod nettoyage;
 mod onglets;
 mod past;
 mod puce;
+mod voix;
 mod settings;
 mod verification;
 mod widgets;
@@ -117,6 +118,11 @@ pub struct TourDeTableApp {
     /// Étalonnage de la puce graphique en cours, et début de la période sans tâche.
     etalonnage: Option<crate::gpu::Etalonnage>,
     inoccupe_depuis: Instant,
+    /// Reconnaissance des voix en cours (processus à part), rencontres en attente, et fiche dont
+    /// les noms des voix sont ouverts.
+    voix_job: Option<crate::voix::Calcul>,
+    voix_en_attente: Vec<String>,
+    noms_des_voix: Option<String>,
     /// Version du Microsoft Store : réponse attendue du Store, puis mise à jour offerte (bannière).
     verification_mise_a_jour: Receiver<bool>,
     mise_a_jour_offerte: bool,
@@ -167,6 +173,9 @@ impl TourDeTableApp {
             onglets_direct: onglets::Onglets::direct(),
             etalonnage: None,
             inoccupe_depuis: Instant::now(),
+            voix_job: None,
+            voix_en_attente: Vec::new(),
+            noms_des_voix: None,
             verification_mise_a_jour: {
                 let ctx = cc.egui_ctx.clone();
                 crate::mise_a_jour::verifier(move || ctx.request_repaint())
@@ -492,6 +501,7 @@ impl TourDeTableApp {
             self.signaler();
         }
         self.pump_nettoyage();
+        self.surveiller_voix();
     }
 
     /// Avancement montré dans l'icône de la barre des tâches : l'import (bloc par bloc), puis le

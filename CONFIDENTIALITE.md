@@ -35,10 +35,11 @@ Aucun service infonuagique de transcription n'est utilisé.
 Tour de table ne se connecte à Internet que pour installer ses modèles et, dans la version du
 Microsoft Store, pour savoir si une mise à jour existe :
 
-* **Téléchargement des modèles** (reconnaissance vocale et rédaction), automatiquement au premier
+* **Téléchargement des modèles** (reconnaissance vocale, reconnaissance des voix et rédaction), automatiquement au premier
    démarrage, puis seulement si un modèle manque (fichier effacé ou endommagé, mémoire vive du
    poste modifiée). Les fichiers proviennent de Hugging Face (`huggingface.co` et ses serveurs de
-   téléchargement en `hf.co`) : dépôt officiel de whisper.cpp et dépôts publics des modèles Qwen.
+   téléchargement en `hf.co`) : dépôt officiel de whisper.cpp, dépôts publics des modèles Qwen et
+   dépôts des modèles de sherpa-onnx (reconnaissance des voix).
    Comme tout site Web, ces serveurs peuvent journaliser votre adresse IP. Aucune de vos données
    n'est transmise. Si les modèles ont été copiés à l'avance par votre service informatique,
    aucune connexion n'a lieu.

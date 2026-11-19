@@ -158,6 +158,7 @@ impl TourDeTableApp {
             self.view = View::Past(0);
             // Transcription → nettoyage → compte rendu (avec un ordre du jour).
             self.demander_nettoyage(&id, avec_agenda, true);
+            self.demander_voix(&id);
         } else if let Some(i) = self.meetings.iter().position(|x| x.id == m.id) {
             self.meetings[i] = m;
             self.view = View::Past(i);

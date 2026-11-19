@@ -49,6 +49,14 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   réel avec un 8B). Enchaînement : transcription → nettoyage →
   compte rendu. `Meeting::segments` (brut) n'est jamais modifié ; résultat dans
   `Meeting::nettoyage`. File d'attente et exclusion avec l'enregistrement dans `ui/nettoyage.rs`.
+* `voix.rs` : reconnaissance des voix (sherpa-onnx, onnxruntime lié statiquement) après la transcription, dans un
+  processus à part (`tourdetable --voix <dossier>`, réponse JSON) qu'on peut tuer : la bibliothèque n'offre ni
+  avancement ni arrêt. sherpa-onnx ne donne que les tours de parole ; les empreintes de morceaux de 4 s sont
+  regroupées par `regroupement.rs` (liaison moyenne, seuil fixe 0,36 : le regroupement de sherpa-onnx basculait
+  pour un arrondi de l'audio). Voix de moins de 30 s écartées ; deux voix de même nom n'en font qu'une. Environ un
+  cinquième de la durée de la rencontre. `Meeting::voix` (tours de parole, noms) ; les paragraphes affichés et
+  exportés sont coupés par voix (`storage::Decoupe::ParVoix`), mais le texte lu par le compte rendu ne change
+  pas (`ParSource`) tant que l'effet des voix sur la rédaction n'est pas mesuré. File d'attente dans `ui/voix.rs`.
 * `quebec.rs` : invite québécoise, typographie OQLF, lexique, filtre d'hallucinations.
 * `gpu.rs` : puce graphique (Vulkan, Windows) choisie par étalonnage (`tourdetable --etalonner`, processus
   à part lancé par `ui/puce.rs` quand l'application est inoccupée) ; sentinelle autour des transcriptions

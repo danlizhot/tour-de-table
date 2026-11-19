@@ -16,11 +16,13 @@ mod models;
 mod nettoyage;
 mod quebec;
 mod recorder;
+mod regroupement;
 mod repartition;
 mod storage;
 mod stt;
 mod summary;
 mod ui;
+mod voix;
 
 use eframe::Renderer;
 
@@ -31,6 +33,15 @@ fn main() {
         // Lancé par l'application elle-même (voir `gpu::Etalonnage`), avant `diagnostic::init` :
         // ni rotation du journal de l'application, ni fenêtre d'erreur si le pilote plante.
         std::process::exit(if gpu::etalonner(&args[2..]).is_ok() { 0 } else { 1 });
+    }
+    if args.get(1).is_some_and(|a| a == "--voix") {
+        // Lancé par l'application (voir `voix::Calcul`) : les voix en JSON sur la sortie standard.
+        let Some(dir) = args.get(2) else { std::process::exit(2) };
+        if let Err(e) = voix::commande(std::path::Path::new(dir)) {
+            eprintln!("Erreur : {e:#}");
+            std::process::exit(1);
+        }
+        return;
     }
     diagnostic::init();
     gpu::init();

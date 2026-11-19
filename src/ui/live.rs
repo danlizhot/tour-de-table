@@ -173,6 +173,7 @@ impl TourDeTableApp {
             self.meetings.insert(0, m);
             self.view = View::Past(0);
             self.demander_nettoyage(&id, with_agenda, true);
+            self.demander_voix(&id);
         }
     }
 

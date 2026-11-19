@@ -104,6 +104,21 @@ reprend ensuite là où il en était (même après une fermeture de l'applicatio
 * Le compte rendu part de la version nettoyée. Exports : `transcription-nettoyee.md`, et un
   `transcription.md` dans le dossier de chaque point.
 
+## Reconnaissance des voix
+
+Après chaque rencontre, quand l'application n'a rien d'autre à faire, Tour de table distingue les
+personnes qui parlent : la transcription et ses exports affichent « Voix 1 », « Voix 2 »… au lieu de
+« Réunion ». Le calcul prend environ un cinquième de la durée de la rencontre, sur le processeur, dans
+un processus à part : un enregistrement ou un import qui démarre l'arrête, et il reprend ensuite.
+Pour une rencontre plus ancienne : bouton « Reconnaître les voix » de l'onglet Transcription.
+
+* « Nommer les voix » donne un nom ou un rôle à chaque voix, avec son temps de parole. Deux voix
+  du même nom n'en font qu'une : une personne parfois coupée en deux voix se répare ainsi.
+* Réglage fixe, sans paramètre : les voix de moins de 30 secondes de parole (rires, deux personnes à
+  la fois) sont écartées. Sur trois rencontres d'essai, on retrouve le nombre de personnes, parfois
+  avec une voix de plus ; un changement de volume ne change presque rien.
+* Le compte rendu ne lit pas encore les voix : leur effet sur la rédaction reste à mesurer.
+
 ## Ordre du jour et compte rendu
 
 Déposez l'ordre du jour **avant** la rencontre (sur l'écran de départ) ou **après** (dans la fiche
@@ -281,15 +296,17 @@ les variables d'environnement `HTTPS_PROXY`, `HTTP_PROXY` ou `ALL_PROXY` (except
 certificats sont vérifiés par le magasin du système : un proxy qui inspecte le trafic chiffré
 fonctionne si son autorité de certification est installée sur le poste.
 
-**Postes sans accès Internet.** Copiez d'avance les deux fichiers du poste (la reconnaissance
-vocale, et le modèle de rédaction qui correspond à sa mémoire vive) dans le dossier des
-modèles. Au démarrage, Tour de table calcule leur empreinte (quelques secondes, sans écran
+**Postes sans accès Internet.** Copiez d'avance les fichiers du poste (la reconnaissance
+vocale, les deux modèles de reconnaissance des voix, et le modèle de rédaction qui correspond à sa
+mémoire vive) dans le dossier des modèles, sous les noms de la première colonne. Au démarrage, Tour de table calcule leur empreinte (quelques secondes, sans écran
 d'installation) et les utilise directement ; un fichier dont l'empreinte ne correspond pas est
 supprimé, et l'écran d'installation tente de le télécharger.
 
 | Fichier | Octets | SHA-256 | Source |
 |---|---|---|---|
 | `ggml-large-v3-turbo-q5_0.bin` | 574 041 195 | `394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2` | https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin |
+| `pyannote-segmentation-3.0.onnx` | 5 992 913 | `220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079` | https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.onnx |
+| `3dspeaker-eres2net-base-16k.onnx` | 39 593 762 | `f1ee61be04000b50392a63442e5dd9feaea7e81dddd494d3647cf1c3d88a1498` | https://huggingface.co/csukuangfj/speaker-embedding-models/resolve/main/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx |
 | `Qwen3.5-9B-Q4_K_M.gguf` | 5 680 522 464 | `03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8` | https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf |
 | `Qwen3.6-35B-A3B-APEX-MTP-I-Nano.gguf` (postes de 24 Go et plus, à la place du précédent) | 11 686 645 344 | `c41cdce38c767a13eccc65a676d28a5506ef285c31614d1e7d822979b9b3559e` | https://huggingface.co/mudler/Qwen3.6-35B-A3B-APEX-MTP-GGUF/resolve/main/Qwen3.6-35B-A3B-APEX-MTP-I-Nano.gguf |
 
@@ -372,6 +389,9 @@ src/
   quebec.rs      invite, typographie, lexique, filtre d'hallucinations
   nettoyage.rs   nettoyage de la transcription, par règles (data/nettoyage.txt)
   storage.rs     rencontres (JSON) et exports MD/TXT/SRT
+  voix.rs        reconnaissance des voix (sherpa-onnx), processus tourdetable --voix
+  regroupement.rs regroupement des empreintes de voix (liaison moyenne, seuil fixe)
+  ui/voix.rs     file de la reconnaissance des voix, « Nommer les voix »
   models.rs      modèles (Whisper, rédaction), téléchargement et vérification
   agenda.rs      lecture de l'ordre du jour (Word, PDF, texte)
   summary.rs     compte rendu par le modèle intégré (découpage des longues rencontres)
