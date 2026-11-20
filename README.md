@@ -61,7 +61,9 @@ Tour de table l'indique au démarrage.
   l'application est inoccupée, un étalonnage d'environ 3 minutes compare la puce graphique au processeur
   sur un extrait synthétique de 20 s, pour la transcription et pour la rédaction, dans un processus à part.
   La puce n'est retenue que si elle fait gagner au moins 15 % du temps et donne le même texte. Une vieille
-  puce (Intel UHD 630) reste écartée : plus lente, texte erroné. Un plantage du pilote en cours d'usage
+  puce (Intel UHD 630) reste écartée : plus lente, texte erroné. La rédaction par Qwen3.6 35B-A3B reste
+  toujours sur le processeur, sans mesure : sur une Intel Iris Xe, la lecture d'une transcription d'une heure
+  n'était pas finie après 82 minutes, contre 24 minutes sur le processeur. Un plantage du pilote en cours d'usage
   ramène le moteur sur le processeur pour de bon (la rédaction reprend aussitôt sur le processeur). Verdict
   dans `puce-graphique.json`, dans le dossier de données ; il est refait à chaque nouvelle version. Sur Mac,
   Metal est toujours utilisé. Sur certaines puces Intel, Whisper tourne parfois en boucle sur un passage
@@ -252,6 +254,12 @@ autre fenêtre. Sous Windows, l'icône montre aussi l'avancement de l'import et 
 comme une barre de progression. Le bouton **Visualiser** de la fiche ouvre le compte rendu dans
 Word (`compte-rendu.docx`).
 
+**Réécouter** : dans l'onglet Transcription, le bouton ▶ d'un paragraphe fait entendre son audio ; dans le compte
+rendu d'une rencontre découpée par points, chaque titre de point a un bouton ▶ (l'audio du point, tous ses
+passages bout à bout) et « Voir dans la transcription ». Une barre au bas du volet donne Pause, Arrêter et
+l'avancement. L'audio est lu par morceaux de 20 s, jamais chargé en entier ; pas d'écoute pendant un
+enregistrement (le son de l'ordinateur serait capté).
+
 **Paramètres** : seulement le micro et la sortie audio, la question sur les haut-parleurs de la
 salle et le lexique. Tout le reste (modèles, performance, détection de voix, conservation de
 l'audio, compte rendu automatique) est décidé par l'application.
@@ -401,7 +409,8 @@ src/
   docx.rs        export du compte rendu en Word
   audio/import.rs  import d'enregistrements (MP4, M4A, MP3, WAV, FLAC, OGG), décodage en flux
   audio/frontieres.rs  rangement par point de l'audio d'un import (ou « Découper par points »)
-  audio/lecture.rs écoute d'un extrait autour d'une frontière
+  audio/lecture.rs écoute par morceaux : frontière, paragraphe, point (pause, avancement)
+  ui/ecoute.rs   écoute dans la fiche : barre de lecture, arrêt au changement de rencontre
   ui/verification.rs  vérification des frontières proposées
 redaction/       programme auxiliaire de rédaction (llama.cpp), séparé à cause de ggml
   cli.rs         commandes --transcrire et --compte-rendu

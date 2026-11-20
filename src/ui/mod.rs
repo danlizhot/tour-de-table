@@ -3,6 +3,7 @@
 mod agenda;
 mod barre_taches;
 mod decoupage;
+mod ecoute;
 mod installation;
 mod live;
 mod nettoyage;
@@ -129,6 +130,12 @@ pub struct TourDeTableApp {
     /// Archivages en cours (compression dans un fil) : la rencontre revient dans l'historique si l'archivage échoue.
     archivage: (Sender<FinArchivage>, Receiver<FinArchivage>),
     archivages_en_cours: usize,
+    /// Écoute d'un passage ou d'un point de la fiche ; transcription à faire défiler jusqu'à une heure (rencontre, ms).
+    ecoute: Option<ecoute::Ecoute>,
+    aller_a: Option<(String, u64)>,
+    /// Plages surlignées dans la transcription (point choisi dans le compte rendu), et onglet à afficher.
+    surligne: Option<(String, Vec<(u64, u64)>)>,
+    transcription_demandee: bool,
     /// Version du Microsoft Store : réponse attendue du Store, puis mise à jour offerte (bannière).
     verification_mise_a_jour: Receiver<bool>,
     mise_a_jour_offerte: bool,
@@ -184,6 +191,10 @@ impl TourDeTableApp {
             noms_des_voix: None,
             archivage: crossbeam_channel::unbounded(),
             archivages_en_cours: 0,
+            ecoute: None,
+            aller_a: None,
+            surligne: None,
+            transcription_demandee: false,
             verification_mise_a_jour: {
                 let ctx = cc.egui_ctx.clone();
                 crate::mise_a_jour::verifier(move || ctx.request_repaint())
@@ -389,6 +400,7 @@ impl TourDeTableApp {
     fn pump(&mut self) {
         self.surveiller_puce();
         self.pump_archivage();
+        self.surveiller_ecoute();
         if let Ok(oui) = self.verification_mise_a_jour.try_recv() {
             self.mise_a_jour_offerte = oui;
         }

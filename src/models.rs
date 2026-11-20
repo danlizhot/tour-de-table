@@ -94,6 +94,10 @@ pub struct LlmInfo {
     /// Mémoire vive pendant la rédaction, estimée.
     #[allow(dead_code)]
     pub ram_mb: u32,
+    /// Peut rédiger sur une puce Vulkan, si l'étalonnage la retient. Le 35B-A3B reste sur le processeur : sur une
+    /// Intel Iris Xe, la lecture de la transcription d'audio7 n'était pas finie après 82 min, contre 24 min sur le
+    /// processeur du même portable (20 novembre 2026). Le court extrait de l'étalonnage ne le montre pas.
+    pub sur_puce_vulkan: bool,
 }
 
 pub const LLM_CATALOG: &[LlmInfo] = &[
@@ -104,6 +108,7 @@ pub const LLM_CATALOG: &[LlmInfo] = &[
         octets: 5_680_522_464,
         sha256: "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
         ram_mb: 6600,
+        sur_puce_vulkan: true,
     },
     LlmInfo {
         file: "Qwen3.6-35B-A3B-APEX-MTP-I-Nano.gguf",
@@ -112,6 +117,7 @@ pub const LLM_CATALOG: &[LlmInfo] = &[
         octets: 11_686_645_344,
         sha256: "c41cdce38c767a13eccc65a676d28a5506ef285c31614d1e7d822979b9b3559e",
         ram_mb: 14_200,
+        sur_puce_vulkan: false,
     },
 ];
 

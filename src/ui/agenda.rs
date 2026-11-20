@@ -229,8 +229,30 @@ impl TourDeTableApp {
         let audio_par_point = passee && self.agenda_meeting().is_some_and(|m| crate::audio::blocs::existe(&m.dir()));
         let propose = if enregistre { self.point_propose() } else { None };
 
+        // Dans un onglet, les boutons sont au bas du volet et l'encadré occupe toute la hauteur au-dessus, même
+        // pour un ordre du jour court : le même cadre que la transcription et le compte rendu.
+        if en_onglet {
+            super::onglets::pied(ui, "pied-ordre-du-jour", |ui| {
+                if slot.is_none() {
+                    return;
+                }
+                ui.horizontal_wrapped(|ui| {
+                    if !editer && ui.button("Modifier les points").clicked() {
+                        self.edit_points = true;
+                    }
+                    browse = ui.button("Remplacer…").on_hover_text("Choisir un autre document comme ordre du jour").clicked();
+                    remove = ui.button("Retirer").on_hover_text("Enlève l'ordre du jour de cette rencontre").clicked();
+                    if actif.is_some() && ui.button("Hors point").on_hover_text(RACCOURCIS).clicked() {
+                        debuter = Some(None);
+                    }
+                });
+            });
+        }
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.set_width(ui.available_width());
+            if en_onglet {
+                ui.set_min_height(ui.available_height());
+            }
             ui.horizontal(|ui| {
                 if !en_onglet {
                     ui.label(RichText::new("Ordre du jour").strong());
@@ -266,8 +288,8 @@ impl TourDeTableApp {
             });
             let Some(a) = &slot else { return };
             // Un long ordre du jour défile plutôt que de cacher la transcription.
-            // Dans un onglet, l'encadré s'arrête assez haut pour laisser ses boutons visibles dessous.
-            let reserve = if editer { 96.0 } else { 62.0 };
+            // Dans un onglet, la zone qui défile laisse seulement la place des boutons de l'éditeur, dans l'encadré.
+            let reserve = if editer { 34.0 } else { 0.0 };
             let hauteur = if en_onglet { (ui.available_height() - reserve).max(120.0) } else { ui.ctx().content_rect().height() * 0.4 };
             if editer && a.points.is_empty() {
                 ui.label(RichText::new("Aucun point reconnu dans l'ordre du jour : ajoutez-les ici pour découper la rencontre par point.").weak());
@@ -316,19 +338,6 @@ impl TourDeTableApp {
                 edited = self.texte_agenda(ui);
             }
         });
-        if en_onglet && slot.is_some() {
-            ui.add_space(2.0);
-            ui.horizontal_wrapped(|ui| {
-                if !editer && ui.button("Modifier les points").clicked() {
-                    self.edit_points = true;
-                }
-                browse = ui.button("Remplacer…").on_hover_text("Choisir un autre document comme ordre du jour").clicked();
-                remove = ui.button("Retirer").on_hover_text("Enlève l'ordre du jour de cette rencontre").clicked();
-                if actif.is_some() && ui.button("Hors point").on_hover_text(RACCOURCIS).clicked() {
-                    debuter = Some(None);
-                }
-            });
-        }
         if manual {
             *self.agenda_slot() = Some(Agenda::new("Saisi à la main".into(), String::new()));
         }

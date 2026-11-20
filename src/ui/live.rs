@@ -342,7 +342,7 @@ impl TourDeTableApp {
                         ui.label(RichText::new(text).weak());
                     });
                 } else {
-                    transcript(ui, m, true);
+                    transcript(ui, m, true, Default::default());
                 }
             }
             (None, ModelState::Missing | ModelState::Failed(_)) => self.welcome(ui),

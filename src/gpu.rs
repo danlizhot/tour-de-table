@@ -90,9 +90,19 @@ pub fn whisper() -> bool {
     cfg!(feature = "metal") || (cfg!(feature = "vulkan") && { let e = lire(); a_jour(&e) && e.whisper == Some(true) })
 }
 
-/// Rédaction sur la puce graphique ?
+/// Rédaction sur la puce graphique ? Avec Vulkan, seulement pour un modèle qui le permet
+/// ([`crate::models::LlmInfo::sur_puce_vulkan`]).
 pub fn redaction() -> bool {
-    cfg!(feature = "metal") || (cfg!(feature = "vulkan") && { let e = lire(); a_jour(&e) && e.redaction == Some(true) })
+    cfg!(feature = "metal")
+        || (cfg!(feature = "vulkan") && crate::models::modele_redaction().sur_puce_vulkan && {
+            let e = lire();
+            a_jour(&e) && e.redaction == Some(true)
+        })
+}
+
+/// La rédaction reste à mesurer : jamais pour un modèle gardé sur le processeur.
+fn redaction_a_mesurer(e: &Etat) -> bool {
+    crate::models::modele_redaction().sur_puce_vulkan && (!a_jour(e) || e.redaction.is_none())
 }
 
 /// La rédaction a planté sur la puce : on n'y revient plus.
@@ -113,7 +123,7 @@ pub fn fin_transcription() {
 
 /// Un étalonnage reste à faire (puce Vulkan possible, jamais mesurée pour cette version).
 pub fn a_etalonner() -> bool {
-    cfg!(feature = "vulkan") && { let e = lire(); !a_jour(&e) || e.whisper.is_none() || e.redaction.is_none() }
+    cfg!(feature = "vulkan") && { let e = lire(); !a_jour(&e) || e.whisper.is_none() || redaction_a_mesurer(&e) }
 }
 
 // ─────────── Étalonnage, côté application ───────────
@@ -136,7 +146,7 @@ impl Etalonnage {
         if !a_jour(&e) || e.whisper.is_none() {
             cmd.arg("whisper");
         }
-        if !a_jour(&e) || e.redaction.is_none() {
+        if redaction_a_mesurer(&e) {
             cmd.arg("redaction");
         }
         // Le processus de l'interface cache la puce quand Whisper ne s'en sert pas : pas l'étalonnage.

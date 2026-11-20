@@ -33,7 +33,8 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   corriger, « Découper par points »), `settings.rs` (Paramètres), `installation.rs` (installation automatique des
   modèles au premier démarrage, plein écran),
   `widgets.rs` (couleurs, composants, logo). Garder chaque fichier sous ~700 lignes. Dans chaque onglet, les
-  boutons sont au bas du volet, sous le texte qui défile (`onglets::pied`).
+  boutons sont au bas du volet, sous le texte qui défile (`onglets::pied`). `ecoute.rs` : écoute d'un paragraphe ou
+  d'un point (`audio/lecture.rs`, lecture par morceaux de 20 s dans un fil), jamais pendant un enregistrement.
 * `storage.rs` : une rencontre = un dossier de Musique/Tour de table (nom fixé à la création,
   champ `dossier`) avec `rencontre.json`, sauvegardé après chaque
   segment (écriture atomique `.tmp` + `rename`). « Archiver » comprime le dossier dans `Archives/<dossier>.zip`
@@ -64,7 +65,8 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
 * `gpu.rs` : puce graphique (Vulkan, Windows) choisie par étalonnage (`tourdetable --etalonner`, processus
   à part lancé par `ui/puce.rs` quand l'application est inoccupée) ; sentinelle autour des transcriptions
   sur la puce, repli de la rédaction sur le processeur après un plantage. Sans verdict : processeur, et
-  `GGML_VK_VISIBLE_DEVICES` vide pour que ggml n'y touche pas. Pas de *flash attention* avec Vulkan
+  `GGML_VK_VISIBLE_DEVICES` vide pour que ggml n'y touche pas. Le 35B-A3B ne rédige jamais sur une puce Vulkan
+  (`LlmInfo::sur_puce_vulkan`) : beaucoup plus lent que le processeur sur une Iris Xe avec une longue transcription. Pas de *flash attention* avec Vulkan
   (charabia sur Intel). Un énoncé que Whisper fait tourner en boucle sur la puce (`stt::en_boucle`) est retranscrit sur le
   processeur : 16 min d'audio sur 68 bouclaient sur une Intel Iris Xe (13 novembre 2026).
 
