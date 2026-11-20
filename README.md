@@ -273,11 +273,14 @@ sans titre). Avec un ordre du jour déposé avant de commencer, le nom vient du 
 rencontre, sans la date ni la mention « Oj » du fichier). Renommer une rencontre ne renomme pas son dossier. Pendant la rencontre, l'audio
 est écrit en blocs de 2 minutes ; à la fin, ils sont remplacés par un seul fichier,
 `AAAAMMJJ-Rencontre-Tour de table.wav` (mode « Sources séparées » : un fichier `-salle` et un
-fichier `-distance`). Les modèles, la configuration,
-le journal et la corbeille restent dans le dossier de l'application. Les rencontres des versions
+fichier `-distance`). Le bouton « Archiver » de la fiche comprime une rencontre dans
+`Tour de table/Archives/<dossier>.zip` et la retire de l'historique ; le bouton « Archives », au bas de
+l'historique, ouvre ce dossier. Les modèles, la configuration et
+le journal restent dans le dossier de l'application ; l'ancienne corbeille (jusqu'à la version 0.2.0) passe
+dans les archives au lancement. Les rencontres des versions
 précédentes (et celles de « Noter », l'ancien nom) y sont déplacées automatiquement au lancement.
 
-| Système | Rencontres | Modèles, paramètres, journal, corbeille |
+| Système | Rencontres et archives | Modèles, paramètres, journal |
 |---|---|---|
 | Windows | `Musique\Tour de table\` | `%APPDATA%\TourDeTable\TourDeTable\data\` |
 | macOS | `~/Music/Tour de table/` | `~/Library/Application Support/ca.TourDeTable.TourDeTable/` |

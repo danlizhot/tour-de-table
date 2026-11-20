@@ -81,7 +81,15 @@ impl TourDeTableApp {
         self.ctx.request_repaint_after(Duration::from_secs(2));
     }
 
-    /// Sous la barre du nettoyage : avancement, relance, et noms des voix.
+    /// Noms des voix, au-dessus des boutons quand « Nommer les voix » est ouvert.
+    pub(super) fn noms_ouverts(&mut self, ui: &mut Ui, idx: usize) {
+        if self.noms_des_voix.as_deref() == Some(self.meetings[idx].id.as_str()) {
+            self.noms_voix(ui, idx);
+            ui.add_space(4.0);
+        }
+    }
+
+    /// Boutons des voix, dans la ligne de boutons de la transcription : avancement, relance, noms.
     pub(super) fn barre_voix(&mut self, ui: &mut Ui, idx: usize) {
         let m = &self.meetings[idx];
         let id = m.id.clone();
@@ -96,7 +104,8 @@ impl TourDeTableApp {
         let mut relancer = false;
         let ouvert = self.noms_des_voix.as_deref() == Some(id.as_str());
         let mut basculer = false;
-        ui.horizontal_wrapped(|ui| {
+        {
+
             if en_cours {
                 ui.spinner();
                 ui.label(RichText::new(format!("Reconnaissance des voix… (environ {minutes} min)")).weak());
@@ -104,33 +113,30 @@ impl TourDeTableApp {
                 ui.label(RichText::new("Reconnaissance des voix en attente de la fin du travail en cours…").weak());
             } else if let Some(n) = nombre {
                 ui.label(RichText::new(format!("{n} voix reconnues")).weak());
-                if ui.small_button(if ouvert { "Fermer les noms" } else { "Nommer les voix" }).clicked() {
+                if ui.button(if ouvert { "Fermer les noms" } else { "Nommer les voix" }).clicked() {
                     basculer = true;
                 }
                 if audio
                     && ui
-                        .add_enabled(self.recorder.is_none() && !self.finishing, egui::Button::new("Relancer").small())
+                        .add_enabled(self.recorder.is_none() && !self.finishing, egui::Button::new("Relancer les voix"))
                         .on_hover_text("Reconnaît les voix de nouveau ; les noms donnés sont gardés")
                         .clicked()
                 {
                     relancer = true;
                 }
             } else if ui
-                .add_enabled(self.recorder.is_none() && !self.finishing && voix::modeles_installes(), egui::Button::new("Reconnaître les voix").small())
+                .add_enabled(self.recorder.is_none() && !self.finishing && voix::modeles_installes(), egui::Button::new("Reconnaître les voix"))
                 .on_hover_text(format!("Distingue les personnes qui parlent ; environ {minutes} min, quand l'application est libre"))
                 .clicked()
             {
                 relancer = true;
             }
-        });
+        }
         if basculer {
             self.noms_des_voix = if ouvert { None } else { Some(id.clone()) };
         }
         if relancer {
             self.demander_voix(&id);
-        }
-        if ouvert {
-            self.noms_voix(ui, idx);
         }
     }
 

@@ -302,10 +302,54 @@ pub fn draw_logo(p: &egui::Painter, rect: egui::Rect) {
 }
 
 pub(super) fn style(ctx: &egui::Context) {
+    police_du_systeme(ctx);
     ctx.all_styles_mut(|style| {
         style.spacing.item_spacing = Vec2::new(8.0, 6.0);
         style.spacing.button_padding = Vec2::new(10.0, 5.0);
         style.visuals.selection.bg_fill = BLEU_CLAIR.gamma_multiply(0.45);
         style.visuals.hyperlink_color = BLEU_CLAIR;
     });
+    // Thème clair : texte bleu foncé, et texte secondaire assez contrasté pour être lu (le gris par défaut,
+    // atténué, se lisait mal).
+    ctx.style_mut_of(egui::Theme::Light, |style| {
+        let v = &mut style.visuals;
+        v.widgets.noninteractive.fg_stroke.color = BLEU_FONCE;
+        v.widgets.inactive.fg_stroke.color = BLEU_FONCE;
+        v.widgets.active.fg_stroke.color = BLEU_NUIT;
+        v.weak_text_color = Some(BLEU_GRIS);
+    });
+}
+
+/// Texte du thème clair.
+const BLEU_FONCE: Color32 = Color32::from_rgb(0x1B, 0x2A, 0x4A);
+/// Texte en évidence du thème clair.
+const BLEU_NUIT: Color32 = Color32::from_rgb(0x0B, 0x16, 0x30);
+/// Texte secondaire du thème clair (contraste d'environ 6,5:1 sur blanc).
+const BLEU_GRIS: Color32 = Color32::from_rgb(0x4A, 0x58, 0x75);
+
+/// Police d'interface du système (Segoe UI sous Windows), plus lisible que la police intégrée d'egui, très mince
+/// (Ubuntu Light). Rien n'est livré ni téléchargé : sans police trouvée, la police intégrée reste.
+fn police_du_systeme(ctx: &egui::Context) {
+    let windows = std::env::var_os("WINDIR").map(|w| std::path::PathBuf::from(w).join("Fonts/segoeui.ttf"));
+    let candidates = windows.into_iter().chain(
+        [
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+            "/Library/Fonts/Arial.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]
+        .map(std::path::PathBuf::from),
+    );
+    let Some((chemin, octets)) = candidates.filter_map(|c| std::fs::read(&c).ok().map(|o| (c, o))).next() else {
+        log::info!("Aucune police du système trouvée : police intégrée");
+        return;
+    };
+    log::info!("Police : {}", chemin.display());
+    let mut polices = egui::FontDefinitions::default();
+    polices.font_data.insert("systeme".into(), std::sync::Arc::new(egui::FontData::from_owned(octets)));
+    if let Some(famille) = polices.families.get_mut(&egui::FontFamily::Proportional) {
+        famille.insert(0, "systeme".into());
+    }
+    ctx.set_fonts(polices);
 }

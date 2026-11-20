@@ -32,10 +32,13 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   ou deux côte à côte), `agenda.rs` (ordre du jour), `verification.rs` (frontières à
   corriger, « Découper par points »), `settings.rs` (Paramètres), `installation.rs` (installation automatique des
   modèles au premier démarrage, plein écran),
-  `widgets.rs` (couleurs, composants, logo). Garder chaque fichier sous ~700 lignes.
+  `widgets.rs` (couleurs, composants, logo). Garder chaque fichier sous ~700 lignes. Dans chaque onglet, les
+  boutons sont au bas du volet, sous le texte qui défile (`onglets::pied`).
 * `storage.rs` : une rencontre = un dossier de Musique/Tour de table (nom fixé à la création,
   champ `dossier`) avec `rencontre.json`, sauvegardé après chaque
-  segment (écriture atomique `.tmp` + `rename`).
+  segment (écriture atomique `.tmp` + `rename`). « Archiver » comprime le dossier dans `Archives/<dossier>.zip`
+  (`storage::archiver`, dans un fil ; écrit en `.part`, relu, puis le dossier est retiré) ; l'ancienne corbeille
+  du dossier de données y passe au démarrage (`archiver_corbeille`).
 * `summary.rs` : compte rendu par le programme auxiliaire. Par défaut, les sujets sont d'abord répartis entre les
   points avec la transcription complète (`repartition.rs`), puis chaque point est rédigé d'après ses sujets et ses
   passages de la transcription, `POSTES` points à la fois ; le mot de bienvenue, les adoptions et la fin gardent la
