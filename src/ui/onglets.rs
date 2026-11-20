@@ -188,7 +188,7 @@ enum ClicPoint {
 }
 
 /// Cadre autour du texte d'un volet, comme celui de l'ordre du jour ; il occupe toute la place laissée par le pied.
-fn cadre<R>(ui: &mut Ui, contenu: impl FnOnce(&mut Ui) -> R) -> R {
+pub(super) fn cadre<R>(ui: &mut Ui, contenu: impl FnOnce(&mut Ui) -> R) -> R {
     egui::Frame::group(ui.style())
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -198,12 +198,15 @@ fn cadre<R>(ui: &mut Ui, contenu: impl FnOnce(&mut Ui) -> R) -> R {
         .inner
 }
 
-/// Pied d'un volet : ses boutons, toujours visibles sous le texte qui défile.
-fn pied<R>(ui: &mut Ui, id: &str, contenu: impl FnOnce(&mut Ui) -> R) -> R {
+/// Pied d'un volet : ses boutons, toujours visibles sous le texte qui défile. Au moins la hauteur d'un bouton, même
+/// vide : les cadres de tous les volets s'arrêtent à la même hauteur.
+pub(super) fn pied<R>(ui: &mut Ui, id: &str, contenu: impl FnOnce(&mut Ui) -> R) -> R {
     egui::Panel::bottom(id)
         .frame(egui::Frame::NONE)
         .show_separator_line(false)
         .show(ui, |ui| {
+            let bouton = ui.text_style_height(&egui::TextStyle::Button) + 2.0 * ui.spacing().button_padding.y;
+            ui.set_min_height(bouton.max(ui.spacing().interact_size.y) + 4.0);
             ui.add_space(2.0);
             let r = contenu(ui);
             ui.add_space(2.0);
@@ -255,7 +258,8 @@ impl TourDeTableApp {
                         });
                     });
                     trait_sous_la_barre(ui);
-                    transcription(self, ui);
+                    pied(ui, "pied-direct", |_| ());
+                    cadre(ui, |ui| transcription(self, ui));
                 });
             });
         } else {
@@ -277,7 +281,10 @@ impl TourDeTableApp {
             trait_sous_la_barre(ui);
             match onglets.gauche {
                 Onglet::OrdreDuJour => ordre_du_jour(self, ui),
-                _ => transcription(self, ui),
+                _ => {
+                    pied(ui, "pied-direct", |_| ());
+                    cadre(ui, |ui| transcription(self, ui));
+                }
             }
         }
         self.onglets_direct = onglets;
