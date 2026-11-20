@@ -19,6 +19,7 @@ impl TourDeTableApp {
             || self.summary_job.is_some()
             || self.nettoyage_job.is_some()
             || self.decoupage_job.is_some()
+            || self.archivages_en_cours > 0
             || self.installation.is_some()
             || !matches!(self.model, ModelState::Ready)
     }

@@ -48,6 +48,7 @@ fn main() {
     whisper_rs::install_logging_hooks();
     config::migrate_from_noter();
     config::migrate_meetings();
+    std::thread::spawn(storage::archiver_corbeille);
 
     if args.get(1).is_some_and(|a| a == "--transcrire") {
         let Some(wav) = args.get(2) else {

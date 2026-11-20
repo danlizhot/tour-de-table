@@ -167,6 +167,31 @@ fn trait_sous_la_barre(ui: &mut Ui) {
     ui.add_space(2.0);
 }
 
+/// Cadre autour du texte d'un volet, comme celui de l'ordre du jour ; il occupe toute la place laissée par le pied.
+fn cadre<R>(ui: &mut Ui, contenu: impl FnOnce(&mut Ui) -> R) -> R {
+    egui::Frame::group(ui.style())
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.set_min_height(ui.available_height());
+            contenu(ui)
+        })
+        .inner
+}
+
+/// Pied d'un volet : ses boutons, toujours visibles sous le texte qui défile.
+fn pied<R>(ui: &mut Ui, id: &str, contenu: impl FnOnce(&mut Ui) -> R) -> R {
+    egui::Panel::bottom(id)
+        .frame(egui::Frame::NONE)
+        .show_separator_line(false)
+        .show(ui, |ui| {
+            ui.add_space(2.0);
+            let r = contenu(ui);
+            ui.add_space(2.0);
+            r
+        })
+        .inner
+}
+
 impl TourDeTableApp {
     /// Bouton « Côte à côte » de la fiche, toujours au même endroit ; absent quand la fenêtre est trop étroite.
     pub(super) fn bascule_cote_a_cote(&mut self, ui: &mut Ui) {
@@ -301,13 +326,21 @@ impl TourDeTableApp {
                 None
             }
             Onglet::Transcription => {
-                self.barre_nettoyage(ui, idx);
-                self.barre_voix(ui, idx);
+                // Boutons sous le texte, comme dans l'ordre du jour.
+                pied(ui, "pied-transcription", |ui| {
+                    self.noms_ouverts(ui, idx);
+                    ui.horizontal_wrapped(|ui| {
+                        self.barre_nettoyage(ui, idx);
+                        ui.add_space(12.0);
+                        self.barre_voix(ui, idx);
+                    });
+                });
+                self.bandeau_nettoyage(ui, idx);
                 let m = &self.meetings[idx];
-                match m.nettoyage.as_ref().filter(|_| !self.vue_brute) {
+                cadre(ui, |ui| match m.nettoyage.as_ref().filter(|_| !self.vue_brute) {
                     Some(n) => transcript_nettoye(ui, m, n),
                     None => transcript(ui, m, false),
-                }
+                });
                 None
             }
             Onglet::CompteRendu => self.volet_compte_rendu(ui, idx),
@@ -329,7 +362,7 @@ impl TourDeTableApp {
         let m = &self.meetings[idx];
         let has_agenda = m.agenda.is_some();
         let occupe = busy.is_some();
-        ui.horizontal_wrapped(|ui| {
+        pied(ui, "pied-compte-rendu", |ui| ui.horizontal_wrapped(|ui| {
             if let Some((etape, jetons, secs)) = busy {
                 ui.spinner();
                 let etat = if jetons == 0 {
@@ -374,9 +407,8 @@ impl TourDeTableApp {
                     ui.ctx().copy_text(sum.clone());
                 }
             }
-        });
-        ui.add_space(4.0);
-        match &m.summary {
+        }));
+        cadre(ui, |ui| match &m.summary {
             Some(s) => {
                 egui::ScrollArea::vertical().id_salt("cr").auto_shrink(false).show(ui, |ui| {
                     markdown(ui, s);
@@ -393,7 +425,7 @@ impl TourDeTableApp {
                 ui.add_space(24.0);
                 ui.vertical_centered(|ui| ui.label(RichText::new(texte).weak()));
             }
-        }
+        });
         action
     }
 }

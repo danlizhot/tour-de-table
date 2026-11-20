@@ -757,14 +757,94 @@ fn copier(de: &Path, vers: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn delete(m: &Meeting) -> Result<()> {
-    // Corbeille de l'application plutôt qu'une suppression définitive : l'utilisateur
-    // peut récupérer le dossier. Elle reste dans le dossier de données, parfois sur un
-    // autre disque que Musique, d'où le repli sur une copie.
-    let dir = m.dir();
-    let trash = crate::config::data_dir().join("corbeille");
-    std::fs::create_dir_all(&trash)?;
-    deplacer(&dir, &trash.join(&m.id)).context("Déplacement vers la corbeille de Tour de table")
+/// Archive une rencontre : son dossier est comprimé dans `Archives/<dossier>.zip` (le dossier
+/// en tête de l'archive, pour qu'une décompression le recrée tel quel), puis retiré. Rend le
+/// chemin de l'archive. Écrite d'abord en `.part`, relue, puis renommée : le dossier n'est
+/// retiré qu'une fois l'archive complète.
+pub fn archiver(m: &Meeting) -> Result<PathBuf> {
+    archiver_dossier(&m.dir(), &crate::config::archives_dir(), &m.dossier)
+}
+
+fn archiver_dossier(dir: &Path, archives: &Path, nom: &str) -> Result<PathBuf> {
+    std::fs::create_dir_all(archives).with_context(|| format!("Création de {}", archives.display()))?;
+    let nom = Path::new(nom).file_name().map_or_else(|| "rencontre".into(), |n| n.to_string_lossy().into_owned());
+    let mut cible = archives.join(format!("{nom}.zip"));
+    for i in 2.. {
+        if !cible.exists() {
+            break;
+        }
+        cible = archives.join(format!("{nom}-{i}.zip"));
+    }
+    let part = cible.with_extension("zip.part");
+    let ecrire = || -> Result<usize> {
+        let fichier = std::fs::File::create(&part)?;
+        let mut zip = zip::ZipWriter::new(std::io::BufWriter::new(fichier));
+        let mut n = 0;
+        ajouter(&mut zip, dir, &nom, &mut n)?;
+        zip.finish()?.into_inner().map_err(|e| e.into_error())?.sync_all()?;
+        Ok(n)
+    };
+    let verifier = |n: usize| -> Result<()> {
+        let lu = zip::ZipArchive::new(std::fs::File::open(&part)?)?;
+        anyhow::ensure!(lu.len() == n, "archive incomplète ({} éléments sur {n})", lu.len());
+        Ok(())
+    };
+    if let Err(e) = ecrire().and_then(verifier) {
+        let _ = std::fs::remove_file(&part);
+        return Err(e.context(format!("Archivage de « {nom} »")));
+    }
+    std::fs::rename(&part, &cible).with_context(|| format!("Archivage de « {nom} »"))?;
+    if let Err(e) = std::fs::remove_dir_all(dir) {
+        log::warn!("Archive {} écrite, mais {} n'a pas pu être retiré : {e}", cible.display(), dir.display());
+    }
+    Ok(cible)
+}
+
+/// Ajoute `dir` à l'archive sous le chemin `prefixe` ; `n` compte les éléments ajoutés.
+fn ajouter<W: std::io::Write + std::io::Seek>(zip: &mut zip::ZipWriter<W>, dir: &Path, prefixe: &str, n: &mut usize) -> Result<()> {
+    use zip::write::SimpleFileOptions;
+    zip.add_directory(format!("{prefixe}/"), SimpleFileOptions::default())?;
+    *n += 1;
+    let mut entrees: Vec<_> = std::fs::read_dir(dir)?.collect::<std::io::Result<_>>()?;
+    entrees.sort_by_key(|e| e.file_name());
+    for e in entrees {
+        let chemin = format!("{prefixe}/{}", e.file_name().to_string_lossy());
+        if e.file_type()?.is_dir() {
+            ajouter(zip, &e.path(), &chemin, n)?;
+        } else {
+            // Au-delà de 4 Gio, un fichier demande le format zip64.
+            let gros = e.metadata()?.len() >= (1 << 32) - (1 << 20);
+            let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated).large_file(gros);
+            zip.start_file(chemin, options)?;
+            std::io::copy(&mut std::fs::File::open(e.path())?, zip)?;
+            *n += 1;
+        }
+    }
+    Ok(())
+}
+
+/// Les rencontres de l'ancienne corbeille (jusqu'à la version 0.2.0) passent dans les archives,
+/// comprimées ; l'ancienne corbeille disparaît une fois vide. Relancée à chaque démarrage, dans un fil.
+pub fn archiver_corbeille() {
+    let corbeille = crate::config::data_dir().join("corbeille");
+    archiver_corbeille_dans(&corbeille, &crate::config::archives_dir());
+}
+
+fn archiver_corbeille_dans(corbeille: &Path, archives: &Path) {
+    let Ok(dossiers) = std::fs::read_dir(corbeille) else { return };
+    for dir in dossiers.flatten().map(|e| e.path()).filter(|p| p.is_dir()) {
+        // Le nom qu'avait le dossier dans Musique (le dossier de la corbeille porte l'identifiant).
+        let nom = std::fs::read(dir.join("rencontre.json"))
+            .ok()
+            .and_then(|j| serde_json::from_slice::<serde_json::Value>(&j).ok())
+            .and_then(|v| v.get("dossier")?.as_str().filter(|d| !d.is_empty()).map(str::to_string))
+            .unwrap_or_else(|| dir.file_name().unwrap_or_default().to_string_lossy().into_owned());
+        match archiver_dossier(&dir, archives, &nom) {
+            Ok(zip) => log::info!("Corbeille : {} archivé dans {}", dir.display(), zip.display()),
+            Err(e) => log::warn!("Corbeille : {} non archivé : {e:#}", dir.display()),
+        }
+    }
+    let _ = std::fs::remove_dir(corbeille);
 }
 
 pub fn clock(ms: u64) -> String {
@@ -1131,6 +1211,58 @@ mod tests {
         // Sans périodes, les exports restent comme avant (aucun intertitre).
         assert_eq!(m.plain_text(), "[00:01] Salle : Bonjour.");
         assert_eq!(serde_json::from_str::<Periode>(r#"{"point": 2, "debut_ms": 10}"#).unwrap().declenchement, Declenchement::Manuel);
+    }
+
+    #[test]
+    fn archiver_comprime_puis_retire_le_dossier() {
+        let d = temporaire("archives");
+        let (racine, archives) = (d.join("Musique/Tour de table"), d.join("Musique/Tour de table/Archives"));
+        let dir = racine.join("2026-10-30-rencontre-ca");
+        std::fs::create_dir_all(dir.join("source")).unwrap();
+        std::fs::write(dir.join("rencontre.json"), ANCIEN_FORMAT).unwrap();
+        std::fs::write(dir.join("source/bloc-001.wav"), vec![7u8; 100_000]).unwrap();
+
+        let zip = archiver_dossier(&dir, &archives, "2026-10-30-rencontre-ca").unwrap();
+        assert_eq!(zip, archives.join("2026-10-30-rencontre-ca.zip"));
+        assert!(!dir.exists());
+        assert!(!archives.join("2026-10-30-rencontre-ca.zip.part").exists());
+        // Le dossier Archives n'est pas pris pour une rencontre.
+        assert!(list_dans(&racine).is_empty());
+        let mut lu = zip::ZipArchive::new(std::fs::File::open(&zip).unwrap()).unwrap();
+        let mut wav = Vec::new();
+        std::io::Read::read_to_end(&mut lu.by_name("2026-10-30-rencontre-ca/source/bloc-001.wav").unwrap(), &mut wav).unwrap();
+        assert_eq!(wav, vec![7u8; 100_000]);
+        assert!(lu.by_name("2026-10-30-rencontre-ca/rencontre.json").is_ok());
+
+        // Même nom une seconde fois : l'archive existante est gardée.
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("rencontre.json"), ANCIEN_FORMAT).unwrap();
+        let deuxieme = archiver_dossier(&dir, &archives, "2026-10-30-rencontre-ca").unwrap();
+        assert_eq!(deuxieme, archives.join("2026-10-30-rencontre-ca-2.zip"));
+        assert!(zip.exists());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn corbeille_passe_aux_archives() {
+        let d = temporaire("corbeille");
+        let (corbeille, archives) = (d.join("corbeille"), d.join("Archives"));
+        let vieux = corbeille.join("2026-01-01_10-00-00");
+        std::fs::create_dir_all(&vieux).unwrap();
+        std::fs::write(vieux.join("rencontre.json"), r#"{"dossier": "/x/Musique/Tour de table/2026-01-01-rencontre-ca"}"#).unwrap();
+        let sans_json = corbeille.join("2026-02-02_10-00-00");
+        std::fs::create_dir_all(&sans_json).unwrap();
+        std::fs::write(sans_json.join("salle.wav"), "RIFF").unwrap();
+
+        archiver_corbeille_dans(&corbeille, &archives);
+
+        assert!(archives.join("2026-01-01-rencontre-ca.zip").exists());
+        assert!(archives.join("2026-02-02_10-00-00.zip").exists());
+        assert!(!corbeille.exists());
+        // Relancée au démarrage suivant : rien à refaire.
+        archiver_corbeille_dans(&corbeille, &archives);
+        assert_eq!(std::fs::read_dir(&archives).unwrap().count(), 2);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

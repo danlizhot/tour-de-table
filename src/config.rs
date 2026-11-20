@@ -117,7 +117,7 @@ pub fn models_dir() -> PathBuf {
 
 /// Rencontres : dans le dossier Musique de l'utilisateur (localisé : « Musique » sous Windows en
 /// français, `~/Music` sous macOS, `XDG_MUSIC_DIR` sous Linux), à la vue de tous ses logiciels.
-/// Les modèles, la configuration, le journal et la corbeille restent dans `data_dir()`.
+/// Les modèles, la configuration et le journal restent dans `data_dir()`.
 pub fn meetings_dir() -> PathBuf {
     static DOSSIER: OnceLock<PathBuf> = OnceLock::new();
     DOSSIER
@@ -126,6 +126,11 @@ pub fn meetings_dir() -> PathBuf {
             None => old_meetings_dir(),
         })
         .clone()
+}
+
+/// Rencontres archivées, comprimées en .zip, à la vue de l'utilisateur comme les rencontres.
+pub fn archives_dir() -> PathBuf {
+    meetings_dir().join("Archives")
 }
 
 /// Emplacement des rencontres jusqu'à la version 0.1.1.

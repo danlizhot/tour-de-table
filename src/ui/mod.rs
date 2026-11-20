@@ -59,6 +59,9 @@ struct FinApresPanne {
     envoyes: Option<usize>,
 }
 
+/// Rencontre archivée et chemin de son archive, ou l'erreur.
+type FinArchivage = (Meeting, Result<std::path::PathBuf, String>);
+
 pub struct TourDeTableApp {
     cfg: Config,
     engine: Engine,
@@ -123,6 +126,9 @@ pub struct TourDeTableApp {
     voix_job: Option<crate::voix::Calcul>,
     voix_en_attente: Vec<String>,
     noms_des_voix: Option<String>,
+    /// Archivages en cours (compression dans un fil) : la rencontre revient dans l'historique si l'archivage échoue.
+    archivage: (Sender<FinArchivage>, Receiver<FinArchivage>),
+    archivages_en_cours: usize,
     /// Version du Microsoft Store : réponse attendue du Store, puis mise à jour offerte (bannière).
     verification_mise_a_jour: Receiver<bool>,
     mise_a_jour_offerte: bool,
@@ -176,6 +182,8 @@ impl TourDeTableApp {
             voix_job: None,
             voix_en_attente: Vec::new(),
             noms_des_voix: None,
+            archivage: crossbeam_channel::unbounded(),
+            archivages_en_cours: 0,
             verification_mise_a_jour: {
                 let ctx = cc.egui_ctx.clone();
                 crate::mise_a_jour::verifier(move || ctx.request_repaint())
@@ -380,6 +388,7 @@ impl TourDeTableApp {
     /// Traitement hors affichage : canaux des fils audio, Whisper et tâches.
     fn pump(&mut self) {
         self.surveiller_puce();
+        self.pump_archivage();
         if let Ok(oui) = self.verification_mise_a_jour.try_recv() {
             self.mise_a_jour_offerte = oui;
         }
@@ -518,7 +527,7 @@ impl TourDeTableApp {
             let (point, points) = (av.point.load(Relaxed), av.points.load(Relaxed));
             return if points == 0 { Indetermine } else { Fraction(point.saturating_sub(1) as f32 / (points + 1) as f32) };
         }
-        if self.finishing || self.decoupage_job.is_some() || self.nettoyage_en_cours() {
+        if self.finishing || self.decoupage_job.is_some() || self.nettoyage_en_cours() || self.archivages_en_cours > 0 {
             return Indetermine;
         }
         Aucun
@@ -591,6 +600,17 @@ impl TourDeTableApp {
         // Paramètres au bas de la colonne, comme le compte dans les applications de messagerie.
         egui::Panel::bottom("pied").show_separator_line(false).show(ui, |ui| {
             ui.add_space(4.0);
+            if ui
+                .add(egui::Button::new("Archives").min_size(Vec2::new(ui.available_width(), 30.0)))
+                .on_hover_text("Ouvre le dossier des rencontres archivées (fichiers .zip)")
+                .clicked()
+            {
+                let dir = config::archives_dir();
+                match std::fs::create_dir_all(&dir) {
+                    Ok(()) => storage::reveal(&dir),
+                    Err(e) => self.notify(format!("Dossier des archives : {e}"), true),
+                }
+            }
             if ui.add(egui::Button::new("Paramètres").min_size(Vec2::new(ui.available_width(), 30.0))).clicked() {
                 self.show_settings = !self.show_settings;
                 if self.show_settings {

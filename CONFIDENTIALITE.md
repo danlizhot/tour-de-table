@@ -57,10 +57,11 @@ L'application ne fait aucune autre connexion.
 ## Conservation et suppression
 
 Vos rencontres restent sur votre ordinateur jusqu'à ce que vous les supprimiez. Le bouton
-« Supprimer » déplace une rencontre dans le dossier « corbeille » de l'application, d'où vous
-pouvez la récupérer ou l'effacer définitivement. Désinstaller l'application supprime ses modèles,
-ses paramètres et sa corbeille (version du Microsoft Store), mais **pas vos rencontres** : elles
-restent dans Musique/Tour de table, où vous pouvez les effacer vous-même.
+« Archiver » comprime une rencontre dans un fichier .zip du dossier Musique/Tour de table/Archives
+(le bouton « Archives » de l'application l'ouvre), d'où vous pouvez la récupérer ou l'effacer
+définitivement. Désinstaller l'application supprime ses modèles et ses paramètres (version du
+Microsoft Store), mais **pas vos rencontres ni vos archives** : elles restent dans Musique/Tour de
+table, où vous pouvez les effacer vous-même.
 
 ## Votre responsabilité lors de l'enregistrement
 

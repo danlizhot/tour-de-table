@@ -159,7 +159,7 @@ impl TourDeTableApp {
         let puis_compte_rendu = m.agenda.is_some() && m.summary.is_none();
         let mut action = None;
 
-        ui.horizontal_wrapped(|ui| {
+        {
             if etat.is_some() {
                 ui.selectable_value(&mut self.vue_brute, true, "Brute").on_hover_text("Telle que transcrite, jamais modifiée");
                 ui.selectable_value(&mut self.vue_brute, false, "Nettoyée")
@@ -170,7 +170,7 @@ impl TourDeTableApp {
                 ui.spinner();
                 let texte = if par_point { format!("Nettoyage — point {groupe} sur {groupes}") } else { "Nettoyage de la transcription…".to_string() };
                 ui.label(RichText::new(texte).weak());
-                if ui.small_button("Arrêter").on_hover_text("Le nettoyage pourra reprendre là où il s'est arrêté").clicked() {
+                if ui.button("Arrêter").on_hover_text("Le nettoyage pourra reprendre là où il s'est arrêté").clicked() {
                     action = Some(Action::Arreter);
                 }
             } else if en_attente {
@@ -182,16 +182,28 @@ impl TourDeTableApp {
                     Some(_) => ("Relancer le nettoyage", true),
                 };
                 if ui
-                    .add_enabled(self.recorder.is_none() && !self.finishing, egui::Button::new(libelle).small())
+                    .add_enabled(self.recorder.is_none() && !self.finishing, egui::Button::new(libelle))
                     .on_hover_text("Recolle les phrases coupées, retire les répétitions, les hésitations et les simples interjections")
                     .clicked()
                 {
                     action = Some(Action::Lancer { depuis_zero });
                 }
             }
-        });
-        let bandeau = match etat {
-            Some((false, faits, total)) if avancement.is_none() && !en_attente => {
+        }
+        match action {
+            Some(Action::Arreter) => self.arreter_nettoyage(&id),
+            Some(Action::Lancer { depuis_zero }) => self.demander_nettoyage(&id, !depuis_zero && puis_compte_rendu, depuis_zero),
+            None => {}
+        }
+    }
+
+    /// Au-dessus de la transcription : avertissement d'un nettoyage resté partiel.
+    pub(super) fn bandeau_nettoyage(&self, ui: &mut Ui, idx: usize) {
+        let m = &self.meetings[idx];
+        let avancement = self.nettoyage_job.as_ref().is_some_and(|t| t.id == m.id);
+        let en_attente = self.nettoyages_en_attente.iter().any(|(i, _)| *i == m.id);
+        let bandeau = match m.nettoyage.as_ref().map(|n| (n.termine(), n.groupes_faits, n.groupes)) {
+            Some((false, faits, total)) if !avancement && !en_attente => {
                 Some(format!("Nettoyage partiel ({faits} parties sur {total}) : le compte rendu lit la transcription brute."))
             }
             _ => None,
@@ -206,12 +218,7 @@ impl TourDeTableApp {
                     ui.set_width(ui.available_width());
                     ui.label(RichText::new(texte).color(orange));
                 });
-        }
-
-        match action {
-            Some(Action::Arreter) => self.arreter_nettoyage(&id),
-            Some(Action::Lancer { depuis_zero }) => self.demander_nettoyage(&id, !depuis_zero && puis_compte_rendu, depuis_zero),
-            None => {}
+            ui.add_space(4.0);
         }
     }
 }

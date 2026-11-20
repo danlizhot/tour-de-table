@@ -92,6 +92,35 @@ impl TourDeTableApp {
         self.audio_export = Some(rx);
     }
 
+    /// Fin d'un archivage : la rencontre revient dans l'historique si l'archive n'a pas pu être écrite.
+    pub(super) fn pump_archivage(&mut self) {
+        while let Ok((m, res)) = self.archivage.1.try_recv() {
+            self.archivages_en_cours -= 1;
+            match res {
+                Ok(zip) => {
+                    let nom = zip.file_name().unwrap_or_default().to_string_lossy().into_owned();
+                    log::info!("« {} » archivée dans {}", m.title, zip.display());
+                    self.notify(format!("Rencontre archivée : {nom}, dans le dossier Archives."), false);
+                }
+                Err(e) => {
+                    log::error!("Archivage de « {} » : {e}", m.title);
+                    self.notify(format!("{e}. La rencontre reste dans l'historique."), true);
+                    let vue = match self.view {
+                        View::Past(i) => self.meetings.get(i).map(|v| v.id.clone()),
+                        _ => None,
+                    };
+                    self.meetings.push(m);
+                    self.meetings.sort_by_key(|m| std::cmp::Reverse(m.started_at));
+                    if let Some(id) = vue
+                        && let Some(i) = self.meetings.iter().position(|m| m.id == id)
+                    {
+                        self.view = View::Past(i);
+                    }
+                }
+            }
+        }
+    }
+
     pub(super) fn past_view(&mut self, ui: &mut Ui, idx: usize) {
         let mut action = None;
         let occupe = self.decoupage_job.is_some() || self.import_job.is_some() || self.finishing;
@@ -100,6 +129,12 @@ impl TourDeTableApp {
             && self.live.is_none()
             && self.fin_apres_panne.is_none()
             && matches!(self.model, super::ModelState::Ready);
+        let id = self.meetings[idx].id.as_str();
+        let travail_en_cours = self.summary_job.as_ref().is_some_and(|(i, ..)| i == id)
+            || self.nettoyage_job.as_ref().is_some_and(|t| t.id == id)
+            || self.voix_job.as_ref().is_some_and(|c| c.id == id)
+            || self.audio_export.is_some()
+            || self.decoupage_job.is_some();
         let details = {
             let m = &mut self.meetings[idx];
             ui.horizontal(|ui| {
@@ -108,8 +143,13 @@ impl TourDeTableApp {
                     let _ = m.save();
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.button("Supprimer").clicked() {
-                        action = Some("delete");
+                    if ui
+                        .add_enabled(!travail_en_cours, egui::Button::new("Archiver"))
+                        .on_hover_text("Comprime la rencontre dans un fichier .zip du dossier Archives et la retire de l'historique")
+                        .on_disabled_hover_text("Attendez la fin du travail en cours sur cette rencontre")
+                        .clicked()
+                    {
+                        action = Some("archiver");
                     }
                     if ui.button("Dossier").clicked() {
                         action = Some("reveal");
@@ -162,15 +202,21 @@ impl TourDeTableApp {
         action = self.volets(ui, idx).or(action);
 
         match action {
-            Some("delete") => {
+            Some("archiver") => {
                 let id = self.meetings[idx].id.clone();
-                self.arreter_nettoyage(&id);
+                self.nettoyages_en_attente.retain(|(i, _)| *i != id);
+                self.voix_en_attente.retain(|i| *i != id);
                 let m = self.meetings.remove(idx);
-                match storage::delete(&m) {
-                    Ok(()) => self.notify("Rencontre déplacée dans la corbeille de Tour de table.", false),
-                    Err(e) => self.notify(format!("{e:#}"), true),
-                }
                 self.view = View::Live;
+                self.notify(format!("Archivage de « {} »…", m.title), false);
+                let tx = self.archivage.0.clone();
+                let ctx = self.ctx.clone();
+                self.archivages_en_cours += 1;
+                std::thread::spawn(move || {
+                    let res = storage::archiver(&m).map_err(|e| format!("{e:#}"));
+                    let _ = tx.send((m, res));
+                    ctx.request_repaint();
+                });
             }
             Some("reveal") => storage::reveal(&self.meetings[idx].dir()),
             Some("audio") => self.exporter_audio(idx, blocs::Portee::Tout),
