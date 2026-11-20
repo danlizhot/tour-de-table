@@ -122,6 +122,10 @@ impl TourDeTableApp {
     }
 
     pub(super) fn past_view(&mut self, ui: &mut Ui, idx: usize) {
+        // Une autre rencontre est ouverte : son écoute s'arrête.
+        if self.ecoute.as_ref().is_some_and(|e| e.id != self.meetings[idx].id) {
+            self.ecoute = None;
+        }
         let mut action = None;
         let occupe = self.decoupage_job.is_some() || self.import_job.is_some() || self.finishing;
         let peut_poursuivre = !occupe
@@ -206,6 +210,7 @@ impl TourDeTableApp {
                 let id = self.meetings[idx].id.clone();
                 self.nettoyages_en_attente.retain(|(i, _)| *i != id);
                 self.voix_en_attente.retain(|i| *i != id);
+                self.ecoute = None;
                 let m = self.meetings.remove(idx);
                 self.view = View::Live;
                 self.notify(format!("Archivage de « {} »…", m.title), false);
@@ -234,7 +239,10 @@ impl TourDeTableApp {
                 Ok(dir) => storage::reveal(&dir.join("compte-rendu.docx")),
                 Err(e) => self.notify(format!("Export : {e:#}"), true),
             },
-            Some("decouper") => self.ouvrir_verification(self.meetings[idx].clone(), false),
+            Some("decouper") => {
+                self.ecoute = None;
+                self.ouvrir_verification(self.meetings[idx].clone(), false);
+            }
             Some("poursuivre") => self.poursuivre(idx),
             _ => {}
         }

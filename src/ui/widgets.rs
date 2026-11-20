@@ -40,71 +40,141 @@ pub(super) fn couleur_locuteur(source: Source, voix: Option<u16>) -> Color32 {
     }
 }
 
-pub(super) fn transcript(ui: &mut Ui, m: &Meeting, follow: bool) {
-    egui::ScrollArea::vertical().auto_shrink(false).stick_to_bottom(follow).show(ui, |ui| {
-        let mut last: Option<(Source, Option<u16>)> = None;
-        // Intertitre à chaque changement de point, une fois la rencontre découpée.
-        let mut point = None;
-        for (i, s) in m.segments.iter().enumerate() {
-            let cle = (s.source, m.voix_entre(s.start_ms, s.end_ms));
-            if !m.periodes.is_empty() {
-                let p = m.point_de(s.start_ms);
-                if i == 0 || p != point {
-                    point = p;
-                    last = None;
-                    ui.add_space(12.0);
-                    ui.label(RichText::new(m.intertitre(p)).strong().size(16.5).color(if p.is_some() { BLEU_CLAIR } else { Color32::GRAY }));
-                    ui.separator();
-                }
-            }
-            if last != Some(cle) {
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(clock(s.start_ms)).monospace().small().weak());
-                    ui.label(RichText::new(m.locuteur(cle.0, cle.1)).strong().color(couleur_locuteur(cle.0, cle.1)));
-                });
-                last = Some(cle);
-            }
-            ui.add(egui::Label::new(RichText::new(&s.text).size(15.0)).selectable(true).wrap());
-        }
-        ui.add_space(12.0);
+/// Écoute dans la transcription : boutons affichés, paragraphe en cours de lecture (son début), et heure où faire
+/// défiler la transcription (« Voir dans la transcription » d'un point du compte rendu).
+#[derive(Default, Clone, Copy)]
+pub(super) struct EtatEcoute<'a> {
+    pub boutons: bool,
+    pub en_lecture: Option<u64>,
+    pub aller_a: Option<u64>,
+    /// Plages (ms) dont les paragraphes sont surlignés : le point choisi dans le compte rendu, ou écouté.
+    pub surligne: &'a [(u64, u64)],
+}
+
+/// Clic sur le bouton d'un paragraphe de la transcription.
+pub(super) enum ClicEcoute {
+    Ecouter { debut_ms: u64, fin_ms: u64, libelle: String },
+    Arreter,
+}
+
+/// Une phrase de la transcription, brute ou nettoyée.
+struct Phrase<'a> {
+    debut_ms: u64,
+    fin_ms: u64,
+    source: Source,
+    point: Option<usize>,
+    texte: &'a str,
+}
+
+pub(super) fn transcript(ui: &mut Ui, m: &Meeting, follow: bool, ecoute: EtatEcoute<'_>) -> Option<ClicEcoute> {
+    let decoupee = !m.periodes.is_empty();
+    let phrases = m.segments.iter().map(|s| Phrase {
+        debut_ms: s.start_ms,
+        fin_ms: s.end_ms,
+        source: s.source,
+        point: if decoupee { m.point_de(s.start_ms) } else { None },
+        texte: &s.text,
     });
+    afficher_transcription(ui, m, phrases.collect(), follow, ecoute, None)
 }
 
 /// Transcription nettoyée, même présentation que `transcript`.
-pub(super) fn transcript_nettoye(ui: &mut Ui, m: &Meeting, n: &crate::nettoyage::Nettoyage) {
-    egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-        let mut last: Option<(Source, Option<u16>)> = None;
-        let mut point = None;
-        for (i, p) in n.phrases.iter().enumerate() {
-            let cle = (p.source, m.voix_entre(p.debut_ms, p.fin_ms));
-            if !m.periodes.is_empty() && (i == 0 || p.point != point) {
-                point = p.point;
-                last = None;
+pub(super) fn transcript_nettoye(ui: &mut Ui, m: &Meeting, n: &crate::nettoyage::Nettoyage, ecoute: EtatEcoute<'_>) -> Option<ClicEcoute> {
+    let phrases = n.phrases.iter().map(|p| Phrase { debut_ms: p.debut_ms, fin_ms: p.fin_ms, source: p.source, point: p.point, texte: &p.texte });
+    let suite = (!n.termine()).then_some("La suite de la rencontre n'est pas encore nettoyée : voir la version brute.");
+    afficher_transcription(ui, m, phrases.collect(), false, ecoute, suite)
+}
+
+/// Intertitre avant le paragraphe (changement de point), clé (source, voix), première et dernière phrase.
+type Paragraphe = (Option<Option<usize>>, (Source, Option<u16>), usize, usize);
+
+/// Paragraphes (même source et même voix), avec un intertitre à chaque changement de point une fois la rencontre
+/// découpée.
+fn afficher_transcription(ui: &mut Ui, m: &Meeting, phrases: Vec<Phrase>, follow: bool, ecoute: EtatEcoute<'_>, suite: Option<&str>) -> Option<ClicEcoute> {
+    let mut paragraphes: Vec<Paragraphe> = Vec::new();
+    for (i, p) in phrases.iter().enumerate() {
+        let cle = (p.source, m.voix_entre(p.debut_ms, p.fin_ms));
+        let intertitre = (!m.periodes.is_empty() && (i == 0 || p.point != phrases[i - 1].point)).then_some(p.point);
+        match paragraphes.last_mut() {
+            Some((_, c, _, fin)) if intertitre.is_none() && *c == cle => *fin = i,
+            _ => paragraphes.push((intertitre, cle, i, i)),
+        }
+    }
+    // Paragraphe vers lequel défiler : le premier qui finit après l'heure demandée.
+    let cible = ecoute.aller_a.and_then(|ms| paragraphes.iter().position(|&(_, _, _, f)| phrases[f].fin_ms > ms));
+    let mut clic = None;
+    egui::ScrollArea::vertical().auto_shrink(false).stick_to_bottom(follow).show(ui, |ui| {
+        for (k, &(intertitre, cle, d, f)) in paragraphes.iter().enumerate() {
+            let mut reperes = Vec::new();
+            if let Some(point) = intertitre {
                 ui.add_space(12.0);
-                ui.label(RichText::new(m.intertitre(p.point)).strong().size(16.5).color(if p.point.is_some() { BLEU_CLAIR } else { Color32::GRAY }));
+                reperes.push(ui.label(RichText::new(m.intertitre(point)).strong().size(16.5).color(if point.is_some() { BLEU_CLAIR } else { Color32::GRAY })));
                 ui.separator();
             }
-            if last != Some(cle) {
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(clock(p.debut_ms)).monospace().small().weak());
-                    ui.label(RichText::new(m.locuteur(cle.0, cle.1)).strong().color(couleur_locuteur(cle.0, cle.1)));
-                });
-                last = Some(cle);
-            }
-            ui.add(egui::Label::new(RichText::new(&p.texte).size(15.0)).selectable(true).wrap());
-        }
-        if !n.termine() {
+            let (debut_ms, fin_ms) = (phrases[d].debut_ms, phrases[f].fin_ms);
+            let joue = ecoute.en_lecture == Some(debut_ms);
+            let surligne = joue || ecoute.surligne.iter().any(|&(d, f)| debut_ms >= d && debut_ms < f);
             ui.add_space(8.0);
-            ui.label(RichText::new("La suite de la rencontre n'est pas encore nettoyée : voir la version brute.").weak().italics());
+            let fond = if surligne { BLEU_CLAIR.gamma_multiply(0.14) } else { Color32::TRANSPARENT };
+            egui::Frame::new().fill(fond).corner_radius(CornerRadius::same(6)).inner_margin(egui::Margin::symmetric(4, 2)).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                let entete = ui.horizontal(|ui| {
+                    ui.label(RichText::new(clock(debut_ms)).monospace().small().weak());
+                    let locuteur = m.locuteur(cle.0, cle.1);
+                    ui.label(RichText::new(&locuteur).strong().color(couleur_locuteur(cle.0, cle.1)));
+                    if ecoute.boutons {
+                        let aide = if joue { "Arrêter l'écoute" } else { "Entendre ce passage" };
+                        if bouton_lecture(ui, joue).on_hover_text(aide).clicked() {
+                            clic = Some(if joue {
+                                ClicEcoute::Arreter
+                            } else {
+                                ClicEcoute::Ecouter { debut_ms, fin_ms, libelle: format!("{locuteur} · {}", clock(debut_ms)) }
+                            });
+                        }
+                    }
+                });
+                reperes.push(entete.response);
+                for p in &phrases[d..=f] {
+                    ui.add(egui::Label::new(RichText::new(p.texte).size(15.0)).selectable(true).wrap());
+                }
+            });
+            if cible == Some(k) {
+                reperes[0].scroll_to_me(Some(egui::Align::TOP));
+            }
+        }
+        if let Some(texte) = suite {
+            ui.add_space(8.0);
+            ui.label(RichText::new(texte).weak().italics());
         }
         ui.add_space(12.0);
     });
+    clic
+}
+
+/// Petit bouton rond : triangle « écouter », ou carré « arrêter » pendant la lecture (les polices n'ont pas
+/// toujours ces symboles).
+pub(super) fn bouton_lecture(ui: &mut Ui, joue: bool) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    if ui.is_rect_visible(rect) {
+        let visuel = ui.style().interact(&resp);
+        let fond = if resp.hovered() || joue { BLEU_CLAIR.gamma_multiply(0.25) } else { visuel.weak_bg_fill };
+        ui.painter().circle_filled(rect.center(), 10.0, fond);
+        let c = rect.center();
+        let couleur = if joue { BLEU_CLAIR } else { visuel.text_color() };
+        if joue {
+            ui.painter().rect_filled(egui::Rect::from_center_size(c, Vec2::splat(8.0)), 1, couleur);
+        } else {
+            let pts = vec![c + Vec2::new(-3.0, -5.0), c + Vec2::new(5.0, 0.0), c + Vec2::new(-3.0, 5.0)];
+            ui.painter().add(egui::Shape::convex_polygon(pts, couleur, egui::Stroke::NONE));
+        }
+    }
+    resp
 }
 
 /// Rendu Markdown minimal pour le compte rendu : titres, listes, tableaux, **gras**.
-pub(super) fn markdown(ui: &mut Ui, md: &str) {
+/// `titre` ajoute des boutons au bout de chaque titre de section (« ## »), qu'il reçoit.
+pub(super) fn markdown(ui: &mut Ui, md: &str, titre: &mut dyn FnMut(&mut Ui, &str)) {
     for line in md.lines() {
         let t = line.trim_start();
         if let Some(h) = t.strip_prefix("### ") {
@@ -112,7 +182,11 @@ pub(super) fn markdown(ui: &mut Ui, md: &str) {
             ui.label(RichText::new(h.replace("**", "")).strong().size(15.0));
         } else if let Some(h) = t.strip_prefix("## ") {
             ui.add_space(6.0);
-            ui.label(RichText::new(h.replace("**", "")).strong().size(17.0).color(BLEU_CLAIR));
+            let h = h.replace("**", "");
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new(&h).strong().size(17.0).color(BLEU_CLAIR));
+                titre(ui, &h);
+            });
         } else if let Some(h) = t.strip_prefix("# ") {
             ui.label(RichText::new(h.replace("**", "")).strong().size(20.0));
         } else if let Some(q) = t.strip_prefix("> ") {

@@ -5,7 +5,8 @@ use std::sync::atomic::Ordering;
 use eframe::egui::{self, Color32, CornerRadius, RichText, Sense, Ui, Vec2};
 
 use super::TourDeTableApp;
-use super::widgets::{BLEU_CLAIR, markdown, transcript, transcript_nettoye};
+use super::ecoute::Extrait;
+use super::widgets::{BLEU_CLAIR, ClicEcoute, EtatEcoute, markdown, transcript, transcript_nettoye};
 use crate::config;
 use crate::storage::clock;
 
@@ -62,6 +63,18 @@ impl Onglets {
             None if self.gauche == Onglet::OrdreDuJour => Some(Onglet::Transcription),
             None => Some(std::mem::replace(&mut self.gauche, Onglet::OrdreDuJour)),
         };
+    }
+
+    /// La transcription devient visible : à la place du compte rendu s'il n'y a qu'un volet, sinon dans le volet qui
+    /// ne montre pas le compte rendu.
+    fn afficher_transcription(&mut self) {
+        if self.gauche == Onglet::Transcription || self.droite == Some(Onglet::Transcription) {
+            return;
+        }
+        match self.droite {
+            Some(_) if self.gauche == Onglet::CompteRendu => self.droite = Some(Onglet::Transcription),
+            _ => self.gauche = Onglet::Transcription,
+        }
     }
 
     /// Enregistrement ou import en cours : on reste sur l'ordre du jour tant que l'utilisateur ne choisit pas autre
@@ -165,6 +178,13 @@ fn trait_sous_la_barre(ui: &mut Ui) {
     let (trait_bas, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
     ui.painter().rect_filled(trait_bas.translate(Vec2::new(0.0, -ui.spacing().item_spacing.y)), 0, ui.visuals().widgets.noninteractive.bg_stroke.color);
     ui.add_space(2.0);
+}
+
+/// Clic sur un bouton d'un point du compte rendu.
+enum ClicPoint {
+    Ecouter(usize),
+    Arreter,
+    Voir(usize),
 }
 
 /// Cadre autour du texte d'un volet, comme celui de l'ordre du jour ; il occupe toute la place laissée par le pied.
@@ -292,6 +312,10 @@ impl TourDeTableApp {
                 });
             }
         }
+        // « Voir dans la transcription » pendant cette image : la copie locale des onglets fait foi.
+        if std::mem::take(&mut self.transcription_demandee) {
+            onglets.afficher_transcription();
+        }
         self.onglets = onglets;
         action
     }
@@ -335,12 +359,35 @@ impl TourDeTableApp {
                         self.barre_voix(ui, idx);
                     });
                 });
+                if self.extrait_ecoute(&self.meetings[idx].id).is_some() {
+                    pied(ui, "ecoute-transcription", |ui| self.barre_ecoute(ui, idx));
+                }
                 self.bandeau_nettoyage(ui, idx);
                 let m = &self.meetings[idx];
-                cadre(ui, |ui| match m.nettoyage.as_ref().filter(|_| !self.vue_brute) {
-                    Some(n) => transcript_nettoye(ui, m, n),
-                    None => transcript(ui, m, false),
+                let ecoute = EtatEcoute {
+                    boutons: self.recorder.is_none() && crate::audio::blocs::existe(&m.dir()),
+                    en_lecture: match self.extrait_ecoute(&m.id) {
+                        Some(Extrait::Paragraphe(d)) => Some(d),
+                        _ => None,
+                    },
+                    aller_a: self.aller_a.as_ref().filter(|(id, _)| *id == m.id).map(|&(_, ms)| ms),
+                    surligne: self.surligne.as_ref().filter(|(id, _)| *id == m.id).map_or(&[], |(_, p)| p.as_slice()),
+                };
+                let clic = cadre(ui, |ui| match m.nettoyage.as_ref().filter(|_| !self.vue_brute) {
+                    Some(n) => transcript_nettoye(ui, m, n, ecoute),
+                    None => transcript(ui, m, false, ecoute),
                 });
+                if ecoute.aller_a.is_some() {
+                    self.aller_a = None;
+                }
+                match clic {
+                    Some(ClicEcoute::Ecouter { debut_ms, fin_ms, libelle }) => {
+                        self.surligne = None;
+                        self.ecouter(idx, Extrait::Paragraphe(debut_ms), &[(debut_ms, fin_ms)], libelle);
+                    }
+                    Some(ClicEcoute::Arreter) => self.ecoute = None,
+                    None => {}
+                }
                 None
             }
             Onglet::CompteRendu => self.volet_compte_rendu(ui, idx),
@@ -408,10 +455,50 @@ impl TourDeTableApp {
                 }
             }
         }));
+        if self.extrait_ecoute(&m.id).is_some() {
+            pied(ui, "ecoute-compte-rendu", |ui| self.barre_ecoute(ui, idx));
+        }
+        let m = &self.meetings[idx];
+        // Points découpés (titre tel qu'écrit dans le compte rendu, périodes) : on peut les écouter ou les retrouver
+        // dans la transcription.
+        let audio = self.recorder.is_none() && crate::audio::blocs::existe(&m.dir());
+        let points: Vec<(String, Vec<(u64, u64)>)> = m
+            .agenda
+            .as_ref()
+            .map(|a| {
+                (0..a.points.len())
+                    .map(|i| {
+                        let plages = m
+                            .periodes
+                            .iter()
+                            .filter(|p| p.point == Some(i))
+                            .map(|p| (p.debut_ms, p.fin_ms.unwrap_or(m.duration_s * 1000)))
+                            .collect();
+                        (m.intertitre(Some(i)), plages)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let en_ecoute = match self.extrait_ecoute(&m.id) {
+            Some(Extrait::Point(i)) => Some(i),
+            _ => None,
+        };
+        let mut clic_point = None;
         cadre(ui, |ui| match &m.summary {
             Some(s) => {
                 egui::ScrollArea::vertical().id_salt("cr").auto_shrink(false).show(ui, |ui| {
-                    markdown(ui, s);
+                    markdown(ui, s, &mut |ui, titre| {
+                        let Some(i) = points.iter().position(|(t, plages)| t == titre.trim() && !plages.is_empty()) else { return };
+                        if audio {
+                            let joue = en_ecoute == Some(i);
+                            if super::widgets::bouton_lecture(ui, joue).on_hover_text(if joue { "Arrêter l'écoute" } else { "Entendre ce point" }).clicked() {
+                                clic_point = Some(if joue { ClicPoint::Arreter } else { ClicPoint::Ecouter(i) });
+                            }
+                        }
+                        if ui.small_button("Voir dans la transcription").clicked() {
+                            clic_point = Some(ClicPoint::Voir(i));
+                        }
+                    });
                     ui.add_space(12.0);
                 });
             }
@@ -426,6 +513,20 @@ impl TourDeTableApp {
                 ui.vertical_centered(|ui| ui.label(RichText::new(texte).weak()));
             }
         });
+        match clic_point {
+            Some(ClicPoint::Ecouter(i)) => {
+                let (titre, plages) = points[i].clone();
+                self.surligne = Some((self.meetings[idx].id.clone(), plages.clone()));
+                self.ecouter(idx, Extrait::Point(i), &plages, titre);
+            }
+            Some(ClicPoint::Arreter) => self.ecoute = None,
+            Some(ClicPoint::Voir(i)) => {
+                self.aller_a = points[i].1.first().map(|&(d, _)| (self.meetings[idx].id.clone(), d));
+                self.surligne = Some((self.meetings[idx].id.clone(), points[i].1.clone()));
+                self.transcription_demandee = true;
+            }
+            None => {}
+        }
         action
     }
 }
