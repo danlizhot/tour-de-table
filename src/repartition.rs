@@ -160,6 +160,11 @@ pub fn sujets(reponse: &str) -> Vec<Sujet> {
                 None => continue,
             },
         };
+        // « [23:10 | sujet] » : le crochet ouvrant est retiré avec l'heure, le fermant reste au bout.
+        let texte = match texte.strip_suffix(']') {
+            Some(t) if ligne.starts_with('[') && !t.contains('[') => t.trim_end().to_string(),
+            _ => texte,
+        };
         if texte.is_empty() || v.iter().any(|s| s.texte == texte) {
             continue;
         }
@@ -300,6 +305,10 @@ mod tests {
         assert_eq!(textes, ["Logiciel pour le compte rendu", "Coupure de 12 500 $", "Pont 00248"]);
         assert_eq!(v[1].debut_ms, Some(1_017_000));
         assert_eq!(v[2].debut_ms, None);
+        // Ligne entière entre crochets (Qwen3.6, 20 novembre 2026) ; un crochet du sujet lui-même reste.
+        let v = sujets("[03:29 | Adoption de l'ordre du jour]\n[04:30] Plan [annexe]");
+        let textes: Vec<&str> = v.iter().map(|s| s.texte.as_str()).collect();
+        assert_eq!(textes, ["Adoption de l'ordre du jour", "Plan [annexe]"]);
     }
 
     #[test]
