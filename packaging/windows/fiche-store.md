@@ -89,6 +89,12 @@ transcription · compte rendu · réunion · procès-verbal · québécois · or
 
 ## Notes de version (≤ 1 500 caractères)
 
+Version 0.3.1
+* Le bouton « Mettre à jour » de l'avis de nouvelle version ouvre maintenant la page de Tour de
+  table dans le Microsoft Store (il ouvrait le dossier Documents).
+
+### Versions précédentes
+
 Version 0.3.0
 * Reconnaissance des voix : après la transcription, les paragraphes sont séparés par personne, et
   on peut donner un nom à chaque voix.
@@ -104,8 +110,6 @@ Version 0.3.0
 * Texte plus lisible en thème clair ; années dites en deux nombres écrites en chiffres.
 * Transcription plus fiable sur certaines puces Intel.
 * Sécurité renforcée.
-
-### Versions précédentes
 
 Version 0.2.0
 * Compte rendu mieux organisé : chaque sujet discuté est rangé sous le bon point de l'ordre du
