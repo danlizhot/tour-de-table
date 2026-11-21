@@ -42,9 +42,23 @@ fn offerte() -> windows::core::Result<Option<bool>> {
 }
 
 /// Ouvre la page de Tour de table dans le Microsoft Store, où l'utilisateur lance la mise à jour.
+///
+/// Par `Windows.System.Launcher`, dans un fil : lancé depuis l'application empaquetée, `explorer` ne reconnaissait
+/// pas l'adresse `ms-windows-store:` et ouvrait le dossier Documents (0.3.0, 21 novembre 2026).
 pub fn ouvrir_store() {
     #[cfg(windows)]
-    if let Err(e) = std::process::Command::new("explorer").arg(PAGE_STORE).spawn() {
-        log::warn!("Ouverture du Microsoft Store : {e}");
-    }
+    std::thread::spawn(|| {
+        let lance = || -> windows::core::Result<bool> {
+            use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx};
+            // SAFETY: initialisation COM du fil courant, créé pour cette seule ouverture.
+            let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+            let uri = windows::Foundation::Uri::CreateUri(&windows::core::HSTRING::from(PAGE_STORE))?;
+            windows::System::Launcher::LaunchUriAsync(&uri)?.join()
+        };
+        match lance() {
+            Ok(true) => log::info!("Page du Microsoft Store ouverte"),
+            Ok(false) => log::warn!("Ouverture du Microsoft Store refusée par Windows"),
+            Err(e) => log::warn!("Ouverture du Microsoft Store : {e}"),
+        }
+    });
 }
