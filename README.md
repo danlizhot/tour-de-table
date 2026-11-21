@@ -256,7 +256,7 @@ Word (`compte-rendu.docx`).
 
 **Réécouter** : dans l'onglet Transcription, le bouton ▶ d'un paragraphe fait entendre son audio ; dans le compte
 rendu d'une rencontre découpée par points, chaque titre de point a un bouton ▶ (l'audio du point, tous ses
-passages bout à bout) et « Voir dans la transcription ». Une barre au bas du volet donne Pause, Arrêter et
+passages bout à bout) et « Voir dans la transcription », qui l'ouvre à côté du compte rendu pour comparer. Une barre au bas du volet donne Pause, Arrêter et
 l'avancement. L'audio est lu par morceaux de 20 s, jamais chargé en entier ; pas d'écoute pendant un
 enregistrement (le son de l'ordinateur serait capté).
 

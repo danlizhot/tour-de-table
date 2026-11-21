@@ -65,15 +65,18 @@ impl Onglets {
         };
     }
 
-    /// La transcription devient visible : à la place du compte rendu s'il n'y a qu'un volet, sinon dans le volet qui
-    /// ne montre pas le compte rendu.
-    fn afficher_transcription(&mut self) {
-        if self.gauche == Onglet::Transcription || self.droite == Some(Onglet::Transcription) {
+    /// La transcription devient visible à côté du compte rendu, pour comparer : dans le volet qui ne le montre pas,
+    /// en passant côte à côte s'il n'y a qu'un volet. Fenêtre trop étroite pour deux volets : à sa place.
+    fn afficher_transcription(&mut self, assez_large: bool) {
+        if self.gauche == Onglet::Transcription || self.droite == Some(Onglet::Transcription) && assez_large {
             return;
         }
-        match self.droite {
-            Some(_) if self.gauche == Onglet::CompteRendu => self.droite = Some(Onglet::Transcription),
-            _ => self.gauche = Onglet::Transcription,
+        if !assez_large {
+            self.gauche = Onglet::Transcription;
+        } else if self.gauche == Onglet::CompteRendu {
+            self.droite = Some(Onglet::Transcription);
+        } else {
+            self.gauche = Onglet::Transcription;
         }
     }
 
@@ -321,7 +324,7 @@ impl TourDeTableApp {
         }
         // « Voir dans la transcription » pendant cette image : la copie locale des onglets fait foi.
         if std::mem::take(&mut self.transcription_demandee) {
-            onglets.afficher_transcription();
+            onglets.afficher_transcription(assez_large);
         }
         self.onglets = onglets;
         action
@@ -580,6 +583,28 @@ mod tests {
         assert_eq!((o.gauche, o.droite), (Onglet::Transcription, Some(Onglet::OrdreDuJour)));
         o.choisir(true, Onglet::Transcription);
         assert_eq!((o.gauche, o.droite), (Onglet::OrdreDuJour, Some(Onglet::Transcription)));
+    }
+
+    #[test]
+    fn voir_dans_la_transcription_garde_le_compte_rendu() {
+        let o = |gauche, droite| Onglets { gauche, droite, rencontre: None };
+        let voir = |mut x: Onglets, large| {
+            x.afficher_transcription(large);
+            (x.gauche, x.droite)
+        };
+        // Un seul volet : côte à côte, le compte rendu reste à gauche.
+        assert_eq!(voir(o(Onglet::CompteRendu, None), true), (Onglet::CompteRendu, Some(Onglet::Transcription)));
+        // Côte à côte : la transcription prend le volet qui ne montre pas le compte rendu.
+        assert_eq!(
+            voir(o(Onglet::CompteRendu, Some(Onglet::OrdreDuJour)), true),
+            (Onglet::CompteRendu, Some(Onglet::Transcription))
+        );
+        assert_eq!(
+            voir(o(Onglet::OrdreDuJour, Some(Onglet::CompteRendu)), true),
+            (Onglet::Transcription, Some(Onglet::CompteRendu))
+        );
+        // Fenêtre trop étroite pour deux volets : à la place du compte rendu.
+        assert_eq!(voir(o(Onglet::CompteRendu, None), false), (Onglet::Transcription, None));
     }
 
     #[test]
