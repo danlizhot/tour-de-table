@@ -21,7 +21,8 @@ rendu, en français québécois. Il est pensé pour les rencontres entre organis
 **Toute la rencontre, d'un seul coup**
 Tour de table capte en même temps le micro de la salle et le son des participants à distance
 (Teams, Zoom, Meet, Webex…), sans pilote ni configuration. Chaque intervention est identifiée
-« Salle » ou « À distance ».
+« Salle » ou « À distance ». Après la transcription, Tour de table reconnaît aussi les voix et
+sépare les paragraphes par personne : il suffit de donner un nom à chacune.
 Un bouton Pause suspend la captation le temps d'un huis clos ou d'une discussion hors sujet :
 rien n'en est transcrit ni conservé.
 
@@ -35,6 +36,8 @@ Déposez l'ordre du jour (Word, PDF ou texte), avant ou après la rencontre. Tou
 le compte rendu point par point, dans la forme habituelle des organismes, prêt à relire dans Word. Joint d'avance, l'ordre du jour donne le compte rendu automatiquement, dès la fin de la
 transcription.
 Les chiffres qui n'apparaissent pas dans la transcription sont signalés pour vérification.
+Pour relire, la transcription s'affiche à côté du compte rendu, et un clic fait réentendre un
+passage ou tout un point de l'ordre du jour.
 
 **Privé par conception**
 Aucun compte, aucun abonnement, aucune donnée envoyée en ligne. La reconnaissance vocale tourne
@@ -54,7 +57,9 @@ que si elle est nettement plus rapide que le processeur et donne le même texte 
 reste sur le processeur.
 
 Rien d'autre à installer : au premier démarrage, Tour de table télécharge tout seul, une seule
-fois, ses modèles de reconnaissance vocale (574 Mo) et de rédaction (5,7 Go), soit 6,3 Go.
+fois, ses modèles de reconnaissance vocale (574 Mo), de reconnaissance des voix (46 Mo) et de
+rédaction (5,7 Go, ou 11,7 Go sur un poste de 24 Go de mémoire et plus, pour un modèle plus
+puissant).
 
 ## Fonctionnalités (jusqu'à 20, ≤ 200 caractères chacune)
 
@@ -73,12 +78,34 @@ fois, ses modèles de reconnaissance vocale (574 Mo) et de rédaction (5,7 Go), 
 13. Accélération par la puce graphique, gardée seulement si elle est plus rapide et fiable
 14. Bouton Pause : rien n'est capté pendant un huis clos ou une discussion hors sujet
 15. Rencontre poursuivie après une panne ou une coupure de courant
+16. Reconnaissance des voix : paragraphes séparés par personne, noms à donner
+17. Réécoute d'un clic : un passage de la transcription ou tout un point du compte rendu
+18. Ordre du jour, transcription et compte rendu en onglets, ou deux côte à côte
+19. Rencontres terminées archivées dans un fichier compressé
 
 ## Mots-clés (jusqu'à 7)
 
 transcription · compte rendu · réunion · procès-verbal · québécois · ordre du jour · Teams
 
 ## Notes de version (≤ 1 500 caractères)
+
+Version 0.3.0
+* Reconnaissance des voix : après la transcription, les paragraphes sont séparés par personne, et
+  on peut donner un nom à chaque voix.
+* Réécoute : un bouton ▶ fait entendre un paragraphe de la transcription, ou tout un point du
+  compte rendu. « Voir dans la transcription » ouvre le passage à côté du compte rendu.
+* La fiche d'une rencontre est en onglets (ordre du jour, transcription, compte rendu), avec un
+  ou deux volets côte à côte.
+* Compte rendu plus fidèle et plus rapide : chaque point est rédigé d'après ses propres passages,
+  et les longues rencontres sont mieux couvertes.
+* Sur un poste de 24 Go de mémoire et plus, un modèle de rédaction plus puissant s'installe tout
+  seul.
+* « Archiver » remplace la suppression : la rencontre est comprimée dans le dossier Archives.
+* Texte plus lisible en thème clair ; années dites en deux nombres écrites en chiffres.
+* Transcription plus fiable sur certaines puces Intel.
+* Sécurité renforcée.
+
+### Versions précédentes
 
 Version 0.2.0
 * Compte rendu mieux organisé : chaque sujet discuté est rangé sous le bon point de l'ordre du
@@ -88,8 +115,6 @@ Version 0.2.0
   la même rencontre.
 * À l'ouverture, un avis indique quand une nouvelle version est disponible dans le Microsoft Store.
 * Barre d'installation des modèles plus lisible.
-
-### Versions précédentes
 
 Version 0.1.4
 * Compte rendu plus complet et sans répétitions : chaque sujet discuté est d'abord rangé sous un

@@ -4,6 +4,7 @@
 
 ![Rust](https://img.shields.io/badge/Rust-B7410E?logo=rust&logoColor=white)
 ![Windows · macOS · Linux](https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-natif-555555)
+[![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-T%C3%A9l%C3%A9charger-0067B8?logo=microsoft&logoColor=white)](https://apps.microsoft.com/detail/9nz4g5fg7l15)
 [![Licence MIT](https://img.shields.io/badge/licence-MIT-2E7D32)](LICENSE)
 ![État : alpha](https://img.shields.io/badge/%C3%A9tat-alpha-E6A700)
 
@@ -14,6 +15,9 @@
 Tour de table capte en même temps le **micro de la salle** et le **son des participants à distance**
 (Teams, Zoom, Meet, Webex… tout ce qui sort de l'ordinateur), puis transcrit en français québécois
 avec Whisper, directement sur votre machine. Aucun son ni texte ne quitte l'ordinateur.
+
+**Windows : [Tour de table dans le Microsoft Store](https://apps.microsoft.com/detail/9nz4g5fg7l15)**, gratuit, mis à jour automatiquement. macOS et
+Linux : voir les [versions sur GitHub](https://github.com/danlizhot/tour-de-table/releases).
 
 **[Guide d'utilisation](https://danlizhot.github.io/tour-de-table/guide/)**, avec des captures d'écran, à imprimer ou à
 enregistrer en PDF au besoin.
@@ -215,8 +219,9 @@ source sur l'horloge pour garder des horodatages justes.
 Le [guide d'utilisation](https://danlizhot.github.io/tour-de-table/guide/) reprend ces étapes pas à pas, avec des captures d'écran.
 Sa source est `docs/guide/index.html` (captures dans `docs/guide/images/`, rencontre fictive).
 
-1. Lancez Tour de table. Au premier démarrage, il installe tout seul ses deux modèles, sans rien
-   demander : reconnaissance de la parole (574 Mo), puis rédaction des comptes rendus (5,7 Go).
+1. Lancez Tour de table. Au premier démarrage, il installe tout seul ses modèles, sans rien
+   demander : reconnaissance de la parole (574 Mo), reconnaissance des voix (46 Mo), puis rédaction
+   des comptes rendus (5,7 Go, ou 11,7 Go sur un poste de 24 Go de mémoire et plus).
    L'écran « Installation… » montre l'avancement et le temps restant. C'est la seule connexion
    Internet, et elle n'a lieu qu'une fois (Hugging Face). Vous pouvez fermer l'application en
    cours de route : l'installation reprend là où elle s'était arrêtée au démarrage suivant.
