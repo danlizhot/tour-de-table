@@ -19,8 +19,8 @@ avec Whisper, directement sur votre machine. Aucun son ni texte ne quitte l'ordi
 **Windows : [Tour de table dans le Microsoft Store](https://apps.microsoft.com/detail/9nz4g5fg7l15)**, gratuit, mis à jour automatiquement. macOS et
 Linux : voir les [versions sur GitHub](https://github.com/danlizhot/tour-de-table/releases).
 
-**[Guide d'utilisation](https://danlizhot.github.io/tour-de-table/guide/)**, avec des captures d'écran, à imprimer ou à
-enregistrer en PDF au besoin.
+📘 **[Guide d'utilisation (PDF imprimable)](https://danlizhot.github.io/tour-de-table/guide/guide-utilisation.pdf)**, avec des captures
+d'écran pas à pas.
 
 ![Capture d'écran](assets/capture.png)
 
@@ -216,8 +216,10 @@ source sur l'horloge pour garder des horodatages justes.
 
 ## Utilisation
 
-Le [guide d'utilisation](https://danlizhot.github.io/tour-de-table/guide/) reprend ces étapes pas à pas, avec des captures d'écran.
-Sa source est `docs/guide/index.html` (captures dans `docs/guide/images/`, rencontre fictive).
+Le [guide d'utilisation](https://danlizhot.github.io/tour-de-table/guide/guide-utilisation.pdf) reprend ces étapes pas à pas,
+avec des captures d'écran. Il est produit à partir de `docs/guide/guide.html` (contenu), `style.css` (mise en page
+d'impression), `couverture.html` et des captures de `docs/guide/captures/` (thème clair, 1440 × 900, rencontre fictive) :
+`python3 docs/guide/generer.py` (requiert Chromium ou Chrome, Pillow et les outils poppler).
 
 1. Lancez Tour de table. Au premier démarrage, il installe tout seul ses modèles, sans rien
    demander : reconnaissance de la parole (574 Mo), reconnaissance des voix (46 Mo), puis rédaction

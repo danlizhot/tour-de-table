@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: Letter; margin: 0; }
+  html, body { margin: 0; width: 8.5in; height: 11in; overflow: hidden; }
+  body {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    font-family: "Inter", "IBM Plex Sans", "Noto Sans", Arial, sans-serif; color: #1F2933;
+  }
+  .page { position: relative; width: 8.5in; height: 11in; overflow: hidden; }
+  /* Le logo agrandi en motif : la table, l'onde sonore et huit participants aux couleurs des voix de l'application. */
+  .motif { position: absolute; left: 0; top: 0; width: 8.5in; height: 6.5in; }
+  .organisme { position: absolute; left: 0.9in; top: 0.85in; color: #9EC1FF; font-size: 12pt; letter-spacing: 2.5pt; text-transform: uppercase; font-weight: 600; }
+  .type { position: absolute; left: 0.9in; top: 1.65in; color: #fff; font-size: 15pt; font-weight: 500; opacity: 0.85; }
+  h1 { position: absolute; left: 0.9in; top: 1.95in; margin: 0; color: #fff; font-size: 46pt; line-height: 1.05; font-weight: 800; letter-spacing: -0.8pt; }
+  .slogan { position: absolute; left: 0.9in; top: 2.85in; color: #DCE7FB; font-size: 14pt; font-style: italic; }
+  .bas { position: absolute; left: 0.9in; right: 0.9in; top: 6.85in; }
+  .resume { font-family: "Charter", "Bitstream Charter", "Noto Serif", Georgia, serif; font-size: 12.5pt; line-height: 1.5; color: #334155; max-width: 5.8in; margin: 0 0 12pt; }
+  .filet { position: absolute; left: 0.9in; right: 0.9in; bottom: 1.45in; height: 4pt; display: flex; border-radius: 2pt; overflow: hidden; }
+  .filet span { flex: 1; }
+  .meta { position: absolute; left: 0.9in; right: 0.9in; bottom: 0.85in; display: flex; gap: 0.9in; font-size: 10pt; color: #5F6B78; }
+  .meta b { color: #1F2933; display: block; font-size: 10.5pt; }
+</style>
+</head>
+<body><div class="page">
+  <svg class="motif" viewBox="0 0 850 650" preserveAspectRatio="xMidYMin slice" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="fond" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0A4CC2"/><stop offset=".55" stop-color="#062E7A"/><stop offset="1" stop-color="#0B1630"/></linearGradient>
+      <radialGradient id="lueur" cx="644" cy="330" r="420" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#3B82F6" stop-opacity=".55"/><stop offset="1" stop-color="#3B82F6" stop-opacity="0"/></radialGradient>
+      <radialGradient id="halo"><stop offset=".7" stop-color="#fff" stop-opacity=".35"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+      <clipPath id="bord"><path d="M0,0 H850 V585 C700,640 560,560 400,598 C260,632 120,600 0,622 Z"/></clipPath>
+    </defs>
+    <g clip-path="url(#bord)">
+      <rect width="850" height="650" fill="url(#fond)"/>
+      <rect width="850" height="650" fill="url(#lueur)"/>
+      <g transform="translate(16 0)">
+      <circle cx="628" cy="330" r="191" fill="none" stroke="#fff" stroke-opacity="0.160" stroke-width="1.6"/><circle cx="628" cy="330" r="242" fill="none" stroke="#fff" stroke-opacity="0.120" stroke-width="1.4"/><circle cx="628" cy="330" r="297" fill="none" stroke="#fff" stroke-opacity="0.090" stroke-width="1.2"/><circle cx="628" cy="330" r="356" fill="none" stroke="#fff" stroke-opacity="0.065" stroke-width="1.1"/><circle cx="628" cy="330" r="420" fill="none" stroke="#fff" stroke-opacity="0.045" stroke-width="1"/><circle cx="628" cy="330" r="488" fill="none" stroke="#fff" stroke-opacity="0.030" stroke-width="1"/><circle cx="628" cy="330" r="560" fill="none" stroke="#fff" stroke-opacity="0.020" stroke-width="1"/>
+      <path d="M787.9,281.5 A31,31 0 0 0 775.3,251.2" fill="none" stroke="#628EF0" stroke-opacity="0.8" stroke-width="4" stroke-linecap="round"/><path d="M798.8,283.4 A42,42 0 0 0 781.7,242.2" fill="none" stroke="#628EF0" stroke-opacity="0.45" stroke-width="4" stroke-linecap="round"/><circle cx="757.3" cy="276.4" r="21" fill="#628EF0"/><circle cx="757.3" cy="276.4" r="21" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="2.6"/><path d="M706.8,182.7 A31,31 0 0 0 676.5,170.1" fill="none" stroke="#E39D4B" stroke-opacity="0.8" stroke-width="4" stroke-linecap="round"/><path d="M715.8,176.3 A42,42 0 0 0 674.6,159.2" fill="none" stroke="#E39D4B" stroke-opacity="0.45" stroke-width="4" stroke-linecap="round"/><circle cx="681.6" cy="200.7" r="21" fill="#E39D4B"/><circle cx="681.6" cy="200.7" r="21" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="2.6"/><path d="M579.5,170.1 A31,31 0 0 0 549.2,182.7" fill="none" stroke="#4BB393" stroke-opacity="0.8" stroke-width="4" stroke-linecap="round"/><path d="M581.4,159.2 A42,42 0 0 0 540.2,176.3" fill="none" stroke="#4BB393" stroke-opacity="0.45" stroke-width="4" stroke-linecap="round"/><circle cx="574.4" cy="200.7" r="21" fill="#4BB393"/><circle cx="574.4" cy="200.7" r="21" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="2.6"/><path d="M480.7,251.2 A31,31 0 0 0 468.1,281.5" fill="none" stroke="#D162DF" stroke-opacity="0.8" stroke-width="4" stroke-linecap="round"/><path d="M474.3,242.2 A42,42 0 0 0 457.2,283.4" fill="none" stroke="#D162DF" stroke-opacity="0.45" stroke-width="4" stroke-linecap="round"/><circle cx="498.7" cy="276.4" r="21" fill="#D162DF"/><circle cx="498.7" cy="276.4" r="21" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="2.6"/><path d="M468.1,378.5 A31,31 0 0 0 480.7,408.8" fill="none" stroke="#E56262" stroke-opacity="0.8" stroke-width="4" stroke-linecap="round"/><path d="M457.2,376.6 A42,42 0 0 0 474.3,417.8" fill="none" stroke="#E56262" stroke-opacity="0.45" stroke-width="4" stroke-linecap="round"/><circle cx="498.7" cy="383.6" r="21" fill="#E56262"/><circle cx="498.7" cy="383.6" r="21" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="2.6"/><path d="M549.2,477.3 A31,31 0 0 0 579.5,489.9" fill="none" stroke="#4DAFC7" stroke-opacity="0.8" stroke-width="4" stroke-linecap="round"/><path d="M540.2,483.7 A42,42 0 0 0 581.4,500.8" fill="none" stroke="#4DAFC7" stroke-opacity="0.45" stroke-width="4" stroke-linecap="round"/><circle cx="574.4" cy="459.3" r="21" fill="#4DAFC7"/><circle cx="574.4" cy="459.3" r="21" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="2.6"/><path d="M676.5,489.9 A31,31 0 0 0 706.8,477.3" fill="none" stroke="#90BC50" stroke-opacity="0.8" stroke-width="4" stroke-linecap="round"/><path d="M674.6,500.8 A42,42 0 0 0 715.8,483.7" fill="none" stroke="#90BC50" stroke-opacity="0.45" stroke-width="4" stroke-linecap="round"/><circle cx="681.6" cy="459.3" r="21" fill="#90BC50"/><circle cx="681.6" cy="459.3" r="21" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="2.6"/><path d="M775.3,408.8 A31,31 0 0 0 787.9,378.5" fill="none" stroke="#B89483" stroke-opacity="0.8" stroke-width="4" stroke-linecap="round"/><path d="M781.7,417.8 A42,42 0 0 0 798.8,376.6" fill="none" stroke="#B89483" stroke-opacity="0.45" stroke-width="4" stroke-linecap="round"/><circle cx="757.3" cy="383.6" r="21" fill="#B89483"/><circle cx="757.3" cy="383.6" r="21" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="2.6"/>
+      <circle cx="628" cy="330" r="114" fill="url(#halo)"/><circle cx="628" cy="330" r="83" fill="#fff"/><rect x="588" y="314.0" width="12" height="32" rx="6" fill="#003DA5"/><rect x="605" y="299.5" width="12" height="61" rx="6" fill="#003DA5"/><rect x="622" y="285.0" width="12" height="90" rx="6" fill="#003DA5"/><rect x="639" y="299.5" width="12" height="61" rx="6" fill="#003DA5"/><rect x="656" y="314.0" width="12" height="32" rx="6" fill="#003DA5"/>
+    </g>
+    </g>
+    <path d="M0,622 C120,600 260,632 400,598 C560,560 700,640 850,585" fill="none" stroke="#9EC1FF" stroke-opacity=".7" stroke-width="2.5"/>
+  </svg>
+  <div class="organisme">Logiciel libre · 100 % local</div>
+  <div class="type">Guide d'utilisation</div>
+  <h1>Tour de table</h1>
+  <div class="slogan">Tout le monde parle, rien ne se perd.</div>
+  <div class="bas">
+    <p class="resume">Enregistrer une rencontre ou importer un enregistrement, suivre l'ordre du jour point par point, relire la transcription, nommer les voix et obtenir un brouillon de compte rendu prêt à réviser : le mode d'emploi de l'application, étape par étape.</p>
+    <p class="resume">Tout se fait sur votre ordinateur. Aucun son ni aucun texte n'est envoyé en ligne.</p>
+  </div>
+  <div class="filet"><span style="background:#2563EB"></span><span style="background:#D97706"></span><span style="background:#059669"></span><span style="background:#C026D3"></span><span style="background:#DC2626"></span><span style="background:#0891B2"></span><span style="background:#65A30D"></span><span style="background:#9D6B53"></span></div>
+  <div class="meta">
+    <div><b>Version de l'application</b>{{VERSION}}</div>
+    <div><b>Édition</b>{{DATE}}</div>
+  </div>
+</div></body>
+</html>
