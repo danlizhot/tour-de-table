@@ -82,6 +82,7 @@ puissant).
 17. Réécoute d'un clic : un passage de la transcription ou tout un point du compte rendu
 18. Ordre du jour, transcription et compte rendu en onglets, ou deux côte à côte
 19. Rencontres terminées archivées dans un fichier compressé
+20. Guide d'utilisation illustré inclus, consultable sans connexion
 
 ## Mots-clés (jusqu'à 7)
 
@@ -89,11 +90,19 @@ transcription · compte rendu · réunion · procès-verbal · québécois · or
 
 ## Notes de version (≤ 1 500 caractères)
 
+Version 0.3.2
+* Guide d'utilisation illustré inclus : le bouton « Guide d'utilisation », au bas de la colonne
+  de gauche, l'ouvre sans connexion.
+* L'ordre du jour déposé avant la rencontre s'affiche sur toute la hauteur, comme pendant la
+  rencontre.
+* Les noms donnés aux voix s'affichent en entier.
+* Boutons « Écouter » de l'écran « Découper par points » plus lisibles.
+
+### Versions précédentes
+
 Version 0.3.1
 * Le bouton « Mettre à jour » de l'avis de nouvelle version ouvre maintenant la page de Tour de
   table dans le Microsoft Store (il ouvrait le dossier Documents).
-
-### Versions précédentes
 
 Version 0.3.0
 * Reconnaissance des voix : après la transcription, les paragraphes sont séparés par personne, et
