@@ -233,7 +233,8 @@ impl TourDeTableApp {
                         if ui.small_button("+5 s").clicked() {
                             deplacer = Some((i, l.f.debut_ms + PAS_MS));
                         }
-                        let ecoute = if en_cours == Some(i) { "■ Arrêter" } else { "▶ Écouter" };
+                        // Sans symbole : ▶ et ■ manquent à certaines polices du système (carré vide sous Linux).
+                        let ecoute = if en_cours == Some(i) { "Arrêter" } else { "Écouter" };
                         if ui.small_button(ecoute).on_hover_text("10 s autour de la frontière").clicked() {
                             ecouter = Some(i);
                         }

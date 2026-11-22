@@ -313,9 +313,13 @@ impl TourDeTableApp {
     pub(super) fn live_view(&mut self, ui: &mut Ui) {
         self.bandeau(ui);
         let pret = !matches!(self.model, ModelState::Missing | ModelState::Failed(_)) || self.live.is_some();
-        // Rencontre en cours avec un ordre du jour : deux onglets. Sinon, la carte où déposer l'ordre du jour reste
-        // au-dessus de la transcription.
-        if pret && self.live.as_ref().is_some_and(|m| m.agenda.is_some()) {
+        // Ordre du jour déposé, avant ou pendant la rencontre : deux onglets pleine hauteur, les mêmes du début à la
+        // fin. Sinon, la carte où déposer l'ordre du jour reste au-dessus de la transcription.
+        let avec_ordre_du_jour = match &self.live {
+            Some(m) => m.agenda.is_some(),
+            None => self.draft_agenda.is_some(),
+        };
+        if pret && avec_ordre_du_jour {
             self.volets_direct(ui, Self::transcription_directe);
             return;
         }

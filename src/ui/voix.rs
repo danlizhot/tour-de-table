@@ -150,7 +150,9 @@ impl TourDeTableApp {
         egui::Grid::new("noms-des-voix").num_columns(3).spacing([12.0, 6.0]).show(ui, |ui| {
             for (i, ms) in parole.iter().enumerate() {
                 ui.label(RichText::new(format!("Voix {}", i + 1)).strong().color(couleur_locuteur(crate::audio::Source::Mixte, Some(i as u16))));
-                let champ = ui.add(egui::TextEdit::singleline(&mut v.noms[i]).hint_text("Nom ou rôle").desired_width(220.0));
+                // Taille imposée : dans une grille, le champ garderait la largeur de la colonne (quelques lettres).
+                let hauteur = ui.spacing().interact_size.y;
+                let champ = ui.add_sized([240.0, hauteur], egui::TextEdit::singleline(&mut v.noms[i]).hint_text("Nom ou rôle"));
                 modifie |= champ.lost_focus();
                 ui.label(RichText::new(format!("{} min de parole", (ms + 30_000) / 60_000)).weak());
                 ui.end_row();

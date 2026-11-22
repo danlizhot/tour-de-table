@@ -164,6 +164,7 @@ jobs:
           if (-not $vk) { Write-Error "vulkan-1.dll introuvable"; exit 1 }
           Copy-Item $vk dist/
           Copy-Item README.md dist/
+          Copy-Item docs/guide/guide-utilisation.pdf dist/
           Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}.zip
 
       # Paquet pour le Microsoft Store. Il n'est pas signé : le Store le signe à la
@@ -177,6 +178,7 @@ jobs:
           Copy-Item target/release/tourdetable.exe msix/TourDeTable.exe
           Copy-Item target/release/tourdetable-redaction.exe msix/
           Copy-Item dist/vulkan-1.dll msix/
+          Copy-Item docs/guide/guide-utilisation.pdf msix/
           Copy-Item packaging/windows/Assets/* msix/Assets/
           (Get-Content packaging/windows/AppxManifest.xml -Raw) -replace 'Version="0\.0\.0\.0"', "Version=`"$version`"" |
             Set-Content msix/AppxManifest.xml -Encoding utf8
@@ -193,6 +195,7 @@ jobs:
           mkdir -p "$APP/MacOS" "$APP/Resources"
           cp target/release/tourdetable target/release/tourdetable-redaction "$APP/MacOS/"
           cp packaging/macos/Info.plist "$APP/"
+          cp docs/guide/guide-utilisation.pdf "$APP/Resources/"
           mkdir tourdetable.iconset
           for s in 16 32 128 256 512; do
             sips -z $s $s assets/icon-1024.png --out tourdetable.iconset/icon_${s}x${s}.png
@@ -206,7 +209,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist
-          cp target/release/tourdetable target/release/tourdetable-redaction packaging/linux/tourdetable.desktop assets/icon-256.png README.md dist/
+          cp target/release/tourdetable target/release/tourdetable-redaction packaging/linux/tourdetable.desktop assets/icon-256.png README.md docs/guide/guide-utilisation.pdf dist/
           tar -czf ${{ matrix.artifact }}.tar.gz -C dist .
 
       # Les exécutables d'une PR provenant d'un fork (code d'un tiers non examiné) ne sont jamais
