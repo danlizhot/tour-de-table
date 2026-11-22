@@ -613,6 +613,15 @@ impl TourDeTableApp {
         egui::Panel::bottom("pied").show_separator_line(false).show(ui, |ui| {
             ui.add_space(4.0);
             if ui
+                .add(egui::Button::new("Guide d'utilisation").min_size(Vec2::new(ui.available_width(), 30.0)))
+                .on_hover_text("Ouvre le guide d'utilisation (PDF), livré avec l'application")
+                .clicked()
+                && let Err(e) = storage::ouvrir_guide()
+            {
+                log::error!("Guide d'utilisation : {e:#}");
+                self.notify(format!("{e:#}"), true);
+            }
+            if ui
                 .add(egui::Button::new("Archives").min_size(Vec2::new(ui.available_width(), 30.0)))
                 .on_hover_text("Ouvre le dossier des rencontres archivées (fichiers .zip)")
                 .clicked()

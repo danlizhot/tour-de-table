@@ -860,6 +860,37 @@ fn srt_time(ms: u64) -> String {
     format!("{:02}:{:02}:{:02},{:03}", ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000)
 }
 
+
+/// Nom du guide d'utilisation livré avec l'application (docs/guide/guide-utilisation.pdf).
+pub const GUIDE: &str = "guide-utilisation.pdf";
+
+/// Guide d'utilisation livré : à côté de l'exécutable (Windows, Linux, paquet du Store), dans
+/// `Contents/Resources` d'une application macOS, ou dans le dépôt pour une version de développement.
+fn guide_livre() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dossier = exe.parent()?;
+    let depot = Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/guide").join(GUIDE);
+    [dossier.join(GUIDE), dossier.join("../Resources").join(GUIDE), depot]
+        .into_iter()
+        .find(|p| p.is_file())
+}
+
+/// Ouvre le guide d'utilisation dans le lecteur PDF du système. Il est d'abord copié dans le dossier de
+/// données : le dossier d'installation du Store (WindowsApps) n'est pas fait pour être ouvert par d'autres
+/// programmes. Aucune connexion : le guide est livré avec l'application.
+pub fn ouvrir_guide() -> Result<()> {
+    let source = guide_livre().context("Guide d'utilisation introuvable : réinstallez Tour de table")?;
+    let copie = crate::config::data_dir().join(GUIDE);
+    // Même taille : déjà copié par cette version (une nouvelle version du guide change de taille).
+    let a_jour = std::fs::metadata(&copie).is_ok_and(|m| std::fs::metadata(&source).is_ok_and(|s| s.len() == m.len()));
+    if !a_jour {
+        std::fs::create_dir_all(crate::config::data_dir()).context("Dossier de données")?;
+        std::fs::copy(&source, &copie).with_context(|| format!("Copie du guide dans {}", copie.display()))?;
+    }
+    reveal(&copie);
+    Ok(())
+}
+
 /// Ouvre un dossier dans l'explorateur de fichiers du système.
 pub fn reveal(path: &std::path::Path) {
     let cmd = if cfg!(windows) {
@@ -878,6 +909,13 @@ pub fn reveal(path: &std::path::Path) {
 mod tests {
     use super::*;
     use crate::audio::Source;
+
+    /// Version de développement : le guide du dépôt sert de guide livré.
+    #[test]
+    fn guide_livre_trouve() {
+        let guide = guide_livre().expect("guide d'utilisation introuvable");
+        assert!(guide.ends_with(GUIDE));
+    }
 
     fn seg(start_ms: u64, source: Source, text: &str) -> Segment {
         Segment { start_ms, end_ms: start_ms + 1000, source, text: text.into() }

@@ -20,7 +20,7 @@ avec Whisper, directement sur votre machine. Aucun son ni texte ne quitte l'ordi
 Linux : voir les [versions sur GitHub](https://github.com/danlizhot/tour-de-table/releases).
 
 📘 **[Guide d'utilisation (PDF imprimable)](https://danlizhot.github.io/tour-de-table/guide/guide-utilisation.pdf)**, avec des captures
-d'écran pas à pas.
+d'écran pas à pas. Il est aussi livré avec l'application : bouton « Guide d'utilisation », au bas de la colonne de gauche.
 
 ![Capture d'écran](assets/capture.png)
 
