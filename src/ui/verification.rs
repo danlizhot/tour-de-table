@@ -242,6 +242,11 @@ impl TourDeTableApp {
                             retirer = Some(i);
                         }
                     });
+                    if en_cours == Some(i)
+                        && let Some((_, lecture)) = &v.lecture
+                    {
+                        barre_frontiere(ui, l.f.debut_ms, v.duree_ms, lecture.avancement_ms());
+                    }
                     if !l.f.extrait.is_empty() {
                         let r = ui.label(RichText::new(format!("« {} »", l.f.extrait)).italics().weak());
                         if !l.f.raison.is_empty() {
@@ -314,6 +319,34 @@ impl TourDeTableApp {
             self.valider_decoupage(m, nouvelle, frontieres);
         }
     }
+}
+
+/// Petit lecteur d'une frontière en cours d'écoute : avancement des 10 s, avec un repère à l'heure de la frontière
+/// pour savoir si ce qu'on entend tombe avant ou après.
+fn barre_frontiere(ui: &mut Ui, t: u64, duree_ms: u64, (fait, total): (u64, u64)) {
+    let debut = t.saturating_sub(ECOUTE_MS / 2);
+    let fin = (t + ECOUTE_MS / 2).min(duree_ms.max(t));
+    let etendue = fin.saturating_sub(debut).max(1) as f32;
+    let secondes = |ms: u64| format!("{} s", (ms as f32 / 1000.0).round() as u64);
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(format!("−{}", secondes(t - debut))).weak());
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(260.0, 14.0), egui::Sense::hover());
+        let p = ui.painter();
+        let rail = egui::Rect::from_center_size(rect.center(), egui::vec2(rect.width(), 6.0));
+        p.rect_filled(rail, 3.0, ui.visuals().widgets.inactive.bg_fill);
+        let fraction = if total == 0 { 0.0 } else { (fait as f32 / total as f32).clamp(0.0, 1.0) };
+        let mut lu = rail;
+        lu.set_right(rail.left() + rail.width() * fraction);
+        p.rect_filled(lu, 3.0, BLEU);
+        let x = rect.left() + rect.width() * (t - debut) as f32 / etendue;
+        p.line_segment([egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())], egui::Stroke::new(2.0, ui.visuals().strong_text_color()));
+        ui.label(RichText::new(format!("+{}", secondes(fin.saturating_sub(t)))).weak());
+        let ecart = (debut + fait) as i64 - t as i64;
+        let ou = if ecart < 0 { "avant la frontière" } else { "après la frontière" };
+        ui.label(RichText::new(format!("{} {ou}", secondes(ecart.unsigned_abs()))));
+    })
+    .response
+    .on_hover_text("Le trait marque l'heure de début du point");
 }
 
 #[cfg(test)]

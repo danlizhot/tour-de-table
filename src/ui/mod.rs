@@ -639,7 +639,11 @@ impl TourDeTableApp {
                     self.system_sources = audio::list_system_sources();
                 }
             }
-            ui.add_space(6.0);
+            ui.add_space(4.0);
+            ui.vertical_centered(|ui| {
+                ui.label(egui::RichText::new(concat!("Version ", env!("CARGO_PKG_VERSION"))).small().weak());
+            });
+            ui.add_space(4.0);
         });
         ui.add_space(6.0);
         let live_label = if self.recorder.is_some() { "Rencontre en cours" } else { "+ Nouvelle rencontre" };
