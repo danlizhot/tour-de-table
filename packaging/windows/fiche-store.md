@@ -90,6 +90,14 @@ transcription · compte rendu · réunion · procès-verbal · québécois · or
 
 ## Notes de version (≤ 1 500 caractères)
 
+Version 0.3.3
+* Le bouton « Guide d'utilisation » ouvre maintenant le guide (il ouvrait le dossier Documents).
+* « Découper par points » : pendant l'écoute d'une frontière, une barre montre si ce qu'on entend
+  tombe avant ou après la frontière.
+* Le numéro de version est affiché au bas de la colonne de gauche.
+
+### Versions précédentes
+
 Version 0.3.2
 * Guide d'utilisation illustré inclus : le bouton « Guide d'utilisation », au bas de la colonne
   de gauche, l'ouvre sans connexion.
@@ -97,8 +105,6 @@ Version 0.3.2
   rencontre.
 * Les noms donnés aux voix s'affichent en entier.
 * Boutons « Écouter » de l'écran « Découper par points » plus lisibles.
-
-### Versions précédentes
 
 Version 0.3.1
 * Le bouton « Mettre à jour » de l'avis de nouvelle version ouvre maintenant la page de Tour de
