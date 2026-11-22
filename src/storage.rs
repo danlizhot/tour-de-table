@@ -875,18 +875,23 @@ fn guide_livre() -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
-/// Ouvre le guide d'utilisation dans le lecteur PDF du système. Il est d'abord copié dans le dossier de
-/// données : le dossier d'installation du Store (WindowsApps) n'est pas fait pour être ouvert par d'autres
-/// programmes. Aucune connexion : le guide est livré avec l'application.
+/// Ouvre le guide d'utilisation dans le lecteur PDF du système. Il est d'abord copié dans le dossier des
+/// rencontres : le dossier d'installation du Store (WindowsApps) n'est pas fait pour être ouvert par d'autres
+/// programmes, et le dossier de données (AppData) d'une application du Store est redirigé vers un dossier privé
+/// que l'explorateur ne voit pas (il ouvrait alors « Documents »). Aucune connexion : le guide est livré avec
+/// l'application.
 pub fn ouvrir_guide() -> Result<()> {
     let source = guide_livre().context("Guide d'utilisation introuvable : réinstallez Tour de table")?;
-    let copie = crate::config::data_dir().join(GUIDE);
+    let racine = crate::config::meetings_dir();
+    let copie = racine.join("Guide d'utilisation.pdf");
     // Même taille : déjà copié par cette version (une nouvelle version du guide change de taille).
     let a_jour = std::fs::metadata(&copie).is_ok_and(|m| std::fs::metadata(&source).is_ok_and(|s| s.len() == m.len()));
     if !a_jour {
-        std::fs::create_dir_all(crate::config::data_dir()).context("Dossier de données")?;
+        std::fs::create_dir_all(&racine).with_context(|| format!("Dossier {}", racine.display()))?;
         std::fs::copy(&source, &copie).with_context(|| format!("Copie du guide dans {}", copie.display()))?;
     }
+    // Copie de la 0.3.2, invisible hors de l'application sous Windows.
+    let _ = std::fs::remove_file(crate::config::data_dir().join(GUIDE));
     reveal(&copie);
     Ok(())
 }
