@@ -235,8 +235,8 @@ impl TourDeTableApp {
         }
     }
 
-    /// Rencontre en cours avec un ordre du jour : l'ordre du jour et la transcription en deux onglets, ou côte à
-    /// côte. `transcription` dessine la transcription en cours.
+    /// Ordre du jour déposé, avant ou pendant la rencontre : l'ordre du jour et la transcription (ou ce qu'on
+    /// attend) en deux onglets, ou côte à côte. `transcription` dessine la transcription en cours.
     pub(super) fn volets_direct(&mut self, ui: &mut Ui, transcription: impl Fn(&mut Self, &mut Ui)) {
         let mut onglets = self.onglets_direct;
         onglets.ouvrir_direct(empreinte(self.live.as_ref().map_or("", |m| m.id.as_str())));
