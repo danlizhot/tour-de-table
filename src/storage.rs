@@ -385,6 +385,22 @@ impl Meeting {
         blocs.join("\n\n")
     }
 
+    /// Transcription confiée à un assistant en ligne : nettoyée si le nettoyage est terminé, un paragraphe par voix
+    /// avec son nom, et l'intertitre de chaque point si la rencontre est découpée.
+    pub fn texte_assistant(&self) -> String {
+        if self.nettoyage_termine().is_none() {
+            return self.plain_text();
+        }
+        let mut blocs = Vec::new();
+        for (point, paragraphes) in self.groupes_nettoyes(Decoupe::ParVoix) {
+            if !self.periodes.is_empty() {
+                blocs.push(format!("— {} —", self.intertitre(point)));
+            }
+            blocs.extend(paragraphes.into_iter().map(|(t, src, voix, text)| format!("[{}] {} : {text}", clock(t), self.locuteur(src, voix))));
+        }
+        blocs.join("\n\n")
+    }
+
     /// transcription-nettoyee.md : même présentation que la transcription brute.
     pub fn to_markdown_nettoye(&self) -> String {
         let mut md = format!("# {} — transcription nettoyée\n\n- Date : {}\n\n", self.title, self.started_at.format("%Y-%m-%d %H h %M"));

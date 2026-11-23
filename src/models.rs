@@ -69,6 +69,14 @@ fn memoire_suffisante(octets: u64) -> bool {
 const MEMOIRE_GRAND_MODELE: u64 = 22 * GIO;
 
 /// Mémoire vive du poste en Gio si elle est sous le minimum de 16 Go, calculée au lancement.
+/// Assez de mémoire vive pour rédiger les comptes rendus sur le poste. Sinon, le modèle de rédaction n'est pas
+/// téléchargé, la rédaction ne démarre pas d'elle-même, et la transcription peut être confiée à un assistant en ligne
+/// par l'utilisateur (« Copier pour un assistant en ligne »).
+pub fn redaction_locale() -> bool {
+    static LOCALE: OnceLock<bool> = OnceLock::new();
+    *LOCALE.get_or_init(|| memoire_suffisante(ram_totale()))
+}
+
 pub fn memoire_insuffisante() -> Option<f64> {
     let ram = ram_totale();
     log::info!("Mémoire vive : {:.1} Gio", ram as f64 / GIO as f64);
@@ -174,14 +182,18 @@ pub struct Requis {
 
 /// Modèles nécessaires sur ce poste, dans l'ordre d'installation : la reconnaissance vocale
 /// d'abord (l'application est utilisable dès qu'elle est là), puis les voix, puis la rédaction.
-pub fn requis() -> [Requis; 4] {
+/// Modèles à installer ; celui de la rédaction seulement si le poste a assez de mémoire vive pour s'en servir.
+pub fn requis() -> Vec<Requis> {
     let redaction = modele_redaction();
-    [
+    let mut v = vec![
         Requis { file: RECOMMENDED, libelle: "Reconnaissance de la parole", octets: EMPREINTES[0].octets },
         Requis { file: EMPREINTES[1].file, libelle: "Reconnaissance des voix (tours de parole)", octets: EMPREINTES[1].octets },
         Requis { file: EMPREINTES[2].file, libelle: "Reconnaissance des voix (empreintes)", octets: EMPREINTES[2].octets },
-        Requis { file: redaction.file, libelle: "Rédaction des comptes rendus", octets: redaction.octets },
-    ]
+    ];
+    if redaction_locale() {
+        v.push(Requis { file: redaction.file, libelle: "Rédaction des comptes rendus", octets: redaction.octets });
+    }
+    v
 }
 
 /// État d'un modèle au démarrage. Vérification rapide : la taille, et la marque laissée par

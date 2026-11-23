@@ -69,7 +69,7 @@
   <thead><tr><th style="width:28%">Élément</th><th>Exigence</th></tr></thead>
   <tbody>
     <tr><td>Système</td><td>Windows 10 ou 11, macOS 14.6 ou plus récent (Mac à puce Apple), ou Linux.</td></tr>
-    <tr><td>Mémoire vive</td><td><b>16 Go au minimum.</b> À partir de 24 Go, un modèle de rédaction plus grand et plus rapide est installé.</td></tr>
+    <tr><td>Mémoire vive</td><td><b>16 Go au minimum</b> pour rédiger les comptes rendus sur le poste. À partir de 24 Go, un modèle de rédaction plus grand et plus rapide est installé.</td></tr>
     <tr><td>Espace disque</td><td>Environ 7 Go pour les modèles (13 Go sur un poste de 24 Go et plus), plus l'audio de vos rencontres.</td></tr>
     <tr><td>Internet</td><td>Une seule fois, au premier démarrage, pour télécharger les modèles.</td></tr>
   </tbody>
@@ -94,9 +94,9 @@
   <p>Le téléchargement reprend là où il s'était arrêté au démarrage suivant. Chaque fichier est vérifié : un fichier endommagé est téléchargé de nouveau.</p>
 </div>
 
-<p>Sur un ordinateur de moins de 16 Go de mémoire vive, un avis rouge le signale au démarrage. La transcription fonctionne, mais la rédaction du compte rendu risque d'être très lente ou d'échouer.</p>
+<p>Sous 16 Go de mémoire vive, un avis rouge le signale au démarrage : la transcription fonctionne, mais le compte rendu se fait avec un assistant en ligne (voir <a class="ref" href="#compte-rendu">Le compte rendu</a>).</p>
 
-<figure class="fig detail" data-img="memoire.png" data-crop="860:770:1440:900">
+<figure class="fig detail reduite" data-img="memoire.png" data-crop="900:755:1440:900">
   <figcaption>L'avis affiché sur un poste de moins de 16 Go</figcaption>
 </figure>
 
@@ -370,7 +370,7 @@
 </ul>
 <p>Chaque point est rédigé au présent et à la troisième personne : une phrase d'introduction, les éléments principaux en puces, puis ce qui est convenu (« Il est convenu que… »). Un point qui a des sous-points devient un intertitre, une adoption tient en une phrase, et un point non abordé est indiqué comme tel. Sans ordre du jour, Tour de table produit un <b>résumé</b> structuré.</p>
 
-<figure class="fig" data-img="fiche-cr.png" data-crop="240:200:1440:900" data-bulles="1:445:500 2:640:500 3:300:856 4:380:856 5:458:856">
+<figure class="fig" data-img="fiche-cr.png" data-crop="240:200:1440:900" data-bulles="1:445:500 2:640:500 3:300:856 4:380:856 5:458:856 6:605:856">
   <figcaption>L'onglet Compte rendu</figcaption>
 </figure>
 <ol class="legende">
@@ -379,7 +379,10 @@
   <li><b>Régénérer</b> rédige tout à nouveau, par exemple après une correction de l'ordre du jour ou du découpage.</li>
   <li><b>Visualiser</b> ouvre le compte rendu dans Word (<span class="code">compte-rendu.docx</span>), prêt à relire et à diffuser.</li>
   <li><b>Copier</b> copie le compte rendu.</li>
+  <li><b>Copier pour un assistant en ligne</b> : voir ci-dessous.</li>
 </ol>
+
+<p><b>Copier pour un assistant en ligne</b> copie une demande prête à coller dans Copilot, ChatGPT ou l'assistant permis par votre organisme : les mêmes consignes de rédaction que le modèle local, l'ordre du jour et la transcription nettoyée, avec le nom des voix. C'est la façon d'obtenir un compte rendu sur un poste de moins de 16 Go, ou de comparer avec celui de Tour de table. L'application n'envoie rien elle-même, mais le texte collé quitte l'ordinateur : vérifiez d'abord que votre organisme le permet.</p>
 
 <h2>Pendant la rédaction</h2>
 <p>La rédaction se fait toute seule après la rencontre, en arrière-plan. Le bas de l'onglet indique le point en cours de rédaction et le temps écoulé. Si elle n'a pas eu lieu (rencontre sans ordre du jour, modèle pas encore installé), cliquez sur <span class="bouton">Rédiger le compte rendu</span> ou <span class="bouton">Rédiger un résumé</span>.</p>
@@ -592,8 +595,8 @@
   <dt>Le bouton « Mettre à jour » est grisé.</dt>
   <dd>La mise à jour ferme l'application : elle attend la fin de la rencontre et des travaux en cours (rédaction, découpage).</dd>
 
-  <dt>« Tour de table demande au moins 16 Go » s'affiche au démarrage.</dt>
-  <dd>L'ordinateur a moins de 16 Go de mémoire vive. La transcription fonctionne, mais la rédaction risque d'être très lente ou d'échouer. Utilisez un poste de 16 Go ou plus pour la rédaction.</dd>
+  <dt>Un avis sur la mémoire vive (moins de 16 Go) s'affiche au démarrage.</dt>
+  <dd>Le poste a moins de 16 Go de mémoire vive : utilisez <b>Copier pour un assistant en ligne</b> (onglet Compte rendu) pour le compte rendu.</dd>
 
   <dt>J'ai archivé une rencontre par erreur.</dt>
   <dd>Rien n'est perdu : décompressez son fichier .zip (bouton <b>Archives</b>) dans Musique › Tour de table, puis redémarrez l'application.</dd>

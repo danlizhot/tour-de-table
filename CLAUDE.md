@@ -85,7 +85,9 @@ L'application est livrée sans modèle : `ui/installation.rs` les télécharge s
 (aucune autre interface de téléchargement). Modèle de rédaction selon la mémoire vive (`models::modele_redaction`) : Qwen3.5 9B
 jusqu'à 20 Go, Qwen3.6 35B-A3B (APEX I-Nano, 13 à 14 Go en rédaction) à partir de 24 Go ;
 jamais choisi par l'utilisateur. **16 Go de mémoire vive minimum** : en dessous, un avertissement
-s'affiche au démarrage (`models::memoire_insuffisante`). Un modèle remplacé va dans
+s'affiche au démarrage (`models::memoire_insuffisante`), le modèle de rédaction n'est pas téléchargé et la rédaction
+ne démarre pas d'elle-même (`models::redaction_locale`) ; « Copier pour un assistant en ligne » (`summary::demande_assistant`,
+sur tous les postes) copie consignes, ordre du jour et transcription à coller dans Copilot ou ChatGPT : l'application n'envoie rien. Un modèle remplacé va dans
 `ANCIENS_MODELES_REDACTION` pour être supprimé des postes.
 
 **Ne JAMAIS ajouter `llama-cpp-2` (ni rien qui lie llama.cpp/ggml) aux dépendances du crate

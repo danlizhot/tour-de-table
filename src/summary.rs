@@ -93,6 +93,37 @@ Structure du document :\n\
 ## Levée de la séance\n\
 La levée de la séance est un court paragraphe qui résume l'esprit de la rencontre.\n";
 
+/// Dans la transcription donnée à un assistant en ligne, chaque paragraphe nomme la voix qui parle.
+const QUI_PARLE_LOCAL: &str = "La transcription ne dit pas qui parle : nomme une personne seulement quand son nom est dit avec ce qu'elle fait";
+const QUI_PARLE_VOIX: &str = "Chaque paragraphe de la transcription commence par la voix qui parle : le nom qu'on lui a donné, sinon « Voix 2 », \
+« Salle » ou « À distance », qui ne sont pas des noms. Nomme une personne seulement quand son nom est connu";
+
+/// Demande à coller dans un assistant en ligne (Copilot, ChatGPT…), pour un poste sans rédaction locale ou pour
+/// comparer : les consignes de la rédaction locale, l'ordre du jour et toute la transcription, avec le nom des voix.
+/// Tour de table n'envoie rien : c'est l'utilisateur qui colle le texte.
+pub fn demande_assistant(m: &crate::storage::Meeting) -> String {
+    let agenda = m.agenda.as_ref().map(|a| a.text.as_str());
+    let mut demande = match agenda {
+        Some(texte) => {
+            let (date, heure_dite) = date_et_heure_de(texte);
+            let date = date.unwrap_or_else(|| date_longue(&m.started_at));
+            let heure_dite = heure_dite.unwrap_or_else(|| heure(&m.started_at));
+            let mut p = AVEC_ORDRE_DU_JOUR.replace("{titre}", &m.title).replace("{date}", &date).replace("{heure}", &mention_heure(&heure_dite));
+            p.push_str(&FORME.replace(QUI_PARLE_LOCAL, QUI_PARLE_VOIX));
+            p
+        }
+        None => SANS_ORDRE_DU_JOUR.to_string(),
+    };
+    demande.push_str(STYLE);
+    if let Some(texte) = agenda {
+        demande.push_str("\n\n=== ORDRE DU JOUR ===\n");
+        demande.push_str(texte);
+    }
+    demande.push_str("\n\n=== TRANSCRIPTION ===\n");
+    demande.push_str(&m.texte_assistant());
+    demande
+}
+
 /// Au-delà, la transcription (ou celle d'un point) est d'abord condensée par tranches : les
 /// petits modèles locaux perdent le fil sur des contextes trop longs, et la mémoire du contexte
 /// (cache KV) grossit avec sa taille.
@@ -1544,6 +1575,31 @@ fn tidy_answer(md: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Demande pour un assistant en ligne : consignes, ordre du jour, puis la transcription avec le nom des voix.
+    #[test]
+    fn demande_pour_un_assistant() {
+        use crate::audio::Source;
+        use crate::storage::{Agenda, Meeting};
+        use crate::stt::Segment;
+        use crate::voix::{Tour, Voix};
+        assert!(FORME.contains(QUI_PARLE_LOCAL), "la phrase remplacée a changé dans FORME");
+        let mut m = Meeting::new("test.bin");
+        m.title = "Conseil d'administration".into();
+        m.insert(Segment { start_ms: 0, end_ms: 1000, source: Source::Mixte, text: "Bonsoir tout le monde.".into() });
+        m.voix = Some(Voix { tours: vec![Tour { debut_ms: 0, fin_ms: 2000, voix: 0 }], noms: vec!["Hélène Brassard".into()] });
+        m.agenda = Some(Agenda::new("odj.txt".into(), "1. Mot de bienvenue\n2. Varia".into()));
+        let d = demande_assistant(&m);
+        assert!(d.starts_with("Tu es secrétaire de réunion. Rédige le compte rendu"));
+        assert!(d.contains("**Conseil d'administration**"));
+        assert!(d.contains(QUI_PARLE_VOIX) && !d.contains(QUI_PARLE_LOCAL));
+        let (odj, transcription) = d.split_once("=== TRANSCRIPTION ===").unwrap();
+        assert!(odj.contains("=== ORDRE DU JOUR ===\n1. Mot de bienvenue"));
+        assert_eq!(transcription.trim(), "[00:00] Hélène Brassard : Bonsoir tout le monde.");
+
+        m.agenda = None;
+        assert!(demande_assistant(&m).starts_with("Tu es secrétaire de réunion. À partir de la transcription"));
+    }
 
     #[test]
     fn consignes_recopiees_retirees() {

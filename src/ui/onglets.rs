@@ -7,7 +7,7 @@ use eframe::egui::{self, Color32, CornerRadius, RichText, Sense, Ui, Vec2};
 use super::TourDeTableApp;
 use super::ecoute::Extrait;
 use super::widgets::{BLEU_CLAIR, ClicEcoute, EtatEcoute, markdown, transcript, transcript_nettoye};
-use crate::config;
+use crate::{config, models};
 use crate::storage::clock;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -430,7 +430,9 @@ impl TourDeTableApp {
                 };
                 ui.label(RichText::new(etat).weak());
             } else if !redaction_prete {
-                let texte = if self.installation.is_some() {
+                let texte = if !models::redaction_locale() {
+                    "Moins de 16 Go de mémoire vive : pas de rédaction sur cet ordinateur."
+                } else if self.installation.is_some() {
                     "Vérification du modèle de rédaction…"
                 } else {
                     "Modèle de rédaction introuvable : redémarrez Tour de table pour le réinstaller."
@@ -463,6 +465,19 @@ impl TourDeTableApp {
                 {
                     ui.ctx().copy_text(sum.clone());
                 }
+            }
+            if !occupe
+                && !m.segments.is_empty()
+                && ui
+                    .button("Copier pour un assistant en ligne")
+                    .on_hover_text(
+                        "Copie une demande prête à coller dans Copilot, ChatGPT… : consignes de rédaction, ordre du jour et \
+                         transcription.\nTour de table n'envoie rien, mais le texte collé quitte l'ordinateur : vérifiez que votre \
+                         organisme le permet.",
+                    )
+                    .clicked()
+            {
+                action = Some("assistant");
             }
         }));
         if self.extrait_ecoute(&m.id).is_some() {

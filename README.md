@@ -49,7 +49,10 @@ Tour de table n'offre **aucun choix de modèle** : il utilise toujours **Whisper
 (574 Mo à télécharger, ~1,2 Go de RAM en transcription, mesuré : 0,9 à 1,15 Go), le meilleur
 rapport précision/vitesse sur l'accent québécois. Rien à régler pour déployer l'application dans
 une organisation. **16 Go de mémoire vive sont nécessaires** pour le compte rendu : sous ce seuil,
-Tour de table l'indique au démarrage.
+Tour de table l'indique au démarrage, ne télécharge pas le modèle de rédaction et ne rédige pas de
+lui-même. Le bouton **Copier pour un assistant en ligne** (onglet Compte rendu, sur tous les postes)
+copie une demande prête à coller dans Copilot ou ChatGPT : consignes de rédaction, ordre du jour et
+transcription nettoyée avec le nom des voix. L'application n'envoie rien elle-même.
 
 * Modèle **quantifié en 5 bits** : environ 3× moins de mémoire, avec une perte de précision minime.
 * Il reste en mémoire entre les rencontres (démarrage instantané).

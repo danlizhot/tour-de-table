@@ -1,6 +1,6 @@
 # Politique de confidentialité — Tour de table
 
-*Dernière mise à jour : 10 novembre 2026*
+*Dernière mise à jour : 23 novembre 2026*
 
 Tour de table est une application de transcription de rencontres qui fonctionne **entièrement
 sur votre ordinateur**. Cette politique explique quelles données l'application traite, où elles
@@ -50,7 +50,12 @@ Microsoft Store, pour savoir si une mise à jour existe :
    existe, une bannière l'indique ; « Mettre à jour » ouvre le Microsoft Store, qui l'installe.
 
 Les comptes rendus sont rédigés **par le modèle intégré, sur votre ordinateur, sans aucune
-connexion**.
+connexion** (postes de 16 Go de mémoire vive et plus).
+
+Le bouton « Copier pour un assistant en ligne » met seulement l'ordre du jour, la transcription
+et des consignes de rédaction dans le presse-papiers : **Tour de table n'envoie rien**. Si vous
+collez ce texte dans un service en ligne (Copilot, ChatGPT…), il quitte alors votre ordinateur
+et relève des conditions de ce service. Vérifiez d'abord que votre organisme le permet.
 
 L'application ne fait aucune autre connexion.
 
