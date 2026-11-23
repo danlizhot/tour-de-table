@@ -90,13 +90,20 @@ transcription · compte rendu · réunion · procès-verbal · québécois · or
 
 ## Notes de version (≤ 1 500 caractères)
 
+Version 0.4.0
+* Ordinateurs de moins de 16 Go de mémoire vive : la transcription fonctionne, mais le compte
+  rendu n'est plus rédigé sur place (le modèle de rédaction n'est pas téléchargé).
+* Nouveau bouton « Copier pour un assistant en ligne » (onglet Compte rendu) : il copie les
+  consignes, l'ordre du jour et la transcription, à coller dans Copilot, ChatGPT ou l'assistant
+  permis par votre organisme. Tour de table n'envoie rien lui-même.
+
+### Versions précédentes
+
 Version 0.3.3
 * Le bouton « Guide d'utilisation » ouvre maintenant le guide (il ouvrait le dossier Documents).
 * « Découper par points » : pendant l'écoute d'une frontière, une barre montre si ce qu'on entend
   tombe avant ou après la frontière.
 * Le numéro de version est affiché au bas de la colonne de gauche.
-
-### Versions précédentes
 
 Version 0.3.2
 * Guide d'utilisation illustré inclus : le bouton « Guide d'utilisation », au bas de la colonne
