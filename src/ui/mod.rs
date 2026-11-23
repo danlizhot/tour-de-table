@@ -211,8 +211,9 @@ impl TourDeTableApp {
         if let Some(gio) = models::memoire_insuffisante() {
             app.notify(
                 format!(
-                    "Cet ordinateur a {} Go de mémoire vive : Tour de table demande au moins 16 Go. \
-                     La rédaction du compte rendu risque d'être très lente ou d'échouer.",
+                    "Cet ordinateur a {} Go de mémoire vive : il en faut au moins 16 pour rédiger les comptes rendus sur place. \
+                     La transcription fonctionne ; pour le compte rendu, « Copier pour un assistant en ligne » (onglet Compte rendu) \
+                     prépare une demande à coller dans Copilot ou ChatGPT.",
                     format!("{gio:.1}").replace('.', ",")
                 ),
                 true,

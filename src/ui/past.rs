@@ -6,13 +6,22 @@ use eframe::egui::{self, Align, Layout, RichText, Ui};
 use super::widgets::short_model;
 use super::{TourDeTableApp, View};
 use crate::audio::blocs;
-use crate::config;
+use crate::{config, models};
 use crate::storage::{self, clock};
 
 impl TourDeTableApp {
     /// Lance la rédaction automatique, si le modèle est prêt et que rien d'autre ne rédige.
     pub(super) fn auto_compte_rendu(&mut self, idx: usize) {
         if self.summary_job.is_some() {
+            return;
+        }
+        if !models::redaction_locale() {
+            self.notify(
+                "Transcription terminée et nettoyée. Cet ordinateur a moins de 16 Go de mémoire vive : le compte rendu n'y est pas \
+                 rédigé. « Copier pour un assistant en ligne », dans l'onglet Compte rendu, prépare une demande à coller dans Copilot \
+                 ou ChatGPT.",
+                false,
+            );
             return;
         }
         if !self.redaction_prete() {
@@ -239,6 +248,11 @@ impl TourDeTableApp {
                 Ok(dir) => storage::reveal(&dir.join("compte-rendu.docx")),
                 Err(e) => self.notify(format!("Export : {e:#}"), true),
             },
+            Some("assistant") => {
+                let demande = crate::summary::demande_assistant(&self.meetings[idx]);
+                self.ctx.copy_text(demande);
+                self.notify("Demande copiée : collez-la (Ctrl+V) dans Copilot, ChatGPT ou l'assistant permis par votre organisme.", false);
+            }
             Some("decouper") => {
                 self.ecoute = None;
                 self.ouvrir_verification(self.meetings[idx].clone(), false);
