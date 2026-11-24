@@ -3,10 +3,9 @@
 
 use std::time::{Duration, Instant};
 
-use eframe::egui::{self, Color32, RichText, Ui};
+use eframe::egui::{self, Ui};
 
 use super::TourDeTableApp;
-use super::widgets::BLEU;
 use crate::decoupage::{self, Contexte, Detection};
 use crate::storage::{Declenchement, Periode, clock};
 use crate::stt::Segment;
@@ -108,14 +107,22 @@ impl TourDeTableApp {
             return;
         }
         let mut annuler = false;
-        egui::Frame::new().fill(BLEU).corner_radius(6).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(&b.texte).color(Color32::WHITE).strong());
-                annuler = ui.button("Annuler").clicked();
+        let p = super::apparence::palette(ui);
+        egui::Frame::new()
+            .fill(p.ambre_doux)
+            .stroke(egui::Stroke::new(1.0, p.ambre_bord))
+            .corner_radius(12)
+            .inner_margin(egui::Margin::symmetric(14, 8))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.label(super::apparence::gras(&b.texte, 14.0).color(p.ambre_texte));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        annuler = ui.add(super::apparence::bouton_widget(ui, "Annuler", super::apparence::Genre::Secondaire, 32.0)).clicked();
+                    });
+                });
             });
-        });
-        ui.add_space(6.0);
+        ui.add_space(8.0);
         if annuler {
             self.annuler_passage();
         }

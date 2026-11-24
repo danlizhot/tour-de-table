@@ -4,8 +4,9 @@
 use std::path::PathBuf;
 
 use crossbeam_channel::Receiver;
-use eframe::egui::{self, Color32, RichText, Ui};
+use eframe::egui::{self, Color32, CornerRadius, RichText, Ui};
 
+use super::apparence::{Genre, bouton_widget, gras, palette};
 use super::widgets::BLEU;
 use super::{TourDeTableApp, View};
 use crate::audio::blocs::{self, Index};
@@ -185,24 +186,87 @@ impl TourDeTableApp {
         let nom = |p: Option<usize>| match p.and_then(|i| points.get(i)) {
             None => "Hors point".to_string(),
             Some(pt) => {
-                let t: String = pt.titre.chars().take(48).collect();
-                format!("{}. {t}{}", pt.numero, if pt.titre.chars().count() > 48 { "…" } else { "" })
+                let t: String = pt.titre.chars().take(36).collect();
+                format!("{}. {t}{}", pt.numero, if pt.titre.chars().count() > 36 { "…" } else { "" })
             }
         };
 
-        ui.heading(format!("Découpage par point — {}", v.rencontre.title));
+        let pal = palette(ui);
+        ui.add_space(4.0);
+        ui.label(RichText::new(&v.rencontre.title).size(13.5).color(pal.texte2));
+        ui.label(gras("Découper par points", 24.0).color(pal.texte));
         ui.label(
             RichText::new(
-                "Vérifiez l'heure de début de chaque point. Écoutez 10 s autour d'une frontière pour la confirmer, \
-                 déplacez-la, ajoutez-en ou retirez-en, puis validez. Le compte rendu sera rédigé ensuite.",
+                "Vérifiez où commence chaque point. Écoutez 10 secondes autour d'une frontière pour la confirmer, \
+                 déplacez-la, ajoutez-en ou retirez-en, puis validez : le compte rendu sera rédigé ensuite.",
             )
-            .weak(),
+            .size(14.0)
+            .color(pal.texte),
         );
         if v.lignes.is_empty() {
             ui.add_space(6.0);
-            ui.label("Aucune annonce de point n'a été reconnue : ajoutez les frontières à la main, ou validez pour tout garder hors point.");
+            ui.label(
+                RichText::new("Aucune annonce de point n'a été reconnue : ajoutez les frontières à la main, ou validez pour tout garder hors point.")
+                    .size(14.0)
+                    .color(pal.ambre_texte),
+            );
         }
-        ui.add_space(8.0);
+        ui.add_space(10.0);
+        // Vue d'ensemble : la rencontre découpée selon les frontières.
+        {
+            let en_ecoute = v.lecture.as_ref().filter(|(_, l)| l.en_cours()).map(|(i, _)| *i);
+            egui::Frame::new()
+                .fill(pal.surface)
+                .stroke(egui::Stroke::new(1.0, pal.bordure))
+                .corner_radius(CornerRadius::same(16))
+                .inner_margin(egui::Margin::symmetric(18, 12))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("0:00").size(12.0).color(pal.texte2));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(RichText::new(clock(v.duree_ms)).size(12.0).color(pal.texte2));
+                        });
+                    });
+                    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 28.0), egui::Sense::hover());
+                    let duree = v.duree_ms.max(1) as f32;
+                    let x = |ms: u64| rect.left() + rect.width() * (ms as f32 / duree).clamp(0.0, 1.0);
+                    let mut debut = 0;
+                    let mut morceaux: Vec<(u64, u64, Option<usize>, Option<usize>)> = Vec::new();
+                    for (k, l) in v.lignes.iter().enumerate() {
+                        if l.f.debut_ms > debut || k == 0 {
+                            if let Some(dernier) = morceaux.last_mut() {
+                                dernier.1 = l.f.debut_ms;
+                            } else if l.f.debut_ms > 0 {
+                                morceaux.push((0, l.f.debut_ms, None, None));
+                            }
+                        }
+                        morceaux.push((l.f.debut_ms, v.duree_ms, l.f.point, Some(k)));
+                        debut = l.f.debut_ms;
+                    }
+                    if morceaux.is_empty() {
+                        morceaux.push((0, v.duree_ms, None, None));
+                    }
+                    for (d, f, point, ligne) in morceaux {
+                        let r = egui::Rect::from_x_y_ranges(x(d) + 1.0..=x(f) - 1.0, rect.y_range());
+                        let actif = ligne.is_some() && ligne == en_ecoute;
+                        let fond = match point {
+                            _ if actif => pal.accent_plein,
+                            Some(i) => (if ui.visuals().dark_mode { pal.piste } else { Color32::WHITE }).lerp_to_gamma(pal.accent, [0.18, 0.32, 0.46, 0.60][i % 4]),
+                            None => pal.piste,
+                        };
+                        ui.painter().rect_filled(r, CornerRadius::same(5), fond);
+                        if let Some(i) = point
+                            && r.width() > 18.0
+                        {
+                            let clair = actif || i % 4 >= 2 || ui.visuals().dark_mode;
+                            let numero = points.get(i).map_or(String::new(), |p| p.numero.clone());
+                            ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, numero, super::colonne::police_grasse(12.0), if clair { Color32::WHITE } else { pal.texte });
+                        }
+                    }
+                });
+        }
+        ui.add_space(10.0);
 
         let mut retirer = None;
         let mut deplacer = None;
@@ -211,49 +275,64 @@ impl TourDeTableApp {
         let en_cours = v.lecture.as_ref().filter(|(_, l)| l.en_cours()).map(|(i, _)| *i);
         egui::ScrollArea::vertical().auto_shrink([false, true]).max_height(ui.available_height() - 60.0).show(ui, |ui| {
             for (i, l) in v.lignes.iter_mut().enumerate() {
-                egui::Frame::group(ui.style()).show(ui, |ui| {
+                let joue = en_cours == Some(i);
+                let (contour, fond) = if joue { (egui::Stroke::new(1.5, pal.accent), pal.surface) } else { (egui::Stroke::new(1.0, pal.bordure), pal.surface) };
+                egui::Frame::new().fill(fond).stroke(contour).corner_radius(CornerRadius::same(14)).inner_margin(egui::Margin::symmetric(14, 10)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
-                        egui::ComboBox::from_id_salt(("point", i)).width(320.0).selected_text(nom(l.f.point)).show_ui(ui, |ui| {
+                        let numero = l.f.point.and_then(|p| points.get(p)).map_or("–".to_string(), |p| p.numero.clone());
+                        let (r, _) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
+                        let (bg, encre) = if joue { (pal.accent_plein, Color32::WHITE) } else if l.f.point.is_some() { (pal.accent_doux, pal.accent_texte) } else { (pal.piste, pal.texte2) };
+                        ui.painter().rect_filled(r, CornerRadius::same(8), bg);
+                        ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, numero, super::colonne::police_grasse(12.0), encre);
+                        egui::ComboBox::from_id_salt(("point", i)).width(340.0).height(400.0).selected_text(nom(l.f.point)).show_ui(ui, |ui| {
                             ui.selectable_value(&mut l.f.point, None, nom(None));
                             for p in 0..points.len() {
                                 ui.selectable_value(&mut l.f.point, Some(p), nom(Some(p)));
                             }
                         });
-                        let r = ui.add(egui::TextEdit::singleline(&mut l.heure).desired_width(70.0)).on_hover_text("Heure de début : h:mm:ss ou mm:ss");
+                        let r = ui
+                            .add(egui::TextEdit::singleline(&mut l.heure).desired_width(76.0).margin(egui::Margin::symmetric(10, 6)))
+                            .on_hover_text("Heure de début : h:mm:ss ou mm:ss");
                         if r.lost_focus() {
                             match lire_heure(&l.heure) {
                                 Some(ms) => deplacer = Some((i, ms)),
                                 None => l.heure = clock(l.f.debut_ms),
                             }
                         }
-                        if ui.small_button("−5 s").clicked() {
+                        if ui.add(bouton_widget(ui, "−5 s", Genre::Secondaire, 32.0)).clicked() {
                             deplacer = Some((i, l.f.debut_ms.saturating_sub(PAS_MS)));
                         }
-                        if ui.small_button("+5 s").clicked() {
+                        if ui.add(bouton_widget(ui, "+5 s", Genre::Secondaire, 32.0)).clicked() {
                             deplacer = Some((i, l.f.debut_ms + PAS_MS));
                         }
-                        // Sans symbole : ▶ et ■ manquent à certaines polices du système (carré vide sous Linux).
-                        let ecoute = if en_cours == Some(i) { "Arrêter" } else { "Écouter" };
-                        if ui.small_button(ecoute).on_hover_text("10 s autour de la frontière").clicked() {
+                        let (texte, genre) = if joue { ("Arrêter", Genre::Principal) } else { ("Écouter", Genre::Secondaire) };
+                        if ui.add(bouton_widget(ui, texte, genre, 32.0)).on_hover_text("10 s autour de la frontière").clicked() {
                             ecouter = Some(i);
                         }
-                        if ui.small_button("Retirer").clicked() {
-                            retirer = Some(i);
-                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.add(bouton_widget(ui, "Retirer", Genre::Discret, 32.0)).on_hover_text("Retire cette frontière").clicked() {
+                                retirer = Some(i);
+                            }
+                        });
                     });
-                    if en_cours == Some(i)
-                        && let Some((_, lecture)) = &v.lecture
-                    {
-                        barre_frontiere(ui, l.f.debut_ms, v.duree_ms, lecture.avancement_ms());
+                    if joue && let Some((_, lecture)) = &v.lecture {
+                        ui.horizontal(|ui| {
+                            ui.add_space(36.0);
+                            barre_frontiere(ui, l.f.debut_ms, v.duree_ms, lecture.avancement_ms());
+                        });
                     }
                     if !l.f.extrait.is_empty() {
-                        let r = ui.label(RichText::new(format!("« {} »", l.f.extrait)).italics().weak());
-                        if !l.f.raison.is_empty() {
-                            r.on_hover_text(&l.f.raison);
-                        }
+                        ui.horizontal(|ui| {
+                            ui.add_space(36.0);
+                            let r = ui.label(RichText::new(format!("« {} »", l.f.extrait)).italics().size(14.0).color(pal.texte2));
+                            if !l.f.raison.is_empty() {
+                                r.on_hover_text(&l.f.raison);
+                            }
+                        });
                     }
                 });
+                ui.add_space(4.0);
             }
         });
         if let Some((i, ms)) = deplacer {
@@ -275,9 +354,9 @@ impl TourDeTableApp {
             }
         }
 
-        ui.add_space(6.0);
+        ui.add_space(8.0);
         ui.horizontal(|ui| {
-            if ui.add_enabled(!occupe, egui::Button::new("+ Ajouter une frontière")).clicked() {
+            if ui.add_enabled(!occupe, bouton_widget(ui, "+ Ajouter une frontière", Genre::Secondaire, 40.0)).clicked() {
                 // Après la dernière, sur le point qui suit.
                 let derniere = v.lignes.last().map(|l| &l.f);
                 let ms = derniere.map_or(0, |f| f.debut_ms + 60_000).min(v.duree_ms);
@@ -292,16 +371,17 @@ impl TourDeTableApp {
                 v.deplacer(i, ms);
                 trier = true;
             }
-            ui.add_space(12.0);
-            if occupe {
-                ui.spinner();
-                ui.label("Rangement de l'audio par point…");
-            } else {
-                valider = ui.add(egui::Button::new(RichText::new("Valider le découpage").color(Color32::WHITE)).fill(BLEU)).clicked();
-                if !v.nouvelle {
-                    annuler = ui.button("Annuler").clicked();
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if occupe {
+                    ui.label(RichText::new("Rangement de l'audio par point…").size(14.0).color(pal.texte2));
+                    ui.spinner();
+                } else {
+                    valider = ui.add(bouton_widget(ui, "Valider le découpage", Genre::Principal, 40.0)).clicked();
+                    if !v.nouvelle {
+                        annuler = ui.add(bouton_widget(ui, "Annuler", Genre::Discret, 40.0)).clicked();
+                    }
                 }
-            }
+            });
         });
         if trier {
             v.trier();

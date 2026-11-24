@@ -1,6 +1,8 @@
 //! Composants réutilisables : couleurs, transcription, Markdown, jauges, logo.
 
-use eframe::egui::{self, Color32, CornerRadius, Pos2, RichText, Sense, Ui, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, Pos2, RichText, Sense, Stroke, Ui, Vec2};
+
+use super::apparence::{gras, initiales, palette, pastille};
 
 use crate::audio::{DeviceInfo, Source};
 use crate::config::Theme;
@@ -40,21 +42,23 @@ pub(super) fn couleur_locuteur(source: Source, voix: Option<u16>) -> Color32 {
     }
 }
 
-/// Écoute dans la transcription : boutons affichés, paragraphe en cours de lecture (son début), et heure où faire
-/// défiler la transcription (« Voir dans la transcription » d'un point du compte rendu).
+/// Écoute dans la transcription : boutons affichés, heure entendue (le paragraphe qui la contient est surligné et suivi
+/// quand la lecture avance), et heure où faire défiler la transcription (« Voir dans la transcription »).
 #[derive(Default, Clone, Copy)]
 pub(super) struct EtatEcoute<'a> {
     pub boutons: bool,
-    pub en_lecture: Option<u64>,
+    pub position: Option<u64>,
+    /// La lecture avance (pas en pause) : la transcription suit le paragraphe entendu.
+    pub suivre: bool,
     pub aller_a: Option<u64>,
-    /// Plages (ms) dont les paragraphes sont surlignés : le point choisi dans le compte rendu, ou écouté.
+    /// Plages (ms) dont les paragraphes sont surlignés : le point choisi dans le compte rendu.
     pub surligne: &'a [(u64, u64)],
 }
 
 /// Clic sur le bouton d'un paragraphe de la transcription.
 pub(super) enum ClicEcoute {
-    Ecouter { debut_ms: u64, fin_ms: u64, libelle: String },
-    Arreter,
+    Ecouter { debut_ms: u64 },
+    Pause,
 }
 
 /// Une phrase de la transcription, brute ou nettoyée.
@@ -104,42 +108,67 @@ fn afficher_transcription(ui: &mut Ui, m: &Meeting, phrases: Vec<Phrase>, follow
     let cible = ecoute.aller_a.and_then(|ms| paragraphes.iter().position(|&(_, _, _, f)| phrases[f].fin_ms > ms));
     let mut clic = None;
     egui::ScrollArea::vertical().auto_shrink(false).stick_to_bottom(follow).show(ui, |ui| {
+        let pal = palette(ui);
         for (k, &(intertitre, cle, d, f)) in paragraphes.iter().enumerate() {
             let mut reperes = Vec::new();
             if let Some(point) = intertitre {
-                ui.add_space(12.0);
-                reperes.push(ui.label(RichText::new(m.intertitre(point)).strong().size(16.5).color(if point.is_some() { BLEU_CLAIR } else { Color32::GRAY })));
-                ui.separator();
+                ui.add_space(if k == 0 { 8.0 } else { 20.0 });
+                reperes.push(intertitre_point(ui, m, point, phrases[d].debut_ms));
+                ui.add_space(4.0);
             }
             let (debut_ms, fin_ms) = (phrases[d].debut_ms, phrases[f].fin_ms);
-            let joue = ecoute.en_lecture == Some(debut_ms);
-            let surligne = joue || ecoute.surligne.iter().any(|&(d, f)| debut_ms >= d && debut_ms < f);
-            ui.add_space(8.0);
-            let fond = if surligne { BLEU_CLAIR.gamma_multiply(0.14) } else { Color32::TRANSPARENT };
-            egui::Frame::new().fill(fond).corner_radius(CornerRadius::same(6)).inner_margin(egui::Margin::symmetric(4, 2)).show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                let entete = ui.horizontal(|ui| {
-                    ui.label(RichText::new(clock(debut_ms)).monospace().small().weak());
-                    let locuteur = m.locuteur(cle.0, cle.1);
-                    ui.label(RichText::new(&locuteur).strong().color(couleur_locuteur(cle.0, cle.1)));
-                    if ecoute.boutons {
-                        let aide = if joue { "Arrêter l'écoute" } else { "Entendre ce passage" };
-                        if bouton_lecture(ui, joue).on_hover_text(aide).clicked() {
-                            clic = Some(if joue {
-                                ClicEcoute::Arreter
-                            } else {
-                                ClicEcoute::Ecouter { debut_ms, fin_ms, libelle: format!("{locuteur} · {}", clock(debut_ms)) }
+            let fin_suivante = paragraphes.get(k + 1).map_or(u64::MAX, |&(_, _, d2, _)| phrases[d2].debut_ms);
+            let entendu = ecoute.position.is_some_and(|ms| debut_ms <= ms && ms < fin_suivante.max(fin_ms));
+            let joue = entendu && ecoute.suivre;
+            let surligne = entendu || ecoute.surligne.iter().any(|&(d, f)| debut_ms >= d && debut_ms < f);
+            let (fond, contour) = if surligne { (pal.accent_doux, Stroke::new(1.0, pal.accent.gamma_multiply(0.35))) } else { (Color32::TRANSPARENT, Stroke::NONE) };
+            egui::Frame::new()
+                .fill(fond)
+                .stroke(contour)
+                .corner_radius(CornerRadius::same(12))
+                .inner_margin(egui::Margin { left: 10, right: 12, top: 9, bottom: 9 })
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal_top(|ui| {
+                        let locuteur = m.locuteur(cle.0, cle.1);
+                        let couleur = lisible(ui, couleur_locuteur(cle.0, cle.1));
+                        let lettres = match (cle.1, cle.0) {
+                            (Some(_), _) => initiales(&locuteur),
+                            (None, Source::Salle) => "S".into(),
+                            (None, Source::Distance) => "D".into(),
+                            (None, Source::Mixte) => "·".into(),
+                        };
+                        pastille(ui, &lettres, couleur_locuteur(cle.0, cle.1), 34.0);
+                        ui.add_space(4.0);
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 3.0;
+                            let entete = ui.horizontal(|ui| {
+                                ui.label(gras(&locuteur, 14.0).color(couleur));
+                                ui.label(RichText::new(clock(debut_ms)).size(12.0).color(pal.texte2));
+                                if ecoute.boutons {
+                                    let aide = if joue { "Pause" } else { "Écouter à partir d'ici" };
+                                    if bouton_lecture(ui, joue).on_hover_text(aide).clicked() {
+                                        clic = Some(if joue { ClicEcoute::Pause } else { ClicEcoute::Ecouter { debut_ms } });
+                                    }
+                                }
                             });
-                        }
-                    }
+                            reperes.push(entete.response);
+                            for p in &phrases[d..=f] {
+                                ui.add(egui::Label::new(RichText::new(p.texte).size(15.0).color(pal.texte)).selectable(true).wrap());
+                            }
+                        });
+                    });
                 });
-                reperes.push(entete.response);
-                for p in &phrases[d..=f] {
-                    ui.add(egui::Label::new(RichText::new(p.texte).size(15.0)).selectable(true).wrap());
-                }
-            });
             if cible == Some(k) {
                 reperes[0].scroll_to_me(Some(egui::Align::TOP));
+            }
+            // Le paragraphe entendu change pendant la lecture : la transcription le suit.
+            if joue {
+                let id = egui::Id::unique(("suivi", &m.id));
+                if ui.data(|d| d.get_temp::<u64>(id)) != Some(debut_ms) {
+                    ui.data_mut(|d| d.insert_temp(id, debut_ms));
+                    reperes[0].scroll_to_me(Some(egui::Align::Center));
+                }
             }
         }
         if let Some(texte) = suite {
@@ -151,21 +180,54 @@ fn afficher_transcription(ui: &mut Ui, m: &Meeting, phrases: Vec<Phrase>, follow
     clic
 }
 
+/// Intertitre d'un point dans la transcription : numéro dans une pastille carrée, titre, heure de début.
+fn intertitre_point(ui: &mut Ui, m: &Meeting, point: Option<usize>, debut_ms: u64) -> egui::Response {
+    let pal = palette(ui);
+    let texte = m.intertitre(point);
+    let (numero, titre) = match point {
+        Some(_) => texte.split_once(". ").map_or((String::new(), texte.clone()), |(n, t)| (n.to_string(), t.to_string())),
+        None => ("–".to_string(), texte.clone()),
+    };
+    ui.horizontal(|ui| {
+        let (rect, _) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::hover());
+        let (fond, encre) = if point.is_some() { (pal.accent_doux, pal.accent_texte) } else { (pal.piste, pal.texte2) };
+        ui.painter().rect_filled(rect, CornerRadius::same(8), fond);
+        let police = egui::FontId::new(if numero.chars().count() > 2 { 11.0 } else { 13.0 }, egui::FontFamily::Name("gras".into()));
+        ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, &numero, police, encre);
+        ui.add_space(4.0);
+        ui.label(gras(titre, 17.0).color(pal.texte));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(RichText::new(clock(debut_ms)).size(12.0).color(pal.texte2));
+        });
+    })
+    .response
+}
+
+/// Couleur d'une voix assez claire pour être lue sur le fond foncé.
+pub(super) fn lisible(ui: &Ui, couleur: Color32) -> Color32 {
+    if ui.visuals().dark_mode { couleur.lerp_to_gamma(Color32::WHITE, 0.3) } else { couleur }
+}
+
 /// Petit bouton rond : triangle « écouter », ou carré « arrêter » pendant la lecture (les polices n'ont pas
 /// toujours ces symboles).
 pub(super) fn bouton_lecture(ui: &mut Ui, joue: bool) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     if ui.is_rect_visible(rect) {
-        let visuel = ui.style().interact(&resp);
-        let fond = if resp.hovered() || joue { BLEU_CLAIR.gamma_multiply(0.25) } else { visuel.weak_bg_fill };
-        ui.painter().circle_filled(rect.center(), 10.0, fond);
+        let pal = palette(ui);
+        let (fond, couleur) = match (joue, resp.hovered()) {
+            (true, _) => (pal.accent_plein, Color32::WHITE),
+            (false, true) => (pal.bordure_forte, pal.texte),
+            (false, false) => (pal.piste, pal.texte),
+        };
+        ui.painter().circle_filled(rect.center(), 12.0, fond);
         let c = rect.center();
-        let couleur = if joue { BLEU_CLAIR } else { visuel.text_color() };
         if joue {
-            ui.painter().rect_filled(egui::Rect::from_center_size(c, Vec2::splat(8.0)), 1, couleur);
+            for dx in [-2.5, 2.5] {
+                ui.painter().rect_filled(egui::Rect::from_center_size(c + Vec2::new(dx, 0.0), Vec2::new(2.6, 9.0)), 1, couleur);
+            }
         } else {
-            let pts = vec![c + Vec2::new(-3.0, -5.0), c + Vec2::new(5.0, 0.0), c + Vec2::new(-3.0, 5.0)];
+            let pts = vec![c + Vec2::new(-2.5, -5.0), c + Vec2::new(5.5, 0.0), c + Vec2::new(-2.5, 5.0)];
             ui.painter().add(egui::Shape::convex_polygon(pts, couleur, egui::Stroke::NONE));
         }
     }
@@ -175,20 +237,38 @@ pub(super) fn bouton_lecture(ui: &mut Ui, joue: bool) -> egui::Response {
 /// Rendu Markdown minimal pour le compte rendu : titres, listes, tableaux, **gras**.
 /// `titre` ajoute des boutons au bout de chaque titre de section (« ## »), qu'il reçoit.
 pub(super) fn markdown(ui: &mut Ui, md: &str, titre: &mut dyn FnMut(&mut Ui, &str)) {
+    let pal = palette(ui);
+    ui.style_mut().override_text_style = None;
+    ui.visuals_mut().override_text_color = Some(pal.texte);
     for line in md.lines() {
         let t = line.trim_start();
         if let Some(h) = t.strip_prefix("### ") {
             ui.add_space(4.0);
-            ui.label(RichText::new(h.replace("**", "")).strong().size(15.0));
+            ui.label(gras(h.replace("**", ""), 15.0).color(pal.texte));
         } else if let Some(h) = t.strip_prefix("## ") {
-            ui.add_space(6.0);
+            ui.add_space(14.0);
             let h = h.replace("**", "");
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(&h).strong().size(17.0).color(BLEU_CLAIR));
+                // « 4. Rapport financier » : le numéro dans une pastille carrée, comme dans la transcription.
+                match h.split_once(". ").filter(|(n, _)| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit() || c == '.')) {
+                    Some((n, titre)) => {
+                        let (rect, _) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::hover());
+                        ui.painter().rect_filled(rect, CornerRadius::same(8), pal.accent_doux);
+                        let police = egui::FontId::new(if n.chars().count() > 2 { 11.0 } else { 13.0 }, egui::FontFamily::Name("gras".into()));
+                        ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, n, police, pal.accent_texte);
+                        ui.add_space(2.0);
+                        ui.label(gras(titre, 17.0).color(pal.texte));
+                    }
+                    None => {
+                        ui.label(gras(&h, 17.0).color(pal.texte));
+                    }
+                }
+                ui.add_space(6.0);
                 titre(ui, &h);
             });
+            ui.add_space(2.0);
         } else if let Some(h) = t.strip_prefix("# ") {
-            ui.label(RichText::new(h.replace("**", "")).strong().size(20.0));
+            ui.label(gras(h.replace("**", ""), 22.0).color(pal.texte));
         } else if let Some(q) = t.strip_prefix("> ") {
             egui::Frame::new()
                 .fill(Color32::from_rgb(0xD9, 0x77, 0x06).gamma_multiply(0.18))
@@ -242,68 +322,6 @@ pub(super) fn device_combo(ui: &mut Ui, id: &str, value: &mut Option<String>, de
             ui.selectable_value(value, Some(d.id.clone()), &d.name);
         }
     });
-}
-
-pub(super) fn meter(ui: &mut Ui, label: &str, level: f32, color: Color32) {
-    ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(120.0, 8.0), Sense::hover());
-        let p = ui.painter();
-        p.rect_filled(rect, CornerRadius::same(4), ui.visuals().extreme_bg_color);
-        // Échelle logarithmique : la parole normale remplit la moitié de la jauge.
-        let db = 20.0 * level.max(1e-5).log10();
-        let frac = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
-        let mut fill = rect;
-        fill.set_width(rect.width() * frac);
-        p.rect_filled(fill, CornerRadius::same(4), color);
-        ui.label(RichText::new(label).small());
-    });
-}
-
-pub(super) fn record_button(ui: &mut Ui, recording: bool, enabled: bool) -> egui::Response {
-    let text = if recording { "Arrêter" } else { "Démarrer" };
-    let fill = if recording { ROUGE } else { BLEU };
-    let btn = egui::Button::new(RichText::new(format!("     {text}")).color(Color32::WHITE).size(16.0))
-        .fill(fill)
-        .corner_radius(CornerRadius::same(18))
-        .min_size(Vec2::new(140.0, 40.0));
-    let resp = ui.add_enabled(enabled, btn);
-    let c = Pos2::new(resp.rect.left() + 26.0, resp.rect.center().y);
-    if recording {
-        ui.painter().rect_filled(egui::Rect::from_center_size(c, Vec2::splat(12.0)), CornerRadius::same(2), Color32::WHITE);
-    } else {
-        ui.painter().circle_filled(c, 7.0, Color32::WHITE);
-    }
-    if !enabled {
-        resp.on_disabled_hover_text("Le modèle de reconnaissance vocale n'est pas encore prêt.")
-    } else {
-        resp
-    }
-}
-
-/// Pause ou reprise de l'enregistrement, à côté de « Arrêter » ; icône dessinée comme celle
-/// de `record_button` : deux barres, ou le triangle de lecture pendant la pause.
-pub(super) fn pause_button(ui: &mut Ui, en_pause: bool) -> egui::Response {
-    let text = if en_pause { "Reprendre" } else { "Pause" };
-    let btn = egui::Button::new(RichText::new(format!("     {text}")).size(16.0))
-        .corner_radius(CornerRadius::same(18))
-        .min_size(Vec2::new(130.0, 40.0));
-    let resp = ui.add(btn);
-    let couleur = ui.style().interact(&resp).fg_stroke.color;
-    let c = Pos2::new(resp.rect.left() + 26.0, resp.rect.center().y);
-    if en_pause {
-        let points = vec![c + Vec2::new(-5.0, -7.0), c + Vec2::new(7.0, 0.0), c + Vec2::new(-5.0, 7.0)];
-        ui.painter().add(egui::Shape::convex_polygon(points, couleur, egui::Stroke::NONE));
-    } else {
-        for dx in [-3.5, 3.5] {
-            let barre = egui::Rect::from_center_size(c + Vec2::new(dx, 0.0), Vec2::new(4.0, 14.0));
-            ui.painter().rect_filled(barre, CornerRadius::same(1), couleur);
-        }
-    }
-    resp.on_hover_text(if en_pause {
-        "Reprendre la transcription"
-    } else {
-        "Rien n'est capté pendant la pause : ni transcrit, ni conservé dans l'audio"
-    })
 }
 
 /// Bouton carré du thème, avec son icône dessinée (la police par défaut d'egui n'a pas ces
@@ -373,57 +391,4 @@ pub fn draw_logo(p: &egui::Painter, rect: egui::Rect) {
         let r = egui::Rect::from_center_size(at(50.0 + (i as f32 - 2.0) * 6.4, 50.0), Vec2::new(4.2 * s, h * s));
         p.rect_filled(r, CornerRadius::same((2.1 * s) as u8), BLEU);
     }
-}
-
-pub(super) fn style(ctx: &egui::Context) {
-    police_du_systeme(ctx);
-    ctx.all_styles_mut(|style| {
-        style.spacing.item_spacing = Vec2::new(8.0, 6.0);
-        style.spacing.button_padding = Vec2::new(10.0, 5.0);
-        style.visuals.selection.bg_fill = BLEU_CLAIR.gamma_multiply(0.45);
-        style.visuals.hyperlink_color = BLEU_CLAIR;
-    });
-    // Thème clair : texte bleu foncé, et texte secondaire assez contrasté pour être lu (le gris par défaut,
-    // atténué, se lisait mal).
-    ctx.style_mut_of(egui::Theme::Light, |style| {
-        let v = &mut style.visuals;
-        v.widgets.noninteractive.fg_stroke.color = BLEU_FONCE;
-        v.widgets.inactive.fg_stroke.color = BLEU_FONCE;
-        v.widgets.active.fg_stroke.color = BLEU_NUIT;
-        v.weak_text_color = Some(BLEU_GRIS);
-    });
-}
-
-/// Texte du thème clair.
-const BLEU_FONCE: Color32 = Color32::from_rgb(0x1B, 0x2A, 0x4A);
-/// Texte en évidence du thème clair.
-const BLEU_NUIT: Color32 = Color32::from_rgb(0x0B, 0x16, 0x30);
-/// Texte secondaire du thème clair (contraste d'environ 6,5:1 sur blanc).
-const BLEU_GRIS: Color32 = Color32::from_rgb(0x4A, 0x58, 0x75);
-
-/// Police d'interface du système (Segoe UI sous Windows), plus lisible que la police intégrée d'egui, très mince
-/// (Ubuntu Light). Rien n'est livré ni téléchargé : sans police trouvée, la police intégrée reste.
-fn police_du_systeme(ctx: &egui::Context) {
-    let windows = std::env::var_os("WINDIR").map(|w| std::path::PathBuf::from(w).join("Fonts/segoeui.ttf"));
-    let candidates = windows.into_iter().chain(
-        [
-            "/System/Library/Fonts/Supplemental/Arial.ttf",
-            "/Library/Fonts/Arial.ttf",
-            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-            "/usr/share/fonts/noto/NotoSans-Regular.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        ]
-        .map(std::path::PathBuf::from),
-    );
-    let Some((chemin, octets)) = candidates.filter_map(|c| std::fs::read(&c).ok().map(|o| (c, o))).next() else {
-        log::info!("Aucune police du système trouvée : police intégrée");
-        return;
-    };
-    log::info!("Police : {}", chemin.display());
-    let mut polices = egui::FontDefinitions::default();
-    polices.font_data.insert("systeme".into(), std::sync::Arc::new(egui::FontData::from_owned(octets)));
-    if let Some(famille) = polices.families.get_mut(&egui::FontFamily::Proportional) {
-        famille.insert(0, "systeme".into());
-    }
-    ctx.set_fonts(polices);
 }

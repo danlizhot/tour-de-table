@@ -161,9 +161,7 @@ impl TourDeTableApp {
 
         {
             if etat.is_some() {
-                ui.selectable_value(&mut self.vue_brute, true, "Brute").on_hover_text("Telle que transcrite, jamais modifiée");
-                ui.selectable_value(&mut self.vue_brute, false, "Nettoyée")
-                    .on_hover_text("Phrases recollées, répétitions et hésitations retirées ; c'est cette version que lit le compte rendu");
+                super::apparence::segmente(ui, &mut self.vue_brute, &[(true, "Brute"), (false, "Nettoyée")], 30.0);
             }
             ui.add_space(8.0);
             if let Some((groupe, groupes)) = avancement {

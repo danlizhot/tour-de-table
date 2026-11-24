@@ -13,7 +13,8 @@ use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Color32, CornerRadius, RichText, Sense, Ui, Vec2};
 
-use super::widgets::{BLEU, ROUGE, SALLE, draw_logo};
+use super::apparence::{gras, palette};
+use super::widgets::{BLEU, ROUGE, draw_logo};
 use crate::models::{self, Corrompu, Etat, Progress, Requis, Reseau};
 
 /// Attentes avant les nouvelles tentatives automatiques après une erreur réseau.
@@ -126,40 +127,69 @@ impl Installation {
             self.echantillons.pop_front();
         }
         let mut reessayer = false;
-        let largeur = ui.available_width().min(560.0);
-        ui.add_space((ui.available_height() * 0.12).min(80.0));
+        let pal = palette(ui);
+        let largeur = ui.available_width().min(620.0);
+        ui.add_space((ui.available_height() * 0.10).min(70.0));
         ui.vertical_centered(|ui| {
-            let (rect, _) = ui.allocate_exact_size(Vec2::splat(96.0), Sense::hover());
+            let (rect, _) = ui.allocate_exact_size(Vec2::splat(88.0), Sense::hover());
             draw_logo(ui.painter(), rect);
-            ui.add_space(12.0);
-            ui.heading("Installation…");
+            ui.add_space(18.0);
+            ui.label(gras("Bienvenue dans Tour de table", 28.0).color(pal.texte));
             ui.add_space(4.0);
-            ui.label("Tour de table télécharge les modèles nécessaires à son utilisation. Cette étape n'a lieu qu'une fois.");
-            ui.add_space(20.0);
+            ui.label(
+                RichText::new("Tour de table prépare ses outils de reconnaissance. Cette étape n'a lieu qu'une fois ; ensuite, tout fonctionne sans connexion.")
+                    .size(15.0)
+                    .color(pal.texte2),
+            );
+            ui.add_space(22.0);
             ui.allocate_ui(Vec2::new(largeur, 0.0), |ui| {
-                let p = self.partage.lock().unwrap();
-                for l in &p.lignes {
-                    self.ligne(ui, l, maintenant);
-                    ui.add_space(10.0);
-                }
-                ui.add_space(6.0);
-                ui.separator();
-                ui.add_space(6.0);
-                let texte = match (&p.probleme, self.restant(total - fait)) {
-                    (Some(_), _) => format!("{} sur {}", taille(fait), taille(total)),
-                    (None, Some(reste)) => format!("{} sur {} · {reste}", taille(fait), taille(total)),
-                    (None, None) => format!("{} sur {} · estimation du temps restant…", taille(fait), taille(total)),
-                };
-                // Texte à côté d'une barre fine, comme les lignes : dans la barre, le début du remplissage
-                // (arrondi, de toute la hauteur) cachait les premiers chiffres.
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Total").strong());
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| ui.label(texte));
-                });
-                ui.add(egui::ProgressBar::new(fait as f32 / total.max(1) as f32).desired_height(8.0).fill(BLEU));
-                if let Some(pb) = &p.probleme {
-                    ui.add_space(16.0);
-                    reessayer = probleme(ui, pb);
+                egui::Frame::new()
+                    .fill(pal.surface)
+                    .stroke(egui::Stroke::new(1.0, pal.bordure))
+                    .corner_radius(egui::CornerRadius::same(18))
+                    .inner_margin(egui::Margin::symmetric(24, 20))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        let p = self.partage.lock().unwrap();
+                        for l in &p.lignes {
+                            self.ligne(ui, l, maintenant);
+                            ui.add_space(12.0);
+                        }
+                        let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 9.0), Sense::hover());
+                        ui.painter().hline(r.x_range(), r.center().y, egui::Stroke::new(1.0, pal.bordure));
+                        let reste = match (&p.probleme, self.restant(total - fait)) {
+                            (Some(_), _) => String::new(),
+                            (None, Some(reste)) => reste,
+                            (None, None) => "estimation du temps restant…".to_string(),
+                        };
+                        ui.horizontal(|ui| {
+                            ui.label(gras(format!("{} sur {}", taille(fait), taille(total)), 13.5).color(pal.texte));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.label(RichText::new(reste).size(13.5).color(pal.texte));
+                            });
+                        });
+                        if let Some(pb) = &p.probleme {
+                            ui.add_space(16.0);
+                            reessayer = probleme(ui, pb);
+                        }
+                    });
+                // Moins de 16 Go : pas de modèle de rédaction ; on dit pourquoi et ce qui reste possible.
+                if let Some(gio) = crate::models::memoire_insuffisante() {
+                    ui.add_space(14.0);
+                    egui::Frame::new()
+                        .fill(pal.ambre_doux)
+                        .stroke(egui::Stroke::new(1.0, pal.ambre_bord))
+                        .corner_radius(egui::CornerRadius::same(14))
+                        .inner_margin(egui::Margin::symmetric(16, 12))
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.label(gras(format!("Cet ordinateur a {} Go de mémoire vive", format!("{gio:.1}").replace('.', ",")), 14.0).color(pal.ambre_texte));
+                            ui.label(
+                                RichText::new("Il en faut au moins 16 pour rédiger les comptes rendus sur place. La transcription fonctionne ; pour le compte rendu, « Copier pour un assistant en ligne » prépare une demande à coller dans Copilot ou ChatGPT.")
+                                    .size(13.0)
+                                    .color(pal.ambre_texte),
+                            );
+                        });
                 }
             });
         });
@@ -169,35 +199,50 @@ impl Installation {
     }
 
     fn ligne(&self, ui: &mut Ui, l: &Ligne, maintenant: Instant) {
+        let pal = palette(ui);
         let (fait, total) = (self.progres.done.load(Ordering::Relaxed), self.progres.total.load(Ordering::Relaxed));
         let (etat, couleur, fraction) = match l.etat {
-            EtatLigne::EnAttente => ("En attente".to_string(), None, 0.0),
-            EtatLigne::Verification => ("Vérification…".to_string(), None, 1.0),
+            EtatLigne::EnAttente => ("En attente".to_string(), pal.texte2, 0.0),
+            EtatLigne::Verification => ("Vérification…".to_string(), pal.accent, 1.0),
             // L'empreinte est calculée dès le dernier octet reçu.
-            EtatLigne::EnCours if total > 0 && fait >= total => ("Vérification…".to_string(), None, 1.0),
-            EtatLigne::EnCours => (format!("En cours · {}", taille(fait)), None, fait as f32 / l.requis.octets as f32),
+            EtatLigne::EnCours if total > 0 && fait >= total => ("Vérification…".to_string(), pal.accent, 1.0),
+            EtatLigne::EnCours => (format!("{} sur {}", taille(fait), taille(l.requis.octets)), pal.accent, fait as f32 / l.requis.octets as f32),
             EtatLigne::Reessai(t) => (
                 format!("Nouvelle tentative dans {} s…", t.saturating_duration_since(maintenant).as_secs() + 1),
-                None,
+                pal.ambre_texte,
                 fait as f32 / l.requis.octets as f32,
             ),
-            EtatLigne::Termine => ("Terminé".to_string(), Some(SALLE), 1.0),
-            EtatLigne::Erreur => ("Erreur".to_string(), Some(ROUGE), 0.0),
+            EtatLigne::Termine => ("Prêt".to_string(), pal.vert, 1.0),
+            EtatLigne::Erreur => ("Erreur".to_string(), pal.rouge, 0.0),
         };
+        let termine = l.etat == EtatLigne::Termine;
         ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("{} — {}", l.requis.libelle, taille(l.requis.octets))).strong());
+            // Rond plein coché quand c'est prêt, anneau bleu sinon.
+            let (r, _) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::hover());
+            if termine {
+                ui.painter().circle_filled(r.center(), 11.0, pal.vert);
+                let q = |x: f32, y: f32| r.center() + egui::vec2(x, y);
+                ui.painter().line(vec![q(-4.5, 0.5), q(-1.5, 3.5), q(4.5, -3.0)], egui::Stroke::new(2.2, egui::Color32::WHITE));
+            } else {
+                ui.painter().circle_filled(r.center(), 11.0, pal.accent_doux);
+                ui.painter().circle_stroke(r.center(), 9.5, egui::Stroke::new(2.0, if l.etat == EtatLigne::EnAttente { pal.bordure_forte } else { pal.accent }));
+            }
+            ui.add_space(4.0);
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 1.0;
+                ui.label(gras(l.requis.libelle, 14.0).color(pal.texte));
+                ui.label(RichText::new(taille(l.requis.octets)).size(12.0).color(pal.texte2));
+            });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if l.etat == EtatLigne::Termine {
-                    coche(ui, SALLE);
-                }
-                let t = RichText::new(etat);
-                ui.label(match couleur {
-                    Some(c) => t.color(c),
-                    None => t.weak(),
-                });
+                ui.label(gras(etat, 13.0).color(couleur));
             });
         });
-        ui.add(egui::ProgressBar::new(fraction).desired_height(8.0).fill(if l.etat == EtatLigne::Termine { SALLE } else { BLEU }));
+        let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 6.0), Sense::hover());
+        let piste = egui::Rect::from_min_max(egui::pos2(r.left() + 34.0, r.top()), r.max);
+        ui.painter().rect_filled(piste, egui::CornerRadius::same(3), pal.piste);
+        let mut plein = piste;
+        plein.set_width(piste.width() * fraction.clamp(0.0, 1.0));
+        ui.painter().rect_filled(plein, egui::CornerRadius::same(3), if termine { pal.vert } else { pal.accent });
     }
 
     /// Octets téléchargés et à télécharger en tout (les vérifications seules ne comptent pas).
@@ -330,13 +375,6 @@ fn installer(partage: &Mutex<Partage>, progres: &Arc<Progress>) {
     }
     supprimer_obsoletes();
     partage.lock().unwrap().fini = true;
-}
-
-/// Coche dessinée : la police par défaut d'egui n'a pas « ✓ ».
-fn coche(ui: &mut Ui, couleur: Color32) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::splat(12.0), Sense::hover());
-    let at = |x: f32, y: f32| rect.left_top() + Vec2::new(x, y) * rect.width();
-    ui.painter().line(vec![at(0.1, 0.55), at(0.4, 0.82), at(0.92, 0.2)], egui::Stroke::new(2.0, couleur));
 }
 
 fn supprimer_obsoletes() {
