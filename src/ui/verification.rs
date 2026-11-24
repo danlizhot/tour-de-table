@@ -63,6 +63,36 @@ impl Verification {
     }
 }
 
+/// Heure où placer une frontière du point `p` pour qu'elle tombe entre celles des points voisins de l'ordre du jour
+/// (`autres` : point et heure des autres frontières) : `None` si l'heure `actuelle` y est déjà, ou si les voisins
+/// sont eux-mêmes dans le désordre. Sans point suivant : une minute après le précédent.
+fn heure_dans_l_ordre(autres: &[(usize, u64)], p: usize, actuelle: Option<u64>, duree_ms: u64) -> Option<u64> {
+    let avant = autres.iter().filter(|(q, _)| *q < p).map(|(_, ms)| *ms).max();
+    let apres = autres.iter().filter(|(q, _)| *q > p).map(|(_, ms)| *ms).min();
+    let (lo, hi) = (avant.unwrap_or(0), apres.unwrap_or(duree_ms));
+    if lo > hi {
+        return None;
+    }
+    if let Some(t) = actuelle
+        && avant.is_none_or(|a| t > a)
+        && apres.is_none_or(|b| t < b)
+    {
+        return None;
+    }
+    Some(match (avant, apres) {
+        (Some(a), None) => (a + 60_000).min((a + duree_ms) / 2),
+        _ => (lo + hi) / 2,
+    })
+}
+
+impl Verification {
+    /// Point et heure des frontières autres que la `i`-ième.
+    fn autres(&self, i: Option<usize>) -> Vec<(usize, u64)> {
+        let lignes = self.lignes.iter().enumerate().filter(|(k, _)| Some(*k) != i);
+        lignes.filter_map(|(_, l)| l.f.point.map(|p| (p, l.f.debut_ms))).collect()
+    }
+}
+
 /// « 1:02:03 », « 12:34 » ou « 45 » (secondes).
 fn lire_heure(texte: &str) -> Option<u64> {
     let mut s = 0u64;
@@ -193,7 +223,16 @@ impl TourDeTableApp {
 
         let pal = palette(ui);
         ui.add_space(4.0);
-        ui.label(RichText::new(&v.rencontre.title).size(13.5).color(pal.texte2));
+        ui.horizontal(|ui| {
+            // Retour à la fiche, comme « Annuler » ; pas pendant un import, que la rencontre attend pour exister.
+            if !v.nouvelle
+                && !occupe
+                && ui.add(bouton_widget(ui, "←  Retour", Genre::Discret, 28.0)).on_hover_text("Revient à la rencontre sans rien changer").clicked()
+            {
+                annuler = true;
+            }
+            ui.label(RichText::new(&v.rencontre.title).size(13.5).color(pal.texte2));
+        });
         ui.label(gras("Découper par points", 24.0).color(pal.texte));
         ui.label(
             RichText::new(
@@ -272,6 +311,7 @@ impl TourDeTableApp {
         let mut deplacer = None;
         let mut trier = false;
         let mut ecouter = None;
+        let mut repointe = None;
         let en_cours = v.lecture.as_ref().filter(|(_, l)| l.en_cours()).map(|(i, _)| *i);
         egui::ScrollArea::vertical().auto_shrink([false, true]).max_height(ui.available_height() - 60.0).show(ui, |ui| {
             for (i, l) in v.lignes.iter_mut().enumerate() {
@@ -285,12 +325,16 @@ impl TourDeTableApp {
                         let (bg, encre) = if joue { (pal.accent_plein, Color32::WHITE) } else if l.f.point.is_some() { (pal.accent_doux, pal.accent_texte) } else { (pal.piste, pal.texte2) };
                         ui.painter().rect_filled(r, CornerRadius::same(8), bg);
                         ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, numero, super::colonne::police_grasse(12.0), encre);
+                        let avant = l.f.point;
                         egui::ComboBox::from_id_salt(("point", i)).width(340.0).height(400.0).selected_text(nom(l.f.point)).show_ui(ui, |ui| {
                             ui.selectable_value(&mut l.f.point, None, nom(None));
                             for p in 0..points.len() {
                                 ui.selectable_value(&mut l.f.point, Some(p), nom(Some(p)));
                             }
                         });
+                        if l.f.point != avant {
+                            repointe = Some(i);
+                        }
                         let r = ui
                             .add(egui::TextEdit::singleline(&mut l.heure).desired_width(76.0).margin(egui::Margin::symmetric(10, 6)))
                             .on_hover_text("Heure de début : h:mm:ss ou mm:ss");
@@ -325,7 +369,10 @@ impl TourDeTableApp {
                     if !l.f.extrait.is_empty() {
                         ui.horizontal(|ui| {
                             ui.add_space(36.0);
-                            let r = ui.label(RichText::new(format!("« {} »", l.f.extrait)).italics().size(14.0).color(pal.texte2));
+                            // Une seule ligne : un long extrait (une boucle de Whisper, par exemple) élargirait la carte et
+                            // pousserait « Retirer » et « Valider » hors de la fenêtre. Le texte entier s'affiche au survol.
+                            let texte = RichText::new(format!("« {} »", l.f.extrait)).italics().size(14.0).color(pal.texte2);
+                            let r = ui.add(egui::Label::new(texte).truncate());
                             if !l.f.raison.is_empty() {
                                 r.on_hover_text(&l.f.raison);
                             }
@@ -336,6 +383,14 @@ impl TourDeTableApp {
             }
         });
         if let Some((i, ms)) = deplacer {
+            v.deplacer(i, ms);
+            trier = true;
+        }
+        // Point changé : la frontière va se ranger entre celles des points voisins de l'ordre du jour.
+        if let Some(i) = repointe
+            && let Some(p) = v.lignes[i].f.point
+            && let Some(ms) = heure_dans_l_ordre(&v.autres(Some(i)), p, Some(v.lignes[i].f.debut_ms), v.duree_ms)
+        {
             v.deplacer(i, ms);
             trier = true;
         }
@@ -356,15 +411,35 @@ impl TourDeTableApp {
 
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            if ui.add_enabled(!occupe, bouton_widget(ui, "+ Ajouter une frontière", Genre::Secondaire, 40.0)).clicked() {
-                // Après la dernière, sur le point qui suit.
-                let derniere = v.lignes.last().map(|l| &l.f);
-                let ms = derniere.map_or(0, |f| f.debut_ms + 60_000).min(v.duree_ms);
-                let point = match derniere.and_then(|f| f.point) {
-                    Some(p) if p + 1 < points.len() => Some(p + 1),
-                    Some(p) => Some(p),
-                    None => (!points.is_empty()).then_some(0),
-                };
+            // Avec un ordre du jour, on choisit le point qui commence ; la frontière se range entre ses voisins.
+            let mut ajout: Option<Option<usize>> = None;
+            if points.is_empty() || occupe {
+                if ui.add_enabled(!occupe, bouton_widget(ui, "+ Ajouter une frontière", Genre::Secondaire, 40.0)).clicked() {
+                    ajout = Some(None);
+                }
+            } else {
+                let bouton = bouton_widget(ui, "+ Ajouter une frontière      ", Genre::Secondaire, 40.0);
+                let (resp, _) = egui::containers::menu::MenuButton::from_button(bouton).ui(ui, |ui| {
+                    ui.set_min_width(340.0);
+                    ui.label(RichText::new("Quel point commence ?").size(13.0).color(pal.texte2));
+                    for p in 0..points.len() {
+                        let place = v.lignes.iter().any(|l| l.f.point == Some(p));
+                        let texte = if place {
+                            RichText::new(format!("{}  (déjà placé)", nom(Some(p)))).color(pal.texte2)
+                        } else {
+                            RichText::new(nom(Some(p))).color(pal.texte)
+                        };
+                        if ui.button(texte).clicked() {
+                            ajout = Some(Some(p));
+                        }
+                    }
+                });
+                super::apparence::chevron(ui, &resp, pal.texte);
+            }
+            if let Some(point) = ajout {
+                // Entre les frontières des points voisins ; sinon, une minute après la dernière.
+                let ms = point.and_then(|p| heure_dans_l_ordre(&v.autres(None), p, None, v.duree_ms));
+                let ms = ms.unwrap_or_else(|| v.lignes.last().map_or(0, |l| l.f.debut_ms + 60_000).min(v.duree_ms));
                 let f = Frontiere { point, debut_ms: ms, extrait: String::new(), raison: String::new(), declenchement: Declenchement::Manuel };
                 v.lignes.push(Ligne { heure: clock(ms), f });
                 let i = v.lignes.len() - 1;
@@ -431,7 +506,24 @@ fn barre_frontiere(ui: &mut Ui, t: u64, duree_ms: u64, (fait, total): (u64, u64)
 
 #[cfg(test)]
 mod tests {
-    use super::lire_heure;
+    use super::{heure_dans_l_ordre, lire_heure};
+
+    #[test]
+    fn frontiere_rangee_entre_ses_voisins() {
+        let autres = [(0, 60_000), (2, 600_000), (3, 900_000)];
+        // Point 2 ajouté (index 1) : entre le point 1 et le point 3.
+        assert_eq!(heure_dans_l_ordre(&autres, 1, None, 3_600_000), Some(330_000));
+        // Déjà au bon endroit : on n'y touche pas.
+        assert_eq!(heure_dans_l_ordre(&autres, 1, Some(200_000), 3_600_000), None);
+        // Placé après le point 4 : ramené entre le 1 et le 3.
+        assert_eq!(heure_dans_l_ordre(&autres, 1, Some(1_000_000), 3_600_000), Some(330_000));
+        // Dernier point : une minute après le précédent.
+        assert_eq!(heure_dans_l_ordre(&autres, 4, None, 3_600_000), Some(960_000));
+        // Premier point : avant le suivant.
+        assert_eq!(heure_dans_l_ordre(&autres[1..], 0, None, 3_600_000), Some(300_000));
+        // Voisins dans le désordre : rien à faire.
+        assert_eq!(heure_dans_l_ordre(&[(0, 500_000), (2, 100_000)], 1, None, 3_600_000), None);
+    }
 
     #[test]
     fn heures_saisies() {

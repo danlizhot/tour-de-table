@@ -225,6 +225,13 @@ enum ClicPoint {
 }
 
 /// Cadre autour du texte d'un volet, comme celui de l'ordre du jour ; il occupe toute la place laissée par le pied.
+/// Deux colonnes dans l'espace encore libre : `ui.columns` les étire jusqu'au bas de la fiche, par-dessus le lecteur
+/// déjà placé au bas.
+fn colonnes(ui: &mut Ui, contenu: impl FnOnce(&mut [Ui])) {
+    let libre = ui.available_rect_before_wrap();
+    ui.scope_builder(egui::UiBuilder::new().max_rect(libre), |ui| ui.columns(2, contenu));
+}
+
 pub(super) fn cadre<R>(ui: &mut Ui, contenu: impl FnOnce(&mut Ui) -> R) -> R {
     let p = palette(ui);
     egui::Frame::new()
@@ -268,7 +275,7 @@ impl TourDeTableApp {
         let aide = if cote_a_cote { "Revenir à un seul volet" } else { "Affiche l'ordre du jour à côté de la transcription" };
         let ordre_du_jour = |app: &mut Self, ui: &mut Ui| app.agenda_card(ui, true);
         if cote_a_cote {
-            ui.columns(2, |colonnes| {
+            colonnes(ui, |colonnes| {
                 colonnes[0].with_layout(aligne_a_gauche(), |ui| {
                     ui.horizontal(|ui| barre_segmentee(ui, |ui| bouton_onglet(ui, "Ordre du jour", true, false)));
                     trait_sous_la_barre(ui);
@@ -334,7 +341,7 @@ impl TourDeTableApp {
             }
             Some(d) => {
                 let gauche = onglets.gauche;
-                ui.columns(2, |colonnes| {
+                colonnes(ui, |colonnes| {
                     colonnes[0].with_layout(aligne_a_gauche(), |ui| {
                         self.barre_onglets(ui, idx, &mut onglets, false, false);
                         action = self.volet(ui, idx, gauche).or(action);
