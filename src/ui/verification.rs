@@ -39,8 +39,9 @@ pub struct Verification {
     index: Index,
     pub(super) duree_ms: u64,
     lecture: Option<(usize, lecture::Lecture)>,
-    /// Mode découpage dans la fiche (`mode_decoupage.rs`) : ligne (heure de début) dont on choisit le point.
-    pub(super) choix: Option<u64>,
+    /// Mode découpage dans la fiche (`mode_decoupage.rs`) : ligne dont on choisit le point (rang dans la transcription,
+    /// pas son heure : deux lignes peuvent commencer à la même seconde).
+    pub(super) choix: Option<usize>,
     /// Frontière dont l'en-tête est sélectionné, et sa liste « Changer de point » ouverte.
     pub(super) choisi: Option<usize>,
     pub(super) changer: bool,

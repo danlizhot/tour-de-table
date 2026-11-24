@@ -123,7 +123,8 @@ impl TourDeTableApp {
                             }
                             let (fond, bord, encre) = if places < total { (p.ambre_doux, p.ambre_bord, p.ambre_texte) } else { (p.vert_doux, p.vert, p.texte) };
                             egui::Frame::new().fill(fond).stroke(Stroke::new(1.0, bord)).corner_radius(CornerRadius::same(255)).inner_margin(Margin::symmetric(12, 5)).show(ui, |ui| {
-                                ui.label(gras(format!("{places} points sur {total} placés"), 13.0).color(encre));
+                                let s = if places > 1 { "s" } else { "" };
+                                ui.label(gras(format!("{places} point{s} placé{s} sur {total}"), 13.0).color(encre));
                             });
                         });
                     });
@@ -230,7 +231,7 @@ impl TourDeTableApp {
                         }
                     }
                 };
-                for l in &lignes {
+                for (j, l) in lignes.iter().enumerate() {
                     while k < v.lignes.len() && v.lignes[k].f.debut_ms <= l.debut_ms {
                         entete(ui, k, v);
                         k += 1;
@@ -239,13 +240,13 @@ impl TourDeTableApp {
                     let cle = (l.source, m.voix_entre(l.debut_ms, l.fin_ms));
                     let qui = (voix_precedente != Some(cle)).then(|| (m.locuteur(cle.0, cle.1), couleur_locuteur(cle.0, cle.1)));
                     voix_precedente = Some(cle);
-                    let ouvert = v.choix == Some(l.debut_ms);
+                    let ouvert = v.choix == Some(j);
                     let (clic, joue) = ligne_texte(ui, l, qui.as_ref(), ouvert);
                     if joue {
                         ecouter = Some(l.debut_ms);
                     }
                     if clic {
-                        v.choix = if ouvert { None } else { Some(l.debut_ms) };
+                        v.choix = if ouvert { None } else { Some(j) };
                         v.choisi = None;
                     }
                     if ouvert {
