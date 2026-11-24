@@ -443,3 +443,5 @@ Source vectorielle : `assets/logo.svg`.
 
 MIT. Inspiré de Meetily (MIT, Zackriya Solutions). Le zip Windows contient `vulkan-1.dll`, le chargeur
 Vulkan de Khronos (Apache 2.0).
+La police Inter (The Inter Project Authors) est intégrée à l'exécutable sous la licence SIL Open Font
+License 1.1 (`assets/polices/LICENCE-Inter-OFL.txt`).

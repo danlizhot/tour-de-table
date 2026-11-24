@@ -32,9 +32,12 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   ou deux côte à côte), `agenda.rs` (ordre du jour), `verification.rs` (frontières à
   corriger, « Découper par points »), `settings.rs` (Paramètres), `installation.rs` (installation automatique des
   modèles au premier démarrage, plein écran),
-  `widgets.rs` (couleurs, composants, logo). Garder chaque fichier sous ~700 lignes. Dans chaque onglet, les
-  boutons sont au bas du volet, sous le texte qui défile (`onglets::pied`). `ecoute.rs` : écoute d'un paragraphe ou
-  d'un point (`audio/lecture.rs`, lecture par morceaux de 20 s dans un fil), jamais pendant un enregistrement.
+  `widgets.rs` (transcription, Markdown, logo), `apparence.rs` (palettes des thèmes clair et foncé, police Inter
+  intégrée — `assets/polices`, licence OFL —, boutons, cartes, choix segmentés, pastilles : les écrans n'emploient
+  que ces couleurs), `colonne.rs` (colonne de gauche), `nouvelle.rs` (écran « Nouvelle rencontre »). Garder chaque fichier sous ~700 lignes. Dans chaque onglet, les
+  boutons sont au bas du volet, sous le texte qui défile (`onglets::pied`). `ecoute.rs` : lecteur fixe au bas de la fiche (lecture
+  continue à partir d'un paragraphe, d'un point ou d'un clic sur les bandes des points et des voix, ±5 s ; la
+  transcription suit le paragraphe entendu ; `audio/lecture.rs`, morceaux de 20 s dans un fil), jamais pendant un enregistrement.
 * `storage.rs` : une rencontre = un dossier de Musique/Tour de table (nom fixé à la création,
   champ `dossier`) avec `rencontre.json`, sauvegardé après chaque
   segment (écriture atomique `.tmp` + `rename`). « Archiver » comprime le dossier dans `Archives/<dossier>.zip`

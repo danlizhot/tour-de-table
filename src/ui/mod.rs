@@ -1,12 +1,15 @@
 //! Interface native (egui) : rendu GPU immédiat, aucun navigateur embarqué.
 
 mod agenda;
+mod apparence;
 mod barre_taches;
+mod colonne;
 mod decoupage;
 mod ecoute;
 mod installation;
 mod live;
 mod nettoyage;
+mod nouvelle;
 mod onglets;
 mod past;
 mod puce;
@@ -19,16 +22,17 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender};
-use eframe::egui::{self, Align, Color32, CornerRadius, Layout, RichText, Sense, Ui, Vec2};
+use eframe::egui::{self, Align, Color32, CornerRadius, Layout, RichText, Ui};
 
 use crate::audio::{self, DeviceInfo, dsp::Utterance};
 use crate::config::{self, Config, Theme};
 use crate::models;
 use crate::quebec::Glossary;
 use crate::recorder::Recorder;
-use crate::storage::{self, Agenda, Meeting, clock};
+use crate::storage::{self, Agenda, Meeting};
 use crate::stt::{Engine, Reply, Request, Settings};
-use widgets::{ROUGE, SALLE, draw_logo, style, theme_button};
+use apparence::style;
+use widgets::{ROUGE, SALLE};
 
 enum ModelState {
     Missing,
@@ -231,22 +235,26 @@ impl TourDeTableApp {
             || self.summary_job.is_some()
             || self.decoupage_job.is_some()
             || self.verification.is_some();
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Une nouvelle version de Tour de table est disponible.").strong());
-            let bouton = ui
-                .add_enabled(!occupe, egui::Button::new("Mettre à jour"))
-                .on_hover_text("Ouvre le Microsoft Store, qui installe la nouvelle version")
-                .on_disabled_hover_text("Après la rencontre et les travaux en cours : la mise à jour ferme Tour de table");
-            if bouton.clicked() {
-                crate::mise_a_jour::ouvrir_store();
-                self.mise_a_jour_offerte = false;
-            }
-            if ui.button("Plus tard").clicked() {
-                self.mise_a_jour_offerte = false;
-            }
+        let p = apparence::palette(ui);
+        egui::Frame::new().fill(p.accent_doux).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin { left: 16, right: 10, top: 8, bottom: 8 }).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 34.0), Layout::left_to_right(Align::Center), |ui| {
+                ui.label(apparence::gras("Une nouvelle version de Tour de table est disponible.", 14.0).color(p.accent_texte));
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let bouton = ui
+                        .add_enabled(!occupe, apparence::bouton_widget(ui, "Mettre à jour", apparence::Genre::Principal, 34.0))
+                        .on_hover_text("Ouvre le Microsoft Store, qui installe la nouvelle version")
+                        .on_disabled_hover_text("Après la rencontre et les travaux en cours : la mise à jour ferme Tour de table");
+                    if bouton.clicked() {
+                        crate::mise_a_jour::ouvrir_store();
+                        self.mise_a_jour_offerte = false;
+                    }
+                    if ui.add(apparence::bouton_widget(ui, "Plus tard", apparence::Genre::Discret, 34.0)).clicked() {
+                        self.mise_a_jour_offerte = false;
+                    }
+                });
+            });
         });
-        ui.add_space(4.0);
     }
 
     fn appliquer_theme(&self) {
@@ -571,118 +579,6 @@ impl TourDeTableApp {
         self.installation.as_ref().is_none_or(|i| i.pret(file)) && models::installed(file)
     }
 
-    // ───────────────────────── Affichage ─────────────────────────
-
-    fn top_bar(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            let (rect, _) = ui.allocate_exact_size(Vec2::splat(34.0), Sense::hover());
-            draw_logo(ui.painter(), rect);
-            ui.vertical(|ui| {
-                ui.label(RichText::new("Tour de table").size(20.0).strong());
-                ui.label(RichText::new("Tout le monde parle, rien ne se perd.").small().weak());
-            });
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if theme_button(ui, self.cfg.theme).clicked() {
-                    self.cfg.theme = match self.cfg.theme {
-                        Theme::Systeme => Theme::Clair,
-                        Theme::Clair => Theme::Fonce,
-                        Theme::Fonce => Theme::Systeme,
-                    };
-                    self.appliquer_theme();
-                    self.cfg.save();
-                }
-                // Le modèle est choisi et installé seul : on ne parle de lui que s'il n'est pas prêt.
-                let (txt, color) = match &self.model {
-                    ModelState::Ready => return,
-                    ModelState::Missing => ("Aucun modèle installé", ROUGE),
-                    ModelState::Loading => ("Chargement du modèle…", Color32::from_rgb(0xD9, 0x77, 0x06)),
-                    ModelState::Verification => ("Vérification des modèles…", Color32::from_rgb(0xD9, 0x77, 0x06)),
-                    ModelState::Failed(_) => ("Modèle en erreur", ROUGE),
-                };
-                let chip = ui.label(RichText::new(txt).color(color).small());
-                if let ModelState::Failed(e) = &self.model {
-                    chip.on_hover_text(e);
-                }
-                let (r, _) = ui.allocate_exact_size(Vec2::splat(8.0), Sense::hover());
-                ui.painter().circle_filled(r.center(), 4.0, color);
-            });
-        });
-    }
-
-    fn side_list(&mut self, ui: &mut Ui) {
-        // Paramètres au bas de la colonne, comme le compte dans les applications de messagerie.
-        egui::Panel::bottom("pied").show_separator_line(false).show(ui, |ui| {
-            ui.add_space(4.0);
-            if ui
-                .add(egui::Button::new("Guide d'utilisation").min_size(Vec2::new(ui.available_width(), 30.0)))
-                .on_hover_text("Ouvre le guide d'utilisation (PDF), livré avec l'application")
-                .clicked()
-                && let Err(e) = storage::ouvrir_guide()
-            {
-                log::error!("Guide d'utilisation : {e:#}");
-                self.notify(format!("{e:#}"), true);
-            }
-            if ui
-                .add(egui::Button::new("Archives").min_size(Vec2::new(ui.available_width(), 30.0)))
-                .on_hover_text("Ouvre le dossier des rencontres archivées (fichiers .zip)")
-                .clicked()
-            {
-                let dir = config::archives_dir();
-                match std::fs::create_dir_all(&dir) {
-                    Ok(()) => storage::reveal(&dir),
-                    Err(e) => self.notify(format!("Dossier des archives : {e}"), true),
-                }
-            }
-            if ui.add(egui::Button::new("Paramètres").min_size(Vec2::new(ui.available_width(), 30.0))).clicked() {
-                self.show_settings = !self.show_settings;
-                if self.show_settings {
-                    self.mics = audio::list_microphones();
-                    self.system_sources = audio::list_system_sources();
-                }
-            }
-            ui.add_space(4.0);
-            ui.vertical_centered(|ui| {
-                ui.label(egui::RichText::new(concat!("Version ", env!("CARGO_PKG_VERSION"))).small().weak());
-            });
-            ui.add_space(4.0);
-        });
-        ui.add_space(6.0);
-        let live_label = if self.recorder.is_some() { "Rencontre en cours" } else { "+ Nouvelle rencontre" };
-        let selected = matches!(self.view, View::Live);
-        if ui
-            .add_sized([ui.available_width(), 32.0], egui::Button::selectable(selected, live_label))
-            .clicked()
-        {
-            self.view = View::Live;
-        }
-        let idle = self.recorder.is_none() && !self.finishing && self.import_job.is_none() && self.verification.is_none();
-        if ui
-            .add_enabled(idle, egui::Button::new("Importer un enregistrement…").min_size(Vec2::new(ui.available_width(), 28.0)))
-            .on_hover_text("MP3, M4A, MP4 (Teams), WAV, FLAC ou OGG. Vous pouvez aussi glisser le fichier dans la fenêtre.")
-            .clicked()
-        {
-            self.pick_audio();
-        }
-        ui.add_space(8.0);
-        ui.label(RichText::new("Historique").small().weak());
-        egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-            for (i, m) in self.meetings.iter().enumerate() {
-                let sel = matches!(self.view, View::Past(j) if j == i);
-                let text = format!(
-                    "{}\n{} · {}",
-                    m.title,
-                    m.started_at.format("%Y-%m-%d"),
-                    clock(m.duration_s * 1000)
-                );
-                if ui.add_sized([ui.available_width(), 40.0], egui::Button::selectable(sel, text)).clicked() {
-                    self.view = View::Past(i);
-                }
-            }
-            if self.meetings.is_empty() {
-                ui.label(RichText::new("Aucune rencontre pour l'instant.").weak());
-            }
-        });
-    }
 }
 
 impl eframe::App for TourDeTableApp {
@@ -722,18 +618,50 @@ impl eframe::App for TourDeTableApp {
                 self.attach_agenda(&path);
             }
         }
-        egui::Panel::top("top").show(ui, |ui| {
-            ui.add_space(6.0);
-            self.top_bar(ui);
-            ui.add_space(4.0);
-        });
+        self.colonne(ui);
         if self.mise_a_jour_offerte {
-            egui::Panel::top("mise_a_jour").show(ui, |ui| self.bandeau_mise_a_jour(ui));
+            egui::Panel::top("mise_a_jour")
+                .show_separator_line(false)
+                .frame(egui::Frame::new().fill(apparence::palette(ui).fond).inner_margin(egui::Margin { left: 24, right: 24, top: 16, bottom: 0 }))
+                .show(ui, |ui| self.bandeau_mise_a_jour(ui));
         }
-        egui::Panel::left("history").resizable(true).default_size(240.0).show(ui, |ui| self.side_list(ui));
         if matches!(self.view, View::Live) && self.verification.is_none() {
             self.raccourcis_points(&ctx);
-            egui::Panel::bottom("controls").show(ui, |ui| self.controls(ui));
+            if self.recorder.is_some() {
+                let p = apparence::palette(ui);
+                // La marge autour de la carte prend le fond de la fenêtre (sinon elle reste noire).
+                egui::Panel::top("enregistrement")
+                    .show_separator_line(false)
+                    .frame(egui::Frame::new().fill(p.fond).inner_margin(egui::Margin { left: 8, right: 8, top: 10, bottom: 2 }))
+                    .show(ui, |ui| {
+                        egui::Frame::new()
+                            .fill(p.surface)
+                            .stroke(egui::Stroke::new(1.0, p.bordure))
+                            .corner_radius(CornerRadius::same(16))
+                            .inner_margin(egui::Margin::symmetric(18, 12))
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                self.bandeau_enregistrement(ui);
+                            });
+                    });
+            } else if self.live.is_some() {
+                // Import ou fin de transcription : les étapes du traitement, en haut de l'écran.
+                let p = apparence::palette(ui);
+                egui::Panel::top("traitement")
+                    .show_separator_line(false)
+                    .frame(egui::Frame::new().fill(p.fond).inner_margin(egui::Margin { left: 8, right: 8, top: 10, bottom: 2 }))
+                    .show(ui, |ui| {
+                        egui::Frame::new()
+                            .fill(p.surface)
+                            .stroke(egui::Stroke::new(1.0, p.bordure))
+                            .corner_radius(CornerRadius::same(16))
+                            .inner_margin(egui::Margin::symmetric(18, 14))
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                self.carte_traitement(ui);
+                            });
+                    });
+            }
         }
         egui::CentralPanel::default_margins().show(ui, |ui| {
             match self.view {

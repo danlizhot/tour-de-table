@@ -5,8 +5,8 @@ use std::sync::atomic::Ordering;
 use eframe::egui::{self, Color32, CornerRadius, RichText, Sense, Ui, Vec2};
 
 use super::TourDeTableApp;
-use super::ecoute::Extrait;
-use super::widgets::{BLEU_CLAIR, ClicEcoute, EtatEcoute, markdown, transcript, transcript_nettoye};
+use super::apparence::{gras, palette};
+use super::widgets::{ClicEcoute, EtatEcoute, markdown, transcript, transcript_nettoye};
 use crate::{config, models};
 use crate::storage::clock;
 
@@ -115,37 +115,45 @@ fn empreinte(id: &str) -> u64 {
     h.finish()
 }
 
-/// Bouton d'onglet : grand, souligné quand il est choisi, avec un indicateur quand un travail y est en cours.
+/// Rangée d'onglets : fond gris arrondi, l'onglet choisi en blanc.
+fn barre_segmentee<R>(ui: &mut Ui, contenu: impl FnOnce(&mut Ui) -> R) -> R {
+    let p = palette(ui);
+    egui::Frame::new()
+        .fill(p.piste)
+        .corner_radius(CornerRadius::same(12))
+        .inner_margin(egui::Margin::same(4))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                contenu(ui)
+            })
+            .inner
+        })
+        .inner
+}
+
+/// Bouton d'onglet dans une `barre_segmentee`, avec un indicateur quand un travail y est en cours.
 fn bouton_onglet(ui: &mut Ui, texte: &str, choisi: bool, occupe: bool) -> egui::Response {
-    let couleur = if choisi { ui.visuals().strong_text_color() } else { ui.visuals().text_color().gamma_multiply(0.75) };
-    let galley = egui::WidgetText::from(RichText::new(texte).size(16.0).strong()).into_galley(
-        ui,
-        Some(egui::TextWrapMode::Extend),
-        f32::INFINITY,
-        egui::TextStyle::Button,
-    );
+    let p = palette(ui);
+    let (texte_riche, couleur) = if choisi { (gras(texte, 14.5), p.texte) } else { (RichText::new(texte).size(14.5), p.texte2) };
+    let galley = egui::WidgetText::from(texte_riche).into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button);
     let indicateur = if occupe { 20.0 } else { 0.0 };
-    let taille = Vec2::new(galley.size().x + 28.0 + indicateur, galley.size().y + 16.0);
+    let taille = Vec2::new(galley.size().x + 36.0 + indicateur, 36.0);
     let (rect, resp) = ui.allocate_exact_size(taille, Sense::click());
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     if ui.is_rect_visible(rect) {
-        let haut = CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 };
         let fond = match (choisi, resp.hovered()) {
-            (true, _) => BLEU_CLAIR.gamma_multiply(0.22),
-            (false, true) => ui.visuals().widgets.hovered.weak_bg_fill,
+            (true, _) => p.surface,
+            (false, true) => p.surface.gamma_multiply(0.5),
             (false, false) => Color32::TRANSPARENT,
         };
-        ui.painter().rect_filled(rect, haut, fond);
-        if choisi {
-            let trait_bas = egui::Rect::from_min_max(egui::pos2(rect.left(), rect.bottom() - 3.0), rect.right_bottom());
-            ui.painter().rect_filled(trait_bas, 0, BLEU_CLAIR);
-        }
-        let pos = egui::pos2(rect.left() + 14.0, rect.center().y - galley.size().y / 2.0);
+        ui.painter().rect_filled(rect, CornerRadius::same(9), fond);
+        let pos = egui::pos2(rect.left() + 18.0, rect.center().y - galley.size().y / 2.0);
         let fin_texte = pos.x + galley.size().x;
         ui.painter().galley(pos, galley, couleur);
         if occupe {
             let r = egui::Rect::from_center_size(egui::pos2(fin_texte + 13.0, rect.center().y), Vec2::splat(13.0));
-            egui::Spinner::new().paint_at(ui, r);
+            egui::Spinner::new().color(p.accent).paint_at(ui, r);
         }
     }
     resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, choisi, texte));
@@ -156,13 +164,17 @@ fn bouton_onglet(ui: &mut Ui, texte: &str, choisi: bool, occupe: bool) -> egui::
 fn bouton_cote_a_cote(ui: &mut Ui, actif: bool) -> egui::Response {
     let galley =
         egui::WidgetText::from(RichText::new("Côte à côte")).into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button);
-    let taille = Vec2::new(galley.size().x + 46.0, galley.size().y + 12.0);
+    let taille = Vec2::new(galley.size().x + 46.0, 36.0);
     let (rect, resp) = ui.allocate_exact_size(taille, Sense::click());
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     if ui.is_rect_visible(rect) {
-        let visuel = ui.style().interact_selectable(&resp, actif);
-        ui.painter().rect(rect, CornerRadius::same(6), visuel.weak_bg_fill, visuel.bg_stroke, egui::StrokeKind::Inside);
-        let couleur = visuel.text_color();
+        let p = palette(ui);
+        let (fond, contour, couleur) = match (actif, resp.hovered()) {
+            (true, _) => (p.accent_doux, p.accent_doux, p.accent_texte),
+            (false, true) => (p.piste, p.bordure_forte, p.texte),
+            (false, false) => (p.surface, p.bordure_forte, p.texte),
+        };
+        ui.painter().rect(rect, CornerRadius::same(10), fond, egui::Stroke::new(1.0, contour), egui::StrokeKind::Inside);
         // Deux petits volets.
         let icone = egui::Rect::from_min_size(egui::pos2(rect.left() + 10.0, rect.center().y - 6.5), Vec2::new(18.0, 13.0));
         let moitie = (icone.width() - 2.0) / 2.0;
@@ -176,11 +188,33 @@ fn bouton_cote_a_cote(ui: &mut Ui, actif: bool) -> egui::Response {
     resp
 }
 
-/// Trait sous la barre, collé aux onglets.
+/// Espace sous la rangée d'onglets.
 fn trait_sous_la_barre(ui: &mut Ui) {
-    let (trait_bas, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
-    ui.painter().rect_filled(trait_bas.translate(Vec2::new(0.0, -ui.spacing().item_spacing.y)), 0, ui.visuals().widgets.noninteractive.bg_stroke.color);
-    ui.add_space(2.0);
+    ui.add_space(8.0);
+}
+
+/// Pastille « Écouter » (ou « En écoute », en bleu) au bout du titre d'un point du compte rendu.
+fn bouton_ecouter_point(ui: &mut Ui, joue: bool) -> egui::Response {
+    let p = palette(ui);
+    let (texte, fond, encre) = if joue { ("En écoute", p.accent_plein, Color32::WHITE) } else { ("Écouter", p.piste, p.texte) };
+    let galley = egui::WidgetText::from(gras(texte, 13.0)).into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button);
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(galley.size().x + 40.0, 30.0), Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    if ui.is_rect_visible(rect) {
+        let fond = if resp.hovered() && !joue { p.bordure_forte } else { fond };
+        ui.painter().rect_filled(rect, CornerRadius::same(15), fond);
+        let c = egui::pos2(rect.left() + 17.0, rect.center().y);
+        if joue {
+            for dx in [-2.5, 2.5] {
+                ui.painter().rect_filled(egui::Rect::from_center_size(c + Vec2::new(dx, 0.0), Vec2::new(2.6, 10.0)), 1, encre);
+            }
+        } else {
+            let pts = vec![c + Vec2::new(-3.0, -5.0), c + Vec2::new(5.0, 0.0), c + Vec2::new(-3.0, 5.0)];
+            ui.painter().add(egui::Shape::convex_polygon(pts, encre, egui::Stroke::NONE));
+        }
+        ui.painter().galley(egui::pos2(rect.left() + 28.0, rect.center().y - galley.size().y / 2.0), galley, encre);
+    }
+    resp
 }
 
 /// Clic sur un bouton d'un point du compte rendu.
@@ -192,7 +226,12 @@ enum ClicPoint {
 
 /// Cadre autour du texte d'un volet, comme celui de l'ordre du jour ; il occupe toute la place laissée par le pied.
 pub(super) fn cadre<R>(ui: &mut Ui, contenu: impl FnOnce(&mut Ui) -> R) -> R {
-    egui::Frame::group(ui.style())
+    let p = palette(ui);
+    egui::Frame::new()
+        .fill(p.surface)
+        .stroke(egui::Stroke::new(1.0, p.bordure))
+        .corner_radius(CornerRadius::same(16))
+        .inner_margin(egui::Margin::symmetric(22, 10))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.set_min_height(ui.available_height());
@@ -219,22 +258,6 @@ pub(super) fn pied<R>(ui: &mut Ui, id: &str, contenu: impl FnOnce(&mut Ui) -> R)
 }
 
 impl TourDeTableApp {
-    /// Bouton « Côte à côte » de la fiche, toujours au même endroit ; absent quand la fenêtre est trop étroite.
-    pub(super) fn bascule_cote_a_cote(&mut self, ui: &mut Ui) {
-        if ui.ctx().content_rect().width() < LARGEUR_FENETRE_COTE_A_COTE {
-            return;
-        }
-        let actif = self.onglets.droite.is_some();
-        let aide = if actif {
-            "Revenir à un seul volet"
-        } else {
-            "Affiche deux volets en même temps, par exemple l'ordre du jour à côté de la transcription"
-        };
-        if bouton_cote_a_cote(ui, actif).on_hover_text(aide).clicked() {
-            self.onglets.basculer();
-        }
-    }
-
     /// Ordre du jour déposé, avant ou pendant la rencontre : l'ordre du jour et la transcription (ou ce qu'on
     /// attend) en deux onglets, ou côte à côte. `transcription` dessine la transcription en cours.
     pub(super) fn volets_direct(&mut self, ui: &mut Ui, transcription: impl Fn(&mut Self, &mut Ui)) {
@@ -247,13 +270,13 @@ impl TourDeTableApp {
         if cote_a_cote {
             ui.columns(2, |colonnes| {
                 colonnes[0].with_layout(aligne_a_gauche(), |ui| {
-                    ui.horizontal(|ui| bouton_onglet(ui, "Ordre du jour", true, false));
+                    ui.horizontal(|ui| barre_segmentee(ui, |ui| bouton_onglet(ui, "Ordre du jour", true, false)));
                     trait_sous_la_barre(ui);
                     ordre_du_jour(self, ui);
                 });
                 colonnes[1].with_layout(aligne_a_gauche(), |ui| {
                     ui.horizontal(|ui| {
-                        bouton_onglet(ui, "Transcription", true, false);
+                        barre_segmentee(ui, |ui| bouton_onglet(ui, "Transcription", true, false));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if bouton_cote_a_cote(ui, true).on_hover_text(aide).clicked() {
                                 onglets.droite = None;
@@ -267,12 +290,13 @@ impl TourDeTableApp {
             });
         } else {
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 2.0;
-                for (onglet, texte) in [(Onglet::OrdreDuJour, "Ordre du jour"), (Onglet::Transcription, "Transcription")] {
-                    if bouton_onglet(ui, texte, onglets.gauche == onglet, false).clicked() {
-                        onglets.gauche = onglet;
+                barre_segmentee(ui, |ui| {
+                    for (onglet, texte) in [(Onglet::OrdreDuJour, "Ordre du jour"), (Onglet::Transcription, "Transcription")] {
+                        if bouton_onglet(ui, texte, onglets.gauche == onglet, false).clicked() {
+                            onglets.gauche = onglet;
+                        }
                     }
-                }
+                });
                 if assez_large {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if bouton_cote_a_cote(ui, false).on_hover_text(aide).clicked() {
@@ -305,18 +329,18 @@ impl TourDeTableApp {
         match droite {
             None => {
                 let gauche = onglets.gauche;
-                self.barre_onglets(ui, idx, &mut onglets, false);
+                self.barre_onglets(ui, idx, &mut onglets, false, true);
                 action = self.volet(ui, idx, gauche);
             }
             Some(d) => {
                 let gauche = onglets.gauche;
                 ui.columns(2, |colonnes| {
                     colonnes[0].with_layout(aligne_a_gauche(), |ui| {
-                        self.barre_onglets(ui, idx, &mut onglets, false);
+                        self.barre_onglets(ui, idx, &mut onglets, false, false);
                         action = self.volet(ui, idx, gauche).or(action);
                     });
                     colonnes[1].with_layout(aligne_a_gauche(), |ui| {
-                        self.barre_onglets(ui, idx, &mut onglets, true);
+                        self.barre_onglets(ui, idx, &mut onglets, true, true);
                         action = self.volet(ui, idx, d).or(action);
                     });
                 });
@@ -331,23 +355,38 @@ impl TourDeTableApp {
     }
 
     /// Les trois onglets d'un volet.
-    fn barre_onglets(&mut self, ui: &mut Ui, idx: usize, onglets: &mut Onglets, a_droite: bool) {
+    fn barre_onglets(&mut self, ui: &mut Ui, idx: usize, onglets: &mut Onglets, a_droite: bool, bascule: bool) {
         let m = &self.meetings[idx];
         let choisi = if a_droite { onglets.droite.unwrap_or(onglets.gauche) } else { onglets.gauche };
         let redige = self.summary_job.as_ref().is_some_and(|(id, ..)| *id == m.id);
         let nettoie = self.nettoyage_job.as_ref().is_some_and(|t| t.id == m.id);
         let compte_rendu = if m.agenda.is_some() { "Compte rendu" } else { "Résumé" };
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
-            for onglet in TOUS {
-                let (texte, occupe) = match onglet {
-                    Onglet::OrdreDuJour => ("Ordre du jour", false),
-                    Onglet::Transcription => ("Transcription", nettoie),
-                    Onglet::CompteRendu => (compte_rendu, redige),
-                };
-                if bouton_onglet(ui, texte, onglet == choisi, occupe).clicked() {
-                    onglets.choisir(a_droite, onglet);
+            barre_segmentee(ui, |ui| {
+                for onglet in TOUS {
+                    let (texte, occupe) = match onglet {
+                        Onglet::OrdreDuJour => ("Ordre du jour", false),
+                        Onglet::Transcription => ("Transcription", nettoie),
+                        Onglet::CompteRendu => (compte_rendu, redige),
+                    };
+                    if bouton_onglet(ui, texte, onglet == choisi, occupe).clicked() {
+                        onglets.choisir(a_droite, onglet);
+                    }
                 }
+            });
+            // « Côte à côte », toujours au bout de la dernière rangée d'onglets ; absent quand la fenêtre est trop étroite.
+            if bascule && ui.ctx().content_rect().width() >= LARGEUR_FENETRE_COTE_A_COTE {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let actif = onglets.droite.is_some();
+                    let aide = if actif {
+                        "Revenir à un seul volet"
+                    } else {
+                        "Affiche deux volets en même temps, par exemple l'ordre du jour à côté de la transcription"
+                    };
+                    if bouton_cote_a_cote(ui, actif).on_hover_text(aide).clicked() {
+                        onglets.basculer();
+                    }
+                });
             }
         });
         trait_sous_la_barre(ui);
@@ -360,26 +399,33 @@ impl TourDeTableApp {
                 None
             }
             Onglet::Transcription => {
+                // Voix reconnues dans une carte à droite quand la fiche est assez large ; sinon, sous le texte.
+                let avec_carte = self.meetings[idx].voix.is_some() && ui.available_width() >= 900.0;
+                if avec_carte {
+                    egui::Panel::right("volet-voix")
+                        .exact_size(310.0)
+                        .resizable(false)
+                        .show_separator_line(false)
+                        .frame(egui::Frame::new().inner_margin(egui::Margin { left: 16, right: 0, top: 0, bottom: 0 }))
+                        .show(ui, |ui| self.carte_voix(ui, idx));
+                }
                 // Boutons sous le texte, comme dans l'ordre du jour.
                 pied(ui, "pied-transcription", |ui| {
-                    self.noms_ouverts(ui, idx);
+                    if !avec_carte {
+                        self.noms_ouverts(ui, idx);
+                    }
                     ui.horizontal_wrapped(|ui| {
                         self.barre_nettoyage(ui, idx);
                         ui.add_space(12.0);
-                        self.barre_voix(ui, idx);
+                        self.barre_voix(ui, idx, avec_carte);
                     });
                 });
-                if self.extrait_ecoute(&self.meetings[idx].id).is_some() {
-                    pied(ui, "ecoute-transcription", |ui| self.barre_ecoute(ui, idx));
-                }
                 self.bandeau_nettoyage(ui, idx);
                 let m = &self.meetings[idx];
                 let ecoute = EtatEcoute {
                     boutons: self.recorder.is_none() && crate::audio::blocs::existe(&m.dir()),
-                    en_lecture: match self.extrait_ecoute(&m.id) {
-                        Some(Extrait::Paragraphe(d)) => Some(d),
-                        _ => None,
-                    },
+                    position: self.position_ecoute(&m.id),
+                    suivre: self.ecoute_active(&m.id),
                     aller_a: self.aller_a.as_ref().filter(|(id, _)| *id == m.id).map(|&(_, ms)| ms),
                     surligne: self.surligne.as_ref().filter(|(id, _)| *id == m.id).map_or(&[], |(_, p)| p.as_slice()),
                 };
@@ -391,11 +437,11 @@ impl TourDeTableApp {
                     self.aller_a = None;
                 }
                 match clic {
-                    Some(ClicEcoute::Ecouter { debut_ms, fin_ms, libelle }) => {
+                    Some(ClicEcoute::Ecouter { debut_ms }) => {
                         self.surligne = None;
-                        self.ecouter(idx, Extrait::Paragraphe(debut_ms), &[(debut_ms, fin_ms)], libelle);
+                        self.ecouter_depuis(idx, debut_ms);
                     }
-                    Some(ClicEcoute::Arreter) => self.ecoute = None,
+                    Some(ClicEcoute::Pause) => self.basculer_ecoute(),
                     None => {}
                 }
                 None
@@ -480,9 +526,6 @@ impl TourDeTableApp {
                 action = Some("assistant");
             }
         }));
-        if self.extrait_ecoute(&m.id).is_some() {
-            pied(ui, "ecoute-compte-rendu", |ui| self.barre_ecoute(ui, idx));
-        }
         let m = &self.meetings[idx];
         // Points découpés (titre tel qu'écrit dans le compte rendu, périodes) : on peut les écouter ou les retrouver
         // dans la transcription.
@@ -504,27 +547,31 @@ impl TourDeTableApp {
                     .collect()
             })
             .unwrap_or_default();
-        let en_ecoute = match self.extrait_ecoute(&m.id) {
-            Some(Extrait::Point(i)) => Some(i),
-            _ => None,
-        };
+        // Point entendu : celui dont une plage contient l'heure de la lecture, si elle avance.
+        let position = self.position_ecoute(&m.id).filter(|_| self.ecoute_active(&m.id));
+        let en_ecoute = position.and_then(|ms| points.iter().position(|(_, plages)| plages.iter().any(|&(d, f)| d <= ms && ms < f)));
         let mut clic_point = None;
         cadre(ui, |ui| match &m.summary {
             Some(s) => {
                 egui::ScrollArea::vertical().id_salt("cr").auto_shrink(false).show(ui, |ui| {
-                    markdown(ui, s, &mut |ui, titre| {
-                        let Some(i) = points.iter().position(|(t, plages)| t == titre.trim() && !plages.is_empty()) else { return };
-                        if audio {
-                            let joue = en_ecoute == Some(i);
-                            if super::widgets::bouton_lecture(ui, joue).on_hover_text(if joue { "Arrêter l'écoute" } else { "Entendre ce point" }).clicked() {
-                                clic_point = Some(if joue { ClicPoint::Arreter } else { ClicPoint::Ecouter(i) });
+                    // Le compte rendu se lit comme une page : une colonne d'au plus 780 px, centrée.
+                    let marge = ((ui.available_width() - 780.0) / 2.0).max(0.0) as i8;
+                    egui::Frame::new().inner_margin(egui::Margin { left: marge, right: marge, top: 14, bottom: 14 }).show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        markdown(ui, s, &mut |ui, titre| {
+                            let Some(i) = points.iter().position(|(t, plages)| t == titre.trim() && !plages.is_empty()) else { return };
+                            if audio {
+                                let joue = en_ecoute == Some(i);
+                                if bouton_ecouter_point(ui, joue).on_hover_text(if joue { "Pause" } else { "Écouter à partir de ce point" }).clicked() {
+                                    clic_point = Some(if joue { ClicPoint::Arreter } else { ClicPoint::Ecouter(i) });
+                                }
                             }
-                        }
-                        if ui.small_button("Voir dans la transcription").clicked() {
-                            clic_point = Some(ClicPoint::Voir(i));
-                        }
+                            let lien = egui::Button::new(RichText::new("Voir dans la transcription").size(13.0).color(palette(ui).accent)).frame(false);
+                            if ui.add(lien).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                clic_point = Some(ClicPoint::Voir(i));
+                            }
+                        });
                     });
-                    ui.add_space(12.0);
                 });
             }
             None => {
@@ -540,11 +587,11 @@ impl TourDeTableApp {
         });
         match clic_point {
             Some(ClicPoint::Ecouter(i)) => {
-                let (titre, plages) = points[i].clone();
-                self.surligne = Some((self.meetings[idx].id.clone(), plages.clone()));
-                self.ecouter(idx, Extrait::Point(i), &plages, titre);
+                if let Some(&(debut, _)) = points[i].1.first() {
+                    self.ecouter_depuis(idx, debut);
+                }
             }
-            Some(ClicPoint::Arreter) => self.ecoute = None,
+            Some(ClicPoint::Arreter) => self.basculer_ecoute(),
             Some(ClicPoint::Voir(i)) => {
                 self.aller_a = points[i].1.first().map(|&(d, _)| (self.meetings[idx].id.clone(), d));
                 self.surligne = Some((self.meetings[idx].id.clone(), points[i].1.clone()));

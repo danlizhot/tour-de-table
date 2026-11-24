@@ -6,9 +6,10 @@
 
 use std::time::{Duration, Instant};
 
-use eframe::egui::{self, RichText, Ui};
+use eframe::egui::{self, CornerRadius, RichText, Sense, Ui, Vec2};
 
 use super::TourDeTableApp;
+use super::apparence::{self, gras, initiales, palette, pastille};
 use super::widgets::couleur_locuteur;
 use crate::voix::{self, Calcul};
 
@@ -90,7 +91,7 @@ impl TourDeTableApp {
     }
 
     /// Boutons des voix, dans la ligne de boutons de la transcription : avancement, relance, noms.
-    pub(super) fn barre_voix(&mut self, ui: &mut Ui, idx: usize) {
+    pub(super) fn barre_voix(&mut self, ui: &mut Ui, idx: usize, avec_carte: bool) {
         let m = &self.meetings[idx];
         let id = m.id.clone();
         let en_cours = self.voix_job.as_ref().is_some_and(|c| c.id == id);
@@ -111,6 +112,8 @@ impl TourDeTableApp {
                 ui.label(RichText::new(format!("Reconnaissance des voix… (environ {minutes} min)")).weak());
             } else if en_attente {
                 ui.label(RichText::new("Reconnaissance des voix en attente de la fin du travail en cours…").weak());
+            } else if avec_carte && nombre.is_some() {
+                // Les noms et la relance sont dans la carte « Voix reconnues ».
             } else if let Some(n) = nombre {
                 ui.label(RichText::new(format!("{n} voix reconnues")).weak());
                 if ui.button(if ouvert { "Fermer les noms" } else { "Nommer les voix" }).clicked() {
@@ -136,6 +139,77 @@ impl TourDeTableApp {
             self.noms_des_voix = if ouvert { None } else { Some(id.clone()) };
         }
         if relancer {
+            self.demander_voix(&id);
+        }
+    }
+
+    /// Carte « Voix reconnues », à droite de la transcription : un nom par voix, son temps de parole en barre, et la
+    /// relance. Les noms sont enregistrés quand on quitte le champ.
+    pub(super) fn carte_voix(&mut self, ui: &mut Ui, idx: usize) {
+        let p = palette(ui);
+        let peut_relancer = crate::audio::blocs::existe(&self.meetings[idx].dir()) && self.recorder.is_none() && !self.finishing;
+        let en_cours = self.voix_job.as_ref().is_some_and(|c| c.id == self.meetings[idx].id) || self.voix_en_attente.contains(&self.meetings[idx].id);
+        let mut relancer = false;
+        let mut modifie = false;
+        apparence::carte(ui).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.label(gras("Voix reconnues", 15.0).color(p.texte));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(RichText::new("temps de parole").size(12.0).color(p.texte2));
+                });
+            });
+            ui.add_space(6.0);
+            let m = &mut self.meetings[idx];
+            let Some(v) = &mut m.voix else { return };
+            let parole = v.parole();
+            v.noms.resize(parole.len().max(v.noms.len()), String::new());
+            let max = parole.iter().copied().max().unwrap_or(1).max(1);
+            for (i, ms) in parole.iter().enumerate() {
+                let couleur = couleur_locuteur(crate::audio::Source::Mixte, Some(i as u16));
+                let lettres = if v.noms[i].trim().is_empty() { format!("V{}", i + 1) } else { initiales(&v.noms[i]) };
+                ui.horizontal(|ui| {
+                    pastille(ui, &lettres, couleur, 30.0);
+                    let minutes = format!("{} min", (ms + 30_000) / 60_000);
+                    let largeur = ui.available_width() - 56.0;
+                    let champ = ui.add_sized(
+                        [largeur, 32.0],
+                        egui::TextEdit::singleline(&mut v.noms[i]).hint_text(format!("Voix {} : nom ou rôle", i + 1)).align(egui::Align2::LEFT_CENTER),
+                    );
+                    modifie |= champ.lost_focus();
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(RichText::new(minutes).size(12.0).color(p.texte2));
+                    });
+                });
+                let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 6.0), Sense::hover());
+                let piste = egui::Rect::from_min_max(egui::pos2(rect.left() + 38.0, rect.top()), rect.max);
+                ui.painter().rect_filled(piste, CornerRadius::same(3), p.piste);
+                let mut plein = piste;
+                plein.set_width(piste.width() * (*ms as f32 / max as f32));
+                ui.painter().rect_filled(plein, CornerRadius::same(3), couleur);
+                ui.add_space(6.0);
+            }
+            ui.label(RichText::new("Le nom remplace « Voix 1 », « Voix 2 »… dans la transcription et les exports.").size(12.0).color(p.texte2));
+            ui.add_space(4.0);
+            if en_cours {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(RichText::new("Reconnaissance en cours…").size(13.0).color(p.texte2));
+                });
+            } else if ui
+                .add_enabled(peut_relancer, apparence::bouton_widget(ui, "Relancer la reconnaissance", apparence::Genre::Secondaire, 34.0).min_size(Vec2::new(ui.available_width(), 34.0)))
+                .on_hover_text("Reconnaît les voix de nouveau ; les noms donnés sont gardés")
+                .clicked()
+            {
+                relancer = true;
+            }
+        });
+        let m = &mut self.meetings[idx];
+        if modifie && let Err(e) = m.save().and_then(|_| m.export_all().map(|_| ())) {
+            self.notify(format!("Sauvegarde des noms : {e:#}"), true);
+        }
+        if relancer {
+            let id = self.meetings[idx].id.clone();
             self.demander_voix(&id);
         }
     }

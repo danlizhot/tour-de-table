@@ -3,7 +3,7 @@
 
 use eframe::egui::{self, Align, Color32, CornerRadius, Key, Layout, Modifiers, RichText, Ui};
 
-use super::widgets::{BLEU, SALLE};
+use super::apparence::{Genre, bouton_widget, gras, palette};
 use super::{ModelState, TourDeTableApp, View};
 use crate::agenda::{Point, renumeroter};
 use crate::storage::{Agenda, Declenchement, Meeting, clock};
@@ -248,37 +248,56 @@ impl TourDeTableApp {
                 });
             });
         }
-        egui::Frame::group(ui.style()).show(ui, |ui| {
+        let pal = palette(ui);
+        let faits = durees.iter().enumerate().filter(|&(i, d)| d.is_some() && actif != Some(i)).count();
+        egui::Frame::new()
+            .fill(pal.surface)
+            .stroke(egui::Stroke::new(1.0, pal.bordure))
+            .corner_radius(CornerRadius::same(16))
+            .inner_margin(egui::Margin::symmetric(16, 14))
+            .show(ui, |ui| {
             ui.set_width(ui.available_width());
             if en_onglet {
                 ui.set_min_height(ui.available_height());
             }
             ui.horizontal(|ui| {
-                if !en_onglet {
-                    ui.label(RichText::new("Ordre du jour").strong());
+                // Sur l'écran « Nouvelle rencontre », l'étape porte déjà le titre.
+                let avant_la_rencontre = self.live.is_none() && matches!(self.view, View::Live);
+                if !en_onglet && !avant_la_rencontre {
+                    ui.label(gras("Ordre du jour", 15.0).color(pal.texte));
                 }
                 match &slot {
                     None => {
                         ui.label(RichText::new("optionnel : glissez un document Word, PDF ou texte ici").weak());
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            manual = ui.small_button("Saisir").clicked();
-                            browse = ui.small_button("Parcourir…").clicked();
+                            manual = ui.add(bouton_widget(ui, "Saisir", Genre::Secondaire, 30.0)).clicked();
+                            browse = ui.add(bouton_widget(ui, "Parcourir…", Genre::Secondaire, 30.0)).clicked();
                         });
                     }
                     // Dans un onglet, les boutons sont sous l'encadré : toujours visibles, sans cacher le nom du fichier.
                     Some(a) if en_onglet => {
-                        ui.add(egui::Label::new(RichText::new(&a.file).weak()).truncate());
+                        let n = a.points.iter().filter(|p| p.niveau == 1).count();
+                        if a_des_periodes && n > 0 {
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                ui.label(RichText::new(format!("{faits} point{} sur {n} terminé{}", if faits > 1 { "s" } else { "" }, if faits > 1 { "s" } else { "" })).size(12.5).color(pal.texte2));
+                                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                                    ui.add(egui::Label::new(gras(&a.file, 14.0).color(pal.texte)).truncate());
+                                });
+                            });
+                        } else {
+                            ui.add(egui::Label::new(gras(&a.file, 14.0).color(pal.texte)).truncate());
+                        }
                     }
                     Some(a) => {
-                        ui.label(RichText::new(&a.file).weak());
+                        ui.label(RichText::new(&a.file).size(13.5).color(pal.texte2));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            remove = ui.small_button("Retirer").clicked();
-                            browse = ui.small_button("Remplacer…").clicked();
-                            if !editer && ui.small_button("Modifier les points").clicked() {
+                            remove = ui.add(bouton_widget(ui, "Retirer", Genre::Secondaire, 30.0)).clicked();
+                            browse = ui.add(bouton_widget(ui, "Remplacer…", Genre::Secondaire, 30.0)).clicked();
+                            if !editer && ui.add(bouton_widget(ui, "Modifier les points", Genre::Secondaire, 30.0)).clicked() {
                                 self.edit_points = true;
                             }
                             if actif.is_some()
-                                && ui.small_button("Hors point").on_hover_text(RACCOURCIS).clicked()
+                                && ui.add(bouton_widget(ui, "Hors point", Genre::Secondaire, 30.0)).on_hover_text(RACCOURCIS).clicked()
                             {
                                 debuter = Some(None);
                             }
@@ -393,64 +412,88 @@ const RACCOURCIS: &str = if cfg!(target_os = "macos") {
     "Ctrl + flèche droite ou gauche : point suivant ou précédent\nCtrl + H : hors point"
 };
 
-/// Coche d'un point traité, dessinée : les polices intégrées n'ont pas « ✓ ».
-fn coche(ui: &mut Ui) {
-    let (r, _) = ui.allocate_exact_size(egui::Vec2::splat(12.0), egui::Sense::hover());
-    let p = |x: f32, y: f32| r.left_top() + egui::vec2(x, y) * r.width();
-    ui.painter().line(vec![p(0.1, 0.55), p(0.4, 0.85), p(0.9, 0.2)], egui::Stroke::new(2.0, SALLE));
-}
-
 enum ClicPoint {
     Debuter(usize),
     Exporter(usize),
 }
 
+/// Pastille ronde d'un point : coche verte s'il est traité, numéro blanc sur bleu s'il est en cours, numéro gris sinon.
+fn puce_point(ui: &mut Ui, numero: &str, fait: bool, actif: bool) {
+    let pal = palette(ui);
+    let (r, _) = ui.allocate_exact_size(egui::Vec2::splat(26.0), egui::Sense::hover());
+    let (fond, encre) = if actif {
+        (pal.accent_plein, Color32::WHITE)
+    } else if fait {
+        (pal.vert_doux, pal.vert)
+    } else {
+        (pal.piste, pal.texte)
+    };
+    ui.painter().circle_filled(r.center(), 13.0, fond);
+    if fait && !actif {
+        let p = |x: f32, y: f32| r.center() + egui::vec2(x, y);
+        ui.painter().line(vec![p(-5.0, 0.5), p(-1.5, 4.0), p(5.0, -3.5)], egui::Stroke::new(2.2, encre));
+    } else {
+        let taille = if numero.chars().count() > 2 { 10.0 } else { 12.0 };
+        ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, numero, super::colonne::police_grasse(taille), encre);
+    }
+}
+
 /// Une ligne de la liste des points ; retourne l'action demandée sur clic.
 #[allow(clippy::too_many_arguments)]
 fn ligne_point(ui: &mut Ui, i: usize, p: &Point, actif: bool, propose: bool, duree: Option<u64>, peut_debuter: bool, exporter: bool) -> Option<ClicPoint> {
+    let pal = palette(ui);
     let mut clic = None;
-    let retrait = (p.niveau.saturating_sub(1)) as f32 * 22.0;
-    let fond = if actif { BLEU.gamma_multiply(0.22) } else { Color32::TRANSPARENT };
-    egui::Frame::new().fill(fond).corner_radius(CornerRadius::same(6)).inner_margin(egui::Margin::symmetric(6, 2)).show(ui, |ui| {
+    let retrait = (p.niveau.saturating_sub(1)) as f32 * 30.0;
+    let fait = duree.is_some();
+    let (fond, contour) = if actif { (pal.accent_doux, egui::Stroke::new(1.0, pal.accent.gamma_multiply(0.35))) } else { (Color32::TRANSPARENT, egui::Stroke::NONE) };
+    egui::Frame::new().fill(fond).stroke(contour).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::symmetric(8, if actif { 9 } else { 5 })).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
             ui.add_space(retrait);
-            ui.label(RichText::new(&p.numero).monospace().weak());
+            puce_point(ui, &p.numero, fait, actif);
+            ui.add_space(4.0);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if p.niveau == 1 {
-                    if actif {
-                        ui.label(RichText::new(clock(duree.unwrap_or(0))).monospace().strong());
-                    } else if peut_debuter {
-                        let texte = if duree.is_some() { "Revenir au point" } else { "Débuter le point" };
-                        // Point dont l'annonce vient d'être entendue : bouton mis en évidence.
-                        let bouton = if propose {
-                            egui::Button::new(RichText::new(texte).small().strong().color(Color32::WHITE)).fill(BLEU)
-                        } else {
-                            egui::Button::new(RichText::new(texte).small())
-                        };
-                        let aide = if propose { format!("Changement de point entendu : cliquez pour débuter ce point.\n{RACCOURCIS}") } else { RACCOURCIS.to_string() };
-                        if ui.add(bouton).on_hover_text(aide).clicked() {
-                            clic = Some(ClicPoint::Debuter(i));
-                        }
+                if p.niveau == 1 && !actif && peut_debuter {
+                    let texte = if fait { "Revenir" } else { "Débuter" };
+                    let genre = if propose { Genre::Principal } else { Genre::Secondaire };
+                    let aide = if propose {
+                        format!("Changement de point entendu : cliquez pour débuter ce point.\n{RACCOURCIS}")
+                    } else if fait {
+                        format!("Revenir à ce point\n{RACCOURCIS}")
+                    } else {
+                        format!("Débuter ce point\n{RACCOURCIS}")
+                    };
+                    if ui.add(bouton_widget(ui, texte, genre, 30.0)).on_hover_text(aide).clicked() {
+                        clic = Some(ClicPoint::Debuter(i));
                     }
                 }
-                if exporter && duree.is_some() && ui.small_button("Exporter l'audio de ce point").on_hover_text("Fichier WAV : tous les passages sur ce point, bout à bout").clicked() {
+                if exporter && fait && ui.add(bouton_widget(ui, "Exporter l'audio", Genre::Secondaire, 30.0)).on_hover_text("Fichier WAV : tous les passages sur ce point, bout à bout").clicked() {
                     clic = Some(ClicPoint::Exporter(i));
                 }
                 if let Some(d) = duree.filter(|_| !actif) {
-                    ui.label(RichText::new(clock(d)).small().weak());
-                    coche(ui);
+                    ui.label(RichText::new(clock(d)).size(12.5).color(pal.texte2));
                 }
-                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    let titre = RichText::new(&p.titre);
-                    ui.add(egui::Label::new(if actif { titre.strong() } else { titre }).truncate());
+                let disposition = if actif { Layout::top_down(Align::Min) } else { Layout::left_to_right(Align::Center) };
+                ui.with_layout(disposition, |ui| {
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    let titre = if actif {
+                        gras(&p.titre, 14.5).color(pal.texte)
+                    } else if fait {
+                        RichText::new(&p.titre).size(14.5).color(pal.texte2)
+                    } else {
+                        RichText::new(&p.titre).size(14.5).color(pal.texte)
+                    };
+                    ui.add(egui::Label::new(titre).truncate());
+                    if actif {
+                        ui.label(gras(format!("Point en cours depuis {}", clock(duree.unwrap_or(0))), 12.5).color(pal.accent));
+                    }
                 });
             });
         });
         if !p.detail.is_empty() {
-            egui::Frame::new().inner_margin(egui::Margin { left: retrait as i8 + 24, ..Default::default() }).show(ui, |ui| {
-                egui::CollapsingHeader::new(RichText::new("Détail").small().weak()).id_salt(("point_detail", i)).show(ui, |ui| {
-                    ui.label(RichText::new(&p.detail).small());
+            egui::Frame::new().inner_margin(egui::Margin { left: retrait as i8 + 34, ..Default::default() }).show(ui, |ui| {
+                egui::CollapsingHeader::new(RichText::new("Détail").size(12.5).color(pal.texte2)).id_salt(("point_detail", i)).show(ui, |ui| {
+                    ui.label(RichText::new(&p.detail).size(13.0).color(pal.texte));
                 });
             });
         }

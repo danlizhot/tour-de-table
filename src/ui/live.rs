@@ -3,9 +3,10 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use eframe::egui::{RichText, Sense, Ui, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, RichText, Sense, Ui, Vec2};
 
-use super::widgets::{DISTANCE, SALLE, draw_logo, meter, pause_button, record_button, transcript};
+use super::apparence::{Genre, bouton_widget, gras, palette};
+use super::widgets::{draw_logo, transcript};
 use super::{ModelState, TourDeTableApp, View};
 use crate::audio::{self, Source, import};
 use crate::config;
@@ -231,6 +232,85 @@ impl TourDeTableApp {
         self.import_job = Some((name, rx, avancement));
     }
 
+    /// Avancement de l'import (0 à 1), s'il est connu.
+    fn fraction_import(&self) -> Option<f32> {
+        let (_, _, av) = self.import_job.as_ref()?;
+        let total = av.total.load(Ordering::Relaxed);
+        (total > 0).then(|| av.blocs_transcrits() as f32 / total as f32)
+    }
+
+    /// Carte en haut de l'écran pendant un import ou la fin d'une transcription : la rencontre, puis les étapes qui
+    /// suivent, la première en cours.
+    pub(super) fn carte_traitement(&mut self, ui: &mut Ui) {
+        let p = palette(ui);
+        let Some(m) = &self.live else { return };
+        let titre = m.title.clone();
+        let avec_ordre_du_jour = m.agenda.as_ref().is_some_and(|a| !a.points.is_empty());
+        let (detail, fraction) = match self.etat_import() {
+            Some(etat) => (etat, self.fraction_import()),
+            None => (format!("Fin de la transcription · {} énoncés restants", self.in_flight), None),
+        };
+        let mut etapes: Vec<(&str, String)> = vec![("Transcription", detail)];
+        if avec_ordre_du_jour {
+            etapes.push(("Découpage par points", "Vous vérifierez où commence chaque point".into()));
+        }
+        etapes.push(("Nettoyage", "Quelques secondes".into()));
+        if avec_ordre_du_jour && crate::models::redaction_locale() {
+            etapes.push(("Compte rendu", "Rédigé d'après l'ordre du jour".into()));
+        }
+        etapes.push(("Voix", "Quand l'ordinateur est libre".into()));
+        ui.horizontal(|ui| {
+            ui.label(gras(&titre, 20.0).color(p.texte));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(RichText::new("Vous pouvez consulter d'autres rencontres : le travail continue.").size(12.5).color(p.texte2));
+            });
+        });
+        ui.add_space(10.0);
+        ui.columns(etapes.len(), |colonnes| {
+            for (k, (nom, detail)) in etapes.iter().enumerate() {
+                // Texte aligné à gauche : les colonnes d'egui le justifieraient, mots écartés.
+                colonnes[k].with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                let en_cours = k == 0;
+                ui.horizontal(|ui| {
+                    let (r, _) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::hover());
+                    if en_cours {
+                        ui.painter().circle_filled(r.center(), 12.0, p.accent_plein);
+                        let angle = ui.input(|i| i.time) as f32 * 5.0;
+                        let points: Vec<egui::Pos2> = (0..=18).map(|j| {
+                            let a = angle + j as f32 / 18.0 * 4.4;
+                            r.center() + Vec2::new(a.cos(), a.sin()) * 6.0
+                        }).collect();
+                        ui.painter().add(egui::Shape::line(points, egui::Stroke::new(2.0, Color32::WHITE)));
+                    } else {
+                        ui.painter().circle_filled(r.center(), 12.0, p.piste);
+                        ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, (k + 1).to_string(), super::colonne::police_grasse(12.0), p.texte);
+                    }
+                    let titre = if en_cours { gras(*nom, 14.0).color(p.texte) } else { RichText::new(*nom).size(14.0).color(p.texte2) };
+                    ui.label(titre);
+                });
+                let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width() - 10.0, 6.0), Sense::hover());
+                ui.painter().rect_filled(r, CornerRadius::same(3), p.piste);
+                if en_cours {
+                    match fraction {
+                        Some(f) => {
+                            let mut plein = r;
+                            plein.set_width(r.width() * f.clamp(0.02, 1.0));
+                            ui.painter().rect_filled(plein, CornerRadius::same(3), p.accent);
+                        }
+                        // Avancement inconnu : un segment qui va et vient.
+                        None => {
+                            let t = (ui.input(|i| i.time) as f32 * 0.6).fract();
+                            let x = r.left() + (r.width() * 0.7) * (1.0 - (2.0 * t - 1.0).abs());
+                            ui.painter().rect_filled(egui::Rect::from_min_size(egui::pos2(x, r.top()), Vec2::new(r.width() * 0.3, r.height())), CornerRadius::same(3), p.accent);
+                        }
+                    }
+                }
+                ui.label(RichText::new(detail).size(12.5).color(p.texte2));
+                });
+            }
+        });
+    }
+
     /// Où en est l'import : décodage en blocs, puis transcription bloc par bloc.
     fn etat_import(&self) -> Option<String> {
         let (name, _, av) = self.import_job.as_ref()?;
@@ -255,63 +335,89 @@ impl TourDeTableApp {
         }
     }
 
-    pub(super) fn controls(&mut self, ui: &mut Ui) {
-        ui.add_space(6.0);
-        let recording = self.recorder.is_some();
+    /// Bandeau en haut de l'écran pendant l'enregistrement : témoin rouge, chronomètre, niveau de chaque source, Pause
+    /// et Arrêter.
+    pub(super) fn bandeau_enregistrement(&mut self, ui: &mut Ui) {
+        let p = palette(ui);
+        let Some(rec) = &self.recorder else { return };
+        let pause = rec.en_pause();
+        let duree = clock(rec.origine_ms + rec.started.elapsed().as_millis() as u64);
+        // Les deux sources, toujours : une source qui n'est pas enregistrée le dit au lieu de disparaître.
+        let niveaux: Vec<(&str, Option<f32>, Color32)> = [
+            (Source::Salle, "Salle", rec.mic_level.get(), p.accent),
+            (Source::Distance, "À distance", rec.sys_level.get(), p.vert),
+        ]
+        .into_iter()
+        .map(|(s, n, l, c)| (n, rec.active.contains(&s).then_some(l), c))
+        .collect();
+        let en_attente = self.in_flight;
+        let mut arreter = false;
+        let mut basculer = false;
         ui.horizontal(|ui| {
-            let can_start = matches!(self.model, ModelState::Ready) && !self.finishing && self.import_job.is_none() && self.fin_apres_panne.is_none();
-            let resp = record_button(ui, recording, recording || can_start);
-            if resp.clicked() {
-                if recording {
-                    self.stop_recording();
+            // Témoin qui pulse, puis l'état et le chronomètre.
+            let (r, _) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::hover());
+            if !pause {
+                let phase = (ui.input(|i| i.time) as f32 % 1.8) / 1.8;
+                ui.painter().circle_filled(r.center(), 6.0 + 7.0 * phase, p.rouge.gamma_multiply(0.45 * (1.0 - phase)));
+            }
+            ui.painter().circle_filled(r.center(), 6.0, if pause { p.texte2 } else { p.rouge });
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                let etat = if pause { "EN PAUSE" } else { "ENREGISTREMENT" };
+                ui.label(gras(etat, 11.5).color(if pause { p.texte2 } else { p.rouge_texte }).extra_letter_spacing(0.7));
+                ui.label(gras(&duree, 30.0).color(p.texte));
+            });
+            ui.add_space(18.0);
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 6.0;
+                if pause {
+                    ui.label(RichText::new("En pause : rien n'est capté, ni transcrit, ni conservé dans l'audio").size(13.0).color(p.texte2));
                 } else {
-                    self.start_recording();
+                    let largeur = (ui.available_width() - 260.0).clamp(160.0, 420.0);
+                    for (nom, niveau, couleur) in &niveaux {
+                        ui.horizontal(|ui| {
+                            ui.allocate_ui_with_layout(Vec2::new(78.0, 14.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                ui.set_min_width(78.0);
+                                ui.label(RichText::new(*nom).size(13.0).color(p.texte));
+                            });
+                            match niveau {
+                                Some(n) => jauge_segments(ui, *n, *couleur, largeur),
+                                None => {
+                                    ui.label(RichText::new("non enregistré").size(12.5).color(p.texte2));
+                                }
+                            }
+                        });
+                    }
                 }
-            }
-            if recording {
-                ui.add_space(6.0);
-                if pause_button(ui, self.recorder.as_ref().is_some_and(Recorder::en_pause)).clicked() {
-                    self.basculer_pause();
+                if en_attente > 1 {
+                    ui.label(RichText::new(format!("{en_attente} énoncés en attente de transcription")).size(12.0).color(p.texte2));
                 }
-            }
-            ui.add_space(10.0);
-            if let Some(rec) = &self.recorder {
-                ui.label(RichText::new(clock(rec.origine_ms + rec.started.elapsed().as_millis() as u64)).size(22.0).monospace());
-                ui.add_space(10.0);
-                if rec.en_pause() {
-                    ui.label(RichText::new("En pause : rien n'est capté").strong());
-                } else {
-                    ui.vertical(|ui| {
-                        if rec.active.contains(&Source::Salle) {
-                            meter(ui, "Salle", rec.mic_level.get(), SALLE);
-                        }
-                        if rec.active.contains(&Source::Distance) {
-                            meter(ui, "À distance", rec.sys_level.get(), DISTANCE);
-                        }
-                    });
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.add(bouton_widget(ui, "Arrêter", Genre::Danger, 44.0).min_size(Vec2::new(116.0, 44.0))).on_hover_text("Termine la rencontre ; la transcription se termine, puis le nettoyage et le compte rendu suivent").clicked() {
+                    arreter = true;
                 }
-                if self.in_flight > 1 {
-                    ui.label(RichText::new(format!("{} énoncés en attente", self.in_flight)).small().weak());
+                let texte = if pause { "Reprendre" } else { "Pause" };
+                let aide = if pause { "Reprendre la transcription" } else { "Rien n'est capté pendant la pause : ni transcrit, ni conservé dans l'audio" };
+                if ui.add(bouton_widget(ui, texte, Genre::Secondaire, 44.0).min_size(Vec2::new(116.0, 44.0))).on_hover_text(aide).clicked() {
+                    basculer = true;
                 }
-            } else if let Some(etat) = self.etat_import() {
-                ui.spinner();
-                ui.label(etat);
-            } else if self.finishing {
-                ui.spinner();
-                ui.label(format!("Fin de la transcription… ({} restants)", self.in_flight));
-            } else {
-                // Le choix des périphériques et du mode est dans les Paramètres.
-                ui.vertical(|ui| {
-                    ui.checkbox(&mut self.cfg.capture_mic, "Micro de la salle");
-                    ui.checkbox(&mut self.cfg.capture_system, "Son de l'ordinateur (Teams, Zoom…)");
-                });
-            }
+            });
         });
-        ui.add_space(6.0);
+        if arreter {
+            self.stop_recording();
+        } else if basculer {
+            self.basculer_pause();
+        }
     }
 
     pub(super) fn live_view(&mut self, ui: &mut Ui) {
         self.bandeau(ui);
+        // Avant la rencontre : l'écran « Nouvelle rencontre ».
+        if self.live.is_none() && self.recorder.is_none() && !matches!(self.model, ModelState::Missing | ModelState::Failed(_)) {
+            self.ecran_nouvelle(ui);
+            return;
+        }
         let pret = !matches!(self.model, ModelState::Missing | ModelState::Failed(_)) || self.live.is_some();
         // Ordre du jour déposé, avant ou pendant la rencontre : deux onglets pleine hauteur, les mêmes du début à la
         // fin. Sinon, la carte où déposer l'ordre du jour reste au-dessus de la transcription.
@@ -375,6 +481,21 @@ impl TourDeTableApp {
                 _ => "Le modèle de reconnaissance vocale est introuvable. Redémarrez Tour de table pour le réinstaller.",
             });
         });
+    }
+}
+
+/// Jauge de niveau en 24 segments ; les derniers passent à l'ambre quand le son est fort.
+fn jauge_segments(ui: &mut Ui, niveau: f32, couleur: Color32, largeur: f32) {
+    let p = palette(ui);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(largeur, 12.0), Sense::hover());
+    // Échelle logarithmique : la parole normale remplit la moitié de la jauge.
+    let db = 20.0 * niveau.max(1e-5).log10();
+    let allumes = (((db + 60.0) / 60.0).clamp(0.0, 1.0) * 24.0).round() as usize;
+    let pas = rect.width() / 24.0;
+    for k in 0..24 {
+        let r = egui::Rect::from_min_size(egui::pos2(rect.left() + k as f32 * pas, rect.top()), Vec2::new(pas - 3.0, rect.height()));
+        let c = if k >= allumes { p.piste } else if k >= 20 { p.ambre_texte } else { couleur };
+        ui.painter().rect_filled(r, CornerRadius::same(2), c);
     }
 }
 

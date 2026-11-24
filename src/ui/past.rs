@@ -1,9 +1,10 @@
 //! Fiche d'une rencontre passée et rédaction du compte rendu.
 
 use std::sync::Arc;
-use eframe::egui::{self, Align, Layout, RichText, Ui};
+use eframe::egui::{self, Align, Color32, Layout, RichText, Ui};
 
 use super::widgets::short_model;
+use super::{apparence, colonne};
 use super::{TourDeTableApp, View};
 use crate::audio::blocs;
 use crate::{config, models};
@@ -148,70 +149,94 @@ impl TourDeTableApp {
             || self.voix_job.as_ref().is_some_and(|c| c.id == id)
             || self.audio_export.is_some()
             || self.decoupage_job.is_some();
-        let details = {
+        let p = apparence::palette(ui);
+        {
             let m = &mut self.meetings[idx];
+            let audio = crate::audio::blocs::existe(&m.dir());
+            let decoupable = audio && m.agenda.as_ref().is_some_and(|a| !a.points.is_empty());
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
-                let resp = ui.add(egui::TextEdit::singleline(&mut m.title).font(egui::TextStyle::Heading).desired_width(ui.available_width() - if m.interrompue { 820.0 } else { 640.0 }));
-                if resp.lost_focus() {
-                    let _ = m.save();
-                }
+                let largeur_titre = (ui.available_width() - if m.interrompue { 720.0 } else { 520.0 }).max(260.0);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 4.0;
+                    let titre = egui::TextEdit::singleline(&mut m.title)
+                        .frame(egui::Frame::NONE)
+                        .font(colonne::police_grasse(24.0))
+                        .text_color(p.texte)
+                        .desired_width(largeur_titre);
+                    let resp = ui.add(titre).on_hover_text("Cliquez pour renommer la rencontre");
+                    if resp.lost_focus() {
+                        let _ = m.save();
+                    }
+                    let mut morceaux = vec![
+                        format!("{}, {}", crate::summary::date_longue(&m.started_at), crate::summary::heure(&m.started_at)),
+                        apparence::duree_longue(m.duration_s),
+                    ];
+                    if let Some(v) = &m.voix {
+                        morceaux.push(format!("{} voix", v.nombre()));
+                    }
+                    if let Some(n) = m.agenda.as_ref().map(|a| a.points.len()).filter(|n| *n > 0) {
+                        morceaux.push(format!("{n} point{}", if n > 1 { "s" } else { "" }));
+                    }
+                    if let Some(pauses) = m.liste_pauses() {
+                        morceaux.push(format!("pauses : {pauses}"));
+                    }
+                    ui.label(RichText::new(morceaux.join(" · ")).size(13.0).color(p.texte2))
+                        .on_hover_text(format!("{} segments transcrits avec {}", m.segments.len(), short_model(&m.model)));
+                });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui
-                        .add_enabled(!travail_en_cours, egui::Button::new("Archiver"))
-                        .on_hover_text("Comprime la rencontre dans un fichier .zip du dossier Archives et la retire de l'historique")
+                    if colonne::bouton_icone(ui, colonne::icone_archive, !travail_en_cours)
+                        .on_hover_text("Archiver : comprime la rencontre dans un fichier .zip du dossier Archives et la retire de l'historique")
                         .on_disabled_hover_text("Attendez la fin du travail en cours sur cette rencontre")
                         .clicked()
                     {
                         action = Some("archiver");
                     }
-                    if ui.button("Dossier").clicked() {
+                    if colonne::bouton_icone(ui, colonne::icone_dossier, true).on_hover_text("Ouvrir le dossier de la rencontre").clicked() {
                         action = Some("reveal");
                     }
-                    if m.interrompue
-                        && crate::audio::blocs::existe(&m.dir())
-                        && ui
-                            .add_enabled(peut_poursuivre, egui::Button::new("Poursuivre la rencontre"))
-                            .on_hover_text("La rencontre a été interrompue : l'enregistrement reprend à la suite, au point où vous étiez rendus")
-                            .clicked()
-                    {
-                        action = Some("poursuivre");
+                    let exporter = apparence::bouton_widget(ui, "Exporter      ", apparence::Genre::Principal, 38.0);
+                    let (resp, _) = egui::containers::menu::MenuButton::from_button(exporter).ui(ui, |ui| {
+                        ui.set_min_width(260.0);
+                        if ui.button("Fichiers texte (Word, Markdown, sous-titres)").clicked() {
+                            action = Some("export");
+                        }
+                        if audio && ui.button("Audio complet (WAV)").clicked() {
+                            action = Some("audio");
+                        }
+                    });
+                    apparence::chevron(ui, &resp, Color32::WHITE);
+                    if ui.add(apparence::bouton_widget(ui, "Copier", apparence::Genre::Secondaire, 38.0)).on_hover_text("Copie la transcription").clicked() {
+                        ui.ctx().copy_text(m.plain_text());
                     }
-                    if crate::audio::blocs::existe(&m.dir())
-                        && m.agenda.as_ref().is_some_and(|a| !a.points.is_empty())
+                    if decoupable
                         && ui
-                            .add_enabled(!occupe, egui::Button::new("Découper par points"))
+                            .add_enabled(!occupe, apparence::bouton_widget(ui, "Découper par points", apparence::Genre::Secondaire, 38.0))
                             .on_hover_text("Répartit l'audio et la transcription entre les points de l'ordre du jour")
                             .clicked()
                     {
                         action = Some("decouper");
                     }
-                    if crate::audio::blocs::existe(&m.dir())
-                        && ui.button("Exporter l'audio complet").on_hover_text("Fichier WAV de toute la rencontre").clicked()
+                    if m.interrompue
+                        && audio
+                        && ui
+                            .add_enabled(peut_poursuivre, apparence::bouton_widget(ui, "Poursuivre la rencontre", apparence::Genre::Secondaire, 38.0))
+                            .on_hover_text("La rencontre a été interrompue : l'enregistrement reprend à la suite, au point où vous étiez rendus")
+                            .clicked()
                     {
-                        action = Some("audio");
-                    }
-                    if ui.button("Exporter").on_hover_text("Markdown, texte et sous-titres SRT").clicked() {
-                        action = Some("export");
-                    }
-                    if ui.button("Copier").clicked() {
-                        ui.ctx().copy_text(m.plain_text());
+                        action = Some("poursuivre");
                     }
                 });
             });
-            let details = format!(
-                "{} · {} · {} segments{} · {}",
-                m.started_at.format("%Y-%m-%d %H h %M"),
-                clock(m.duration_s * 1000),
-                m.segments.len(),
-                m.liste_pauses().map(|p| format!(" · pauses : {p}")).unwrap_or_default(),
-                short_model(&m.model)
-            );
-            RichText::new(details).small().weak()
-        };
-        ui.horizontal(|ui| {
-            ui.label(details);
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| self.bascule_cote_a_cote(ui));
-        });
+            ui.add_space(10.0);
+        }
+        // Lecteur au bas de la fiche, sous les volets.
+        if self.recorder.is_none() && crate::audio::blocs::existe(&self.meetings[idx].dir()) {
+            egui::Panel::bottom("lecteur")
+                .show_separator_line(false)
+                .frame(egui::Frame::new().fill(p.surface).stroke(egui::Stroke::new(1.0, p.bordure)).corner_radius(egui::CornerRadius::same(14)).inner_margin(egui::Margin::symmetric(16, 10)).outer_margin(egui::Margin { left: 0, right: 0, top: 10, bottom: 0 }))
+                .show(ui, |ui| self.lecteur(ui, idx));
+        }
         action = self.volets(ui, idx).or(action);
 
         match action {
