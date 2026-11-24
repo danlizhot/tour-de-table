@@ -112,19 +112,53 @@ impl TourDeTableApp {
                 saut = Some((ici + PAS_MS).min(fin - 1));
             }
             ui.add_space(6.0);
-            ui.label(RichText::new(format!("{} / {}", clock(ici), clock(fin))).size(13.5).color(p.texte));
+            // Largeur fixe, assez pour « 0:00:00 / 0:00:00 » avec les chiffres les plus larges : sinon les bandes bougent
+            // à chaque seconde (Inter n'a pas des chiffres de même largeur) et au passage de la première heure.
+            let texte = format!("{} / {}", clock(ici), clock(fin));
+            let police = egui::FontId::proportional(13.5);
+            let largeur = ui.fonts_mut(|f| {
+                let mut large = ('0', 0.0_f32);
+                for c in '0'..='9' {
+                    let w = f.layout_no_wrap(c.to_string(), police.clone(), p.texte).size().x;
+                    if w > large.1 {
+                        large = (c, w);
+                    }
+                }
+                f.layout_no_wrap("0:00:00 / 0:00:00".replace('0', &large.0.to_string()), police.clone(), p.texte).size().x
+            }) + 4.0;
+            ui.allocate_ui_with_layout(Vec2::new(largeur, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_min_width(largeur);
+                ui.label(RichText::new(texte).size(13.5).color(p.texte));
+            });
             ui.add_space(8.0);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 4.0;
+                // Une largeur minimale par minute : les prises de parole restent visibles. Plus large que la place
+                // disponible (fenêtre réduite ou longue rencontre), la ligne du temps défile, avec sa barre.
                 let largeur = ui.available_width();
-                if let Some(ms) = bandes(ui, m, largeur, position) {
+                let contenu = largeur.max(fin as f32 / 60_000.0 * PX_PAR_MINUTE);
+                if contenu > largeur + 1.0 {
+                    ui.scope(|ui| {
+                        ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
+                        egui::ScrollArea::horizontal()
+                            .id_salt(("ligne-du-temps", &m.id))
+                            .auto_shrink([false, true])
+                            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
+                            .show(ui, |ui| {
+                                if let Some(ms) = bandes(ui, m, contenu, position, active) {
+                                    saut = Some(ms);
+                                }
+                            });
+                    });
+                } else if let Some(ms) = bandes(ui, m, largeur, position, false) {
                     saut = Some(ms);
                 }
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(etiquette_position(m, position)).size(12.0).color(p.texte2));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let legende = if m.voix.is_some() && !m.periodes.is_empty() { "Haut : points · Bas : qui parle" } else { "" };
-                        ui.label(RichText::new(legende).size(12.0).color(p.texte2));
+                // Légende à droite ; l'étiquette prend le reste et se termine par « … » si la place manque.
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let legende = if m.voix.is_some() && !m.periodes.is_empty() { "Haut : points · Bas : qui parle" } else { "" };
+                    ui.label(RichText::new(legende).size(12.0).color(p.texte2));
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.add(egui::Label::new(RichText::new(etiquette_position(m, position)).size(12.0).color(p.texte2)).truncate());
                     });
                 });
             });
@@ -168,16 +202,21 @@ fn teinte_point(ui: &Ui, i: usize) -> Color32 {
     base.lerp_to_gamma(p.accent, fortes[i % fortes.len()])
 }
 
+/// Largeur minimale de la ligne du temps, par minute de rencontre.
+const PX_PAR_MINUTE: f32 = 36.0;
+
 /// Bandes de la ligne du temps (points en haut, voix en bas) et marqueur de la position ; rend l'heure cliquée.
-fn bandes(ui: &mut Ui, m: &Meeting, largeur: f32, position: Option<u64>) -> Option<u64> {
+/// `suivre` : dans une ligne du temps qui défile, garder le marqueur au centre pendant la lecture. Glisser sur les
+/// bandes déplace un marqueur fantôme ; au relâchement, l'écoute reprend à cet endroit.
+fn bandes(ui: &mut Ui, m: &Meeting, largeur: f32, position: Option<u64>, suivre: bool) -> Option<u64> {
     let p = palette(ui);
     let fin = fin_ms(m).max(1) as f32;
     let avec_points = !m.periodes.is_empty();
     let avec_voix = m.voix.is_some();
     let haut_points = if avec_points { 22.0 } else { 0.0 };
-    let haut_voix = if avec_voix { 7.0 } else if avec_points { 0.0 } else { 10.0 };
+    let haut_voix = if avec_voix { 12.0 } else if avec_points { 0.0 } else { 10.0 };
     let hauteur = haut_points + haut_voix + if avec_points && avec_voix { 3.0 } else { 0.0 };
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(largeur, hauteur), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(largeur, hauteur), Sense::click_and_drag());
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     let x = |ms: u64| rect.left() + rect.width() * (ms as f32 / fin).clamp(0.0, 1.0);
     let painter = ui.painter_at(rect.expand(6.0));
@@ -228,6 +267,26 @@ fn bandes(ui: &mut Ui, m: &Meeting, largeur: f32, position: Option<u64>) -> Opti
     if let Some(ms) = position {
         let r = Rect::from_center_size(Pos2::new(x(ms), rect.center().y), Vec2::new(3.0, rect.height() + 8.0));
         painter.rect_filled(r, CornerRadius::same(2), p.texte);
+        if suivre && !resp.dragged() {
+            ui.scroll_to_rect(r, Some(egui::Align::Center));
+        }
+    }
+    // Glisser : marqueur fantôme sous le pointeur, gardé en vue (la ligne du temps défile quand on s'approche du bord).
+    let pointeur = ui.input(|i| i.pointer.latest_pos());
+    let fraction = |h: Pos2| ((h.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+    if resp.dragged()
+        && let Some(h) = pointeur
+    {
+        let gx = rect.left() + fraction(h) * rect.width();
+        let r = Rect::from_center_size(Pos2::new(gx, rect.center().y), Vec2::new(3.0, rect.height() + 8.0));
+        painter.rect_filled(r, CornerRadius::same(2), p.accent);
+        ui.scroll_to_rect(r.expand2(Vec2::new(40.0, 0.0)), None);
+        resp.show_tooltip_text(clock((fraction(h) * fin) as u64));
+    }
+    if resp.drag_stopped()
+        && let Some(h) = pointeur
+    {
+        return Some((fraction(h) * fin) as u64);
     }
     let survol = resp.hover_pos().map(|h| ((h.x - rect.left()) / rect.width()).clamp(0.0, 1.0));
     let resp = match (infobulle, survol) {
