@@ -112,7 +112,24 @@ impl TourDeTableApp {
                 saut = Some((ici + PAS_MS).min(fin - 1));
             }
             ui.add_space(6.0);
-            ui.label(RichText::new(format!("{} / {}", clock(ici), clock(fin))).size(13.5).color(p.texte));
+            // Largeur fixe, assez pour « 0:00:00 / 0:00:00 » avec les chiffres les plus larges : sinon les bandes bougent
+            // à chaque seconde (Inter n'a pas des chiffres de même largeur) et au passage de la première heure.
+            let texte = format!("{} / {}", clock(ici), clock(fin));
+            let police = egui::FontId::proportional(13.5);
+            let largeur = ui.fonts_mut(|f| {
+                let mut large = ('0', 0.0_f32);
+                for c in '0'..='9' {
+                    let w = f.layout_no_wrap(c.to_string(), police.clone(), p.texte).size().x;
+                    if w > large.1 {
+                        large = (c, w);
+                    }
+                }
+                f.layout_no_wrap("0:00:00 / 0:00:00".replace('0', &large.0.to_string()), police.clone(), p.texte).size().x
+            }) + 4.0;
+            ui.allocate_ui_with_layout(Vec2::new(largeur, 20.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_min_width(largeur);
+                ui.label(RichText::new(texte).size(13.5).color(p.texte));
+            });
             ui.add_space(8.0);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 4.0;
