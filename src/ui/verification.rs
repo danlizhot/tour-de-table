@@ -223,7 +223,16 @@ impl TourDeTableApp {
 
         let pal = palette(ui);
         ui.add_space(4.0);
-        ui.label(RichText::new(&v.rencontre.title).size(13.5).color(pal.texte2));
+        ui.horizontal(|ui| {
+            // Retour à la fiche, comme « Annuler » ; pas pendant un import, que la rencontre attend pour exister.
+            if !v.nouvelle
+                && !occupe
+                && ui.add(bouton_widget(ui, "←  Retour", Genre::Discret, 28.0)).on_hover_text("Revient à la rencontre sans rien changer").clicked()
+            {
+                annuler = true;
+            }
+            ui.label(RichText::new(&v.rencontre.title).size(13.5).color(pal.texte2));
+        });
         ui.label(gras("Découper par points", 24.0).color(pal.texte));
         ui.label(
             RichText::new(
@@ -360,7 +369,10 @@ impl TourDeTableApp {
                     if !l.f.extrait.is_empty() {
                         ui.horizontal(|ui| {
                             ui.add_space(36.0);
-                            let r = ui.label(RichText::new(format!("« {} »", l.f.extrait)).italics().size(14.0).color(pal.texte2));
+                            // Une seule ligne : un long extrait (une boucle de Whisper, par exemple) élargirait la carte et
+                            // pousserait « Retirer » et « Valider » hors de la fenêtre. Le texte entier s'affiche au survol.
+                            let texte = RichText::new(format!("« {} »", l.f.extrait)).italics().size(14.0).color(pal.texte2);
+                            let r = ui.add(egui::Label::new(texte).truncate());
                             if !l.f.raison.is_empty() {
                                 r.on_hover_text(&l.f.raison);
                             }
@@ -399,21 +411,35 @@ impl TourDeTableApp {
 
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            if ui.add_enabled(!occupe, bouton_widget(ui, "+ Ajouter une frontière", Genre::Secondaire, 40.0)).clicked() {
-                // Le premier point de l'ordre du jour sans frontière, entre ses voisins ; sinon après la dernière, sur le
-                // point qui suit.
-                let manquant = (0..points.len()).find(|p| !v.lignes.iter().any(|l| l.f.point == Some(*p)));
-                let place = manquant.and_then(|p| Some((Some(p), heure_dans_l_ordre(&v.autres(None), p, None, v.duree_ms)?)));
-                let derniere = v.lignes.last().map(|l| &l.f);
-                let (point, ms) = place.unwrap_or_else(|| {
-                    let ms = derniere.map_or(0, |f| f.debut_ms + 60_000).min(v.duree_ms);
-                    let point = match derniere.and_then(|f| f.point) {
-                        Some(p) if p + 1 < points.len() => Some(p + 1),
-                        Some(p) => Some(p),
-                        None => (!points.is_empty()).then_some(0),
-                    };
-                    (point, ms)
+            // Avec un ordre du jour, on choisit le point qui commence ; la frontière se range entre ses voisins.
+            let mut ajout: Option<Option<usize>> = None;
+            if points.is_empty() || occupe {
+                if ui.add_enabled(!occupe, bouton_widget(ui, "+ Ajouter une frontière", Genre::Secondaire, 40.0)).clicked() {
+                    ajout = Some(None);
+                }
+            } else {
+                let bouton = bouton_widget(ui, "+ Ajouter une frontière      ", Genre::Secondaire, 40.0);
+                let (resp, _) = egui::containers::menu::MenuButton::from_button(bouton).ui(ui, |ui| {
+                    ui.set_min_width(340.0);
+                    ui.label(RichText::new("Quel point commence ?").size(13.0).color(pal.texte2));
+                    for p in 0..points.len() {
+                        let place = v.lignes.iter().any(|l| l.f.point == Some(p));
+                        let texte = if place {
+                            RichText::new(format!("{}  (déjà placé)", nom(Some(p)))).color(pal.texte2)
+                        } else {
+                            RichText::new(nom(Some(p))).color(pal.texte)
+                        };
+                        if ui.button(texte).clicked() {
+                            ajout = Some(Some(p));
+                        }
+                    }
                 });
+                super::apparence::chevron(ui, &resp, pal.texte);
+            }
+            if let Some(point) = ajout {
+                // Entre les frontières des points voisins ; sinon, une minute après la dernière.
+                let ms = point.and_then(|p| heure_dans_l_ordre(&v.autres(None), p, None, v.duree_ms));
+                let ms = ms.unwrap_or_else(|| v.lignes.last().map_or(0, |l| l.f.debut_ms + 60_000).min(v.duree_ms));
                 let f = Frontiere { point, debut_ms: ms, extrait: String::new(), raison: String::new(), declenchement: Declenchement::Manuel };
                 v.lignes.push(Ligne { heure: clock(ms), f });
                 let i = v.lignes.len() - 1;
