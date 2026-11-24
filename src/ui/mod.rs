@@ -15,6 +15,7 @@ mod past;
 mod puce;
 mod voix;
 mod settings;
+mod mode_decoupage;
 mod verification;
 mod widgets;
 
@@ -665,7 +666,12 @@ impl eframe::App for TourDeTableApp {
         }
         egui::CentralPanel::default_margins().show(ui, |ui| {
             match self.view {
-                _ if self.verification.is_some() => self.verification_view(ui),
+                // « Découper par points » se fait dans la fiche ; l'écran de vérification reste pour la fin d'un import.
+                _ if self.verification.is_some() => {
+                    if !self.mode_decoupage(ui) {
+                        self.verification_view(ui);
+                    }
+                }
                 View::Live => self.live_view(ui),
                 View::Past(i) if i < self.meetings.len() => self.past_view(ui, i),
                 View::Past(_) => self.view = View::Live,
