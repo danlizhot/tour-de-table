@@ -29,8 +29,9 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
 * `src/ui/` : `mod.rs` (état `TourDeTableApp`, boucle `eframe::App`, `pump`, barre du haut et
   historique), `live.rs` (rencontre en cours, import, contrôles), `past.rs` (fiche d'une
   rencontre, compte rendu), `onglets.rs` (onglets de la fiche : ordre du jour, transcription, compte rendu, un volet
-  ou deux côte à côte), `agenda.rs` (ordre du jour), `verification.rs` (frontières à
-  corriger, « Découper par points »), `settings.rs` (Paramètres), `installation.rs` (installation automatique des
+  ou deux côte à côte), `agenda.rs` (ordre du jour), `mode_decoupage.rs` (« Découper par points » dans la
+  fiche : un clic sur une ligne de la transcription y fait commencer un point), `verification.rs` (frontières à
+  corriger, état du découpage, écran de vérification restant pour la fin d'un import), `settings.rs` (Paramètres), `installation.rs` (installation automatique des
   modèles au premier démarrage, plein écran),
   `widgets.rs` (transcription, Markdown, logo), `apparence.rs` (palettes des thèmes clair et foncé, police Inter
   intégrée — `assets/polices`, licence OFL —, boutons, cartes, choix segmentés, pastilles : les écrans n'emploient

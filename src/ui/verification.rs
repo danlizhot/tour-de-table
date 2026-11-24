@@ -23,22 +23,29 @@ const PAS_MS: u64 = 5_000;
 /// rencontre (si le rangement échoue) et résultat.
 pub type TacheDecoupage = (bool, Meeting, Receiver<Result<Meeting, String>>);
 
-struct Ligne {
-    f: Frontiere,
+pub(super) struct Ligne {
+    pub(super) f: Frontiere,
     /// Heure telle que saisie.
     heure: String,
 }
 
 pub struct Verification {
-    rencontre: Meeting,
+    pub(super) rencontre: Meeting,
     /// Fin d'un import : la rencontre n'est pas encore dans l'historique.
-    nouvelle: bool,
-    lignes: Vec<Ligne>,
+    pub(super) nouvelle: bool,
+    pub(super) lignes: Vec<Ligne>,
     /// Audio à écouter : `_import/` pendant un import, le dossier de la rencontre sinon.
     audio: PathBuf,
     index: Index,
-    duree_ms: u64,
+    pub(super) duree_ms: u64,
     lecture: Option<(usize, lecture::Lecture)>,
+    /// Mode découpage dans la fiche (`mode_decoupage.rs`) : ligne (heure de début) dont on choisit le point.
+    pub(super) choix: Option<u64>,
+    /// Frontière dont l'en-tête est sélectionné, et sa liste « Changer de point » ouverte.
+    pub(super) choisi: Option<usize>,
+    pub(super) changer: bool,
+    /// Heure d'un en-tête vers lequel faire défiler la transcription.
+    pub(super) aller_a: Option<u64>,
 }
 
 impl Verification {
@@ -46,13 +53,21 @@ impl Verification {
         self.lecture.as_ref().is_some_and(|(_, l)| l.en_cours())
     }
 
-    fn trier(&mut self) {
+    pub(super) fn trier(&mut self) {
         self.lecture = None;
         self.lignes.sort_by_key(|l| l.f.debut_ms);
     }
 
+    /// Frontière ajoutée à la main (mode découpage) ; la liste reste triée. Rend son indice.
+    pub(super) fn ajouter(&mut self, f: Frontiere) -> usize {
+        let ms = f.debut_ms;
+        self.lignes.push(Ligne { heure: clock(ms), f });
+        self.trier();
+        self.lignes.iter().position(|l| l.f.debut_ms == ms).unwrap_or(0)
+    }
+
     /// Frontière déplacée ou ajoutée à la main : l'extrait suit la nouvelle heure.
-    fn deplacer(&mut self, i: usize, ms: u64) {
+    pub(super) fn deplacer(&mut self, i: usize, ms: u64) {
         let ms = ms.min(self.duree_ms);
         let l = &mut self.lignes[i];
         l.f.debut_ms = ms;
@@ -87,7 +102,7 @@ fn heure_dans_l_ordre(autres: &[(usize, u64)], p: usize, actuelle: Option<u64>, 
 
 impl Verification {
     /// Point et heure des frontières autres que la `i`-ième.
-    fn autres(&self, i: Option<usize>) -> Vec<(usize, u64)> {
+    pub(super) fn autres(&self, i: Option<usize>) -> Vec<(usize, u64)> {
         let lignes = self.lignes.iter().enumerate().filter(|(k, _)| Some(*k) != i);
         lignes.filter_map(|(_, l)| l.f.point.map(|p| (p, l.f.debut_ms))).collect()
     }
@@ -146,11 +161,12 @@ impl TourDeTableApp {
         };
         let duree_ms = index.blocs.iter().map(|b| blocs::ms(b.decalage + b.echantillons)).max().unwrap_or(0);
         let lignes = proposees.into_iter().map(|f| Ligne { heure: clock(f.debut_ms), f }).collect();
-        self.verification = Some(Verification { rencontre, nouvelle, lignes, audio, index, duree_ms, lecture: None });
+        self.verification =
+            Some(Verification { rencontre, nouvelle, lignes, audio, index, duree_ms, lecture: None, choix: None, choisi: None, changer: false, aller_a: None });
     }
 
     /// Range l'audio par point dans un fil, d'après les frontières validées.
-    fn valider_decoupage(&mut self, rencontre: Meeting, nouvelle: bool, frontieres: Vec<Frontiere>) {
+    pub(super) fn valider_decoupage(&mut self, rencontre: Meeting, nouvelle: bool, frontieres: Vec<Frontiere>) {
         let (tx, rx) = crossbeam_channel::bounded(1);
         let copie = rencontre.clone();
         std::thread::spawn(move || {
