@@ -144,6 +144,8 @@ pub struct TourDeTableApp {
     /// Écoute d'un passage ou d'un point de la fiche ; transcription à faire défiler jusqu'à une heure (rencontre, ms).
     ecoute: Option<ecoute::Ecoute>,
     aller_a: Option<(String, u64)>,
+    /// Heure où l'écoute vient de sauter par le lecteur (rencontre, ms) : la transcription y défile.
+    saut_ecoute: Option<(String, u64)>,
     /// Plages surlignées dans la transcription (point choisi dans le compte rendu), et onglet à afficher.
     surligne: Option<(String, Vec<(u64, u64)>)>,
     transcription_demandee: bool,
@@ -207,6 +209,7 @@ impl TourDeTableApp {
             archivages_en_cours: 0,
             ecoute: None,
             aller_a: None,
+            saut_ecoute: None,
             surligne: None,
             transcription_demandee: false,
             verification_mise_a_jour: {

@@ -434,6 +434,7 @@ impl TourDeTableApp {
                     position: self.position_ecoute(&m.id),
                     suivre: self.ecoute_active(&m.id),
                     aller_a: self.aller_a.as_ref().filter(|(id, _)| *id == m.id).map(|&(_, ms)| ms),
+                    saut: self.saut_ecoute.as_ref().filter(|(id, _)| *id == m.id).map(|&(_, ms)| ms),
                     surligne: self.surligne.as_ref().filter(|(id, _)| *id == m.id).map_or(&[], |(_, p)| p.as_slice()),
                 };
                 let clic = cadre(ui, |ui| match m.nettoyage.as_ref().filter(|_| !self.vue_brute) {
@@ -556,7 +557,10 @@ impl TourDeTableApp {
             .unwrap_or_default();
         // Point entendu : celui dont une plage contient l'heure de la lecture, si elle avance.
         let position = self.position_ecoute(&m.id).filter(|_| self.ecoute_active(&m.id));
-        let en_ecoute = position.and_then(|ms| points.iter().position(|(_, plages)| plages.iter().any(|&(d, f)| d <= ms && ms < f)));
+        let point_a = |ms: u64| points.iter().position(|(_, plages)| plages.iter().any(|&(d, f)| d <= ms && ms < f));
+        let en_ecoute = position.and_then(point_a);
+        // L'écoute vient de sauter (barre du lecteur, −5 s, +5 s) : le compte rendu défile jusqu'au point entendu.
+        let saut = self.saut_ecoute.as_ref().filter(|(id, _)| *id == m.id).and_then(|&(_, ms)| point_a(ms));
         let mut clic_point = None;
         cadre(ui, |ui| match &m.summary {
             Some(s) => {
@@ -567,6 +571,9 @@ impl TourDeTableApp {
                         ui.set_width(ui.available_width());
                         markdown(ui, s, &mut |ui, titre| {
                             let Some(i) = points.iter().position(|(t, plages)| t == titre.trim() && !plages.is_empty()) else { return };
+                            if saut == Some(i) {
+                                ui.scroll_to_rect(ui.min_rect(), Some(egui::Align::TOP));
+                            }
                             if audio {
                                 let joue = en_ecoute == Some(i);
                                 if bouton_ecouter_point(ui, joue).on_hover_text(if joue { "Pause" } else { "Écouter à partir de ce point" }).clicked() {
