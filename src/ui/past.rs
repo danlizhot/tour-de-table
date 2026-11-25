@@ -235,7 +235,9 @@ impl TourDeTableApp {
             egui::Panel::bottom("lecteur")
                 .show_separator_line(false)
                 .frame(egui::Frame::new().fill(p.surface).stroke(egui::Stroke::new(1.0, p.bordure)).corner_radius(egui::CornerRadius::same(14)).inner_margin(egui::Margin::symmetric(16, 10)).outer_margin(egui::Margin { left: 0, right: 0, top: 10, bottom: 0 }))
-                .show(ui, |ui| self.lecteur(ui, idx));
+                .show(ui, |ui| {
+                    self.lecteur(ui, idx);
+                });
         }
         action = self.volets(ui, idx).or(action);
 

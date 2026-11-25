@@ -10,6 +10,7 @@ use super::apparence::{Genre, bouton_widget, gras, initiales, palette, pastille}
 use super::widgets::{bouton_lecture, couleur_locuteur, lisible};
 use crate::audio::Source;
 use crate::decoupage::Frontiere;
+use crate::nettoyage::Phrase;
 use crate::storage::{Declenchement, Meeting, Periode, clock};
 
 /// Une ligne de la transcription : une phrase nettoyée, ou un segment brut si le nettoyage n'est pas terminé.
@@ -20,9 +21,15 @@ struct LigneTexte {
     texte: String,
 }
 
-fn lignes_texte(m: &Meeting) -> Vec<LigneTexte> {
-    match m.nettoyage.as_ref().filter(|n| n.termine() && !n.phrases.is_empty()) {
-        Some(n) => n.phrases.iter().map(|p| LigneTexte { debut_ms: p.debut_ms, fin_ms: p.fin_ms, source: p.source, texte: p.texte.clone() }).collect(),
+/// Nettoyage de la rencontre, s'il est terminé.
+fn nettoyage_termine(m: &Meeting) -> Option<&[Phrase]> {
+    m.nettoyage.as_ref().filter(|n| n.termine() && !n.phrases.is_empty()).map(|n| n.phrases.as_slice())
+}
+
+/// Lignes de la transcription : nettoyage de la rencontre, sinon celui fait sur place (`propres`), sinon segments bruts.
+fn lignes_texte(m: &Meeting, propres: Option<&[Phrase]>) -> Vec<LigneTexte> {
+    match nettoyage_termine(m).or(propres) {
+        Some(phrases) => phrases.iter().map(|p| LigneTexte { debut_ms: p.debut_ms, fin_ms: p.fin_ms, source: p.source, texte: p.texte.clone() }).collect(),
         None => m.segments.iter().map(|s| LigneTexte { debut_ms: s.start_ms, fin_ms: s.end_ms, source: s.source, texte: s.text.clone() }).collect(),
     }
 }
@@ -132,19 +139,23 @@ impl TourDeTableApp {
         }
         ui.add_space(10.0);
 
-        // Lecteur au bas : sa bande des points montre le découpage en cours, pas celui enregistré.
+        // Lecteur au bas : sa bande des points montre le découpage en cours, pas celui enregistré. Un saut dans la ligne
+        // du temps amène la transcription au même endroit.
+        let mut saut = None;
         if self.recorder.is_none() && crate::audio::blocs::existe(&self.meetings[idx].dir()) {
             let v = self.verification.as_ref().expect("vérifié plus haut");
             let provisoires = apercu(&v.lignes.iter().map(|l| &l.f).collect::<Vec<_>>(), v.duree_ms.max(self.meetings[idx].duration_s * 1000));
             let enregistrees = std::mem::replace(&mut self.meetings[idx].periodes, provisoires);
-            egui::Panel::bottom("lecteur")
+            saut = egui::Panel::bottom("lecteur")
                 .show_separator_line(false)
                 .frame(egui::Frame::new().fill(p.surface).stroke(Stroke::new(1.0, p.bordure)).corner_radius(CornerRadius::same(14)).inner_margin(Margin::symmetric(16, 10)).outer_margin(Margin { left: 0, right: 0, top: 10, bottom: 0 }))
-                .show(ui, |ui| self.lecteur(ui, idx));
+                .show(ui, |ui| self.lecteur(ui, idx))
+                .inner;
             self.meetings[idx].periodes = enregistrees;
         }
 
-        let ecouter = self.contenu_decoupage(ui, idx);
+        let position = self.position_ecoute(&id);
+        let ecouter = self.contenu_decoupage(ui, idx, position, saut);
         if let Some(ms) = ecouter {
             self.ecouter_depuis(idx, ms);
         }
@@ -160,8 +171,9 @@ impl TourDeTableApp {
         true
     }
 
-    /// Liste des points à droite et transcription ligne par ligne ; rend l'heure à écouter, s'il y a lieu.
-    fn contenu_decoupage(&mut self, ui: &mut Ui, idx: usize) -> Option<u64> {
+    /// Liste des points à droite et transcription ligne par ligne ; rend l'heure à écouter, s'il y a lieu. `position` :
+    /// heure entendue (sa ligne est surlignée) ; `saut` : heure où l'écoute vient de sauter (sa ligne vient à l'écran).
+    fn contenu_decoupage(&mut self, ui: &mut Ui, idx: usize, position: Option<u64>, saut: Option<u64>) -> Option<u64> {
         let p = palette(ui);
         let m = &self.meetings[idx];
         let v = self.verification.as_mut()?;
@@ -196,7 +208,12 @@ impl TourDeTableApp {
                 });
         }
 
-        let lignes = lignes_texte(m);
+        // Sans nettoyage terminé, la transcription brute garderait les boucles de Whisper : on la nettoie sur place.
+        if v.phrases.is_none() && nettoyage_termine(m).is_none() && !m.segments.is_empty() {
+            let segments: Vec<(usize, &crate::stt::Segment)> = m.segments.iter().enumerate().collect();
+            v.phrases = Some(crate::nettoyage::passe1(&segments, None, &crate::quebec::Glossary::parse(&self.cfg.glossary)));
+        }
+        let lignes = lignes_texte(m, v.phrases.as_deref());
         let debuts: Vec<u64> = lignes.iter().map(|l| l.debut_ms).collect();
         let places: Vec<(usize, u64)> = v.lignes.iter().filter_map(|l| l.f.point.map(|q| (q, l.f.debut_ms))).collect();
         let avis = hors_ordre(&v.lignes.iter().map(|l| l.f.point).collect::<Vec<_>>());
@@ -241,7 +258,12 @@ impl TourDeTableApp {
                     let qui = (voix_precedente != Some(cle)).then(|| (m.locuteur(cle.0, cle.1), couleur_locuteur(cle.0, cle.1)));
                     voix_precedente = Some(cle);
                     let ouvert = v.choix == Some(j);
-                    let (clic, joue) = ligne_texte(ui, l, qui.as_ref(), ouvert);
+                    let suivante = lignes.get(j + 1).map_or(u64::MAX, |s| s.debut_ms);
+                    let dans = |ms: Option<u64>| ms.is_some_and(|ms| (j == 0 || l.debut_ms <= ms) && ms < suivante);
+                    let (clic, joue, rect) = ligne_texte(ui, l, qui.as_ref(), ouvert, dans(position));
+                    if dans(saut) {
+                        ui.scroll_to_rect(rect, Some(egui::Align::Center));
+                    }
                     if joue {
                         ecouter = Some(l.debut_ms);
                     }
@@ -274,12 +296,13 @@ impl TourDeTableApp {
                 }
                 None => v.ajouter(Frontiere { point, debut_ms: ms, extrait, raison: String::new(), declenchement: Declenchement::Manuel }),
             };
-            v.choisi = Some(k);
+            v.choisi = Some(v.garder_seul(k));
         }
         if let Some((k, q)) = changer {
             v.lignes[k].f.point = q;
             v.lignes[k].f.declenchement = Declenchement::Manuel;
             v.changer = false;
+            v.choisi = Some(v.garder_seul(k));
         }
         if let Some((k, a)) = action {
             let debut = v.lignes[k].f.debut_ms;
@@ -415,8 +438,9 @@ fn entete_point(ui: &mut Ui, intertitre: &str, point: bool, debut_ms: u64, chois
 }
 
 /// Une ligne de la transcription : heure, pastille et nom au changement de voix, texte. Au survol (ou liste ouverte),
-/// elle s'encadre et montre ▶ et « + Point ici ». Rend (clic pour choisir un point, ▶ cliqué).
-fn ligne_texte(ui: &mut Ui, l: &LigneTexte, qui: Option<&(String, Color32)>, ouvert: bool) -> (bool, bool) {
+/// elle s'encadre et montre ▶ et « + Point ici ». `entendu` : la ligne écoutée est surlignée. Rend (clic pour choisir
+/// un point, ▶ cliqué, rectangle de la ligne).
+fn ligne_texte(ui: &mut Ui, l: &LigneTexte, qui: Option<&(String, Color32)>, ouvert: bool, entendu: bool) -> (bool, bool, Rect) {
     let p = palette(ui);
     let fond = ui.painter().add(egui::Shape::Noop);
     if qui.is_some() {
@@ -459,8 +483,10 @@ fn ligne_texte(ui: &mut Ui, l: &LigneTexte, qui: Option<&(String, Color32)>, ouv
         let ecoute = Rect::from_min_size(Pos2::new(plus.left() - 32.0, haut + 2.0), Vec2::splat(24.0));
         joue = ui.scope_builder(egui::UiBuilder::new().max_rect(ecoute), |ui| bouton_lecture(ui, false).on_hover_text("Écouter à partir d'ici")).inner.clicked();
         clic |= ui.put(plus, bouton_widget(ui, "+ Point ici", Genre::Principal, 28.0)).clicked();
+    } else if entendu {
+        ui.painter().set(fond, egui::epaint::RectShape::new(rect, CornerRadius::same(10), p.accent_doux, Stroke::NONE, egui::StrokeKind::Inside));
     }
-    (clic && !joue, joue)
+    (clic && !joue, joue, rect)
 }
 
 /// Liste « Quel point commence ici ? » sous une ligne ou un en-tête : le point suggéré d'abord mis en évidence, les points
