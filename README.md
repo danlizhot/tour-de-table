@@ -154,9 +154,9 @@ saisir à la main.
   table donne quelques puces par personne, le varia un sous-titre par sujet, la prochaine
   rencontre quelques puces. Un point non abordé est indiqué comme tel, et le modèle a pour
   consigne de ne rien inventer.
-* **Présences** : Tour de table ne reconnaît pas les voix ; la liste reprend les personnes qui
-  prennent la parole dans les points rédigés (le tour de table surtout) et porte la mention
-  « à vérifier ». Les « Mme » et « M. » sont aussi à relire.
+* **Présences** : la liste reprend les noms donnés aux voix reconnues, sans passer par le modèle :
+  une personne seulement nommée dans la discussion n'y figure pas, une personne qui n'a pas pris
+  la parole non plus. Sans voix nommée, la section est omise. Les « Mme » et « M. » sont à relire.
 * Le texte est rédigé en **français québécois standard** (terminologie et typographie de l'OQLF),
   puis la typographie est vérifiée par Tour de table (« 14 h 30 », « 2 500 $ »).
 * **Garde-fou sur les chiffres** : tout montant ou nombre du compte rendu absent de la
@@ -169,7 +169,7 @@ saisir à la main.
   ne soit pas rédigé deux fois. Chaque point est ensuite rédigé d'après ses sujets et les seuls
   passages de la transcription où ils sont discutés, quatre points à la fois (« Compte rendu —
   point 3 sur 8 » compte les points terminés). Un point qui a des sous-points n'est qu'un intertitre ; une adoption ou la fin de
-  la rencontre tient en une ou deux phrases. Un dernier appel ajoute les présences et la levée de la
+  la rencontre tient en une ou deux phrases. Un dernier appel ajoute la levée de la
   séance. Durée mesurée : de 0,7 à 1 fois la durée de la rencontre.
 * **Rencontres sans ordre du jour** : la transcription est rédigée d'un coup, condensée d'abord par
   tranches au-delà d'environ 45 min.

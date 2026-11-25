@@ -53,6 +53,7 @@ impl TourDeTableApp {
         let agenda = m.agenda.as_ref().map(|a| a.text.clone());
         let transcript = m.texte_compte_rendu();
         let lexique = crate::quebec::Glossary::parse(&self.cfg.glossary).termes().to_vec();
+        let presences = m.voix.as_ref().map(crate::voix::Voix::noms_entendus).unwrap_or_default();
         std::thread::spawn(move || {
             let req = crate::summary::Request {
                 moteur: &moteur,
@@ -67,6 +68,7 @@ impl TourDeTableApp {
                 hors_point,
                 reprendre,
                 lexique,
+                presences,
             };
             let _ = tx.send(crate::summary::compte_rendu(&req).map_err(|e| format!("{e:#}")));
         });
