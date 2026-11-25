@@ -100,7 +100,8 @@ pub fn model_path() -> PathBuf {
 
 /// Moteur de rédaction (nettoyage et compte rendu).
 pub fn moteur() -> crate::summary::Moteur {
-    crate::summary::Moteur { modele: models_dir().join(crate::models::modele_redaction().file), fils: threads(), gpu: crate::gpu::redaction() }
+    let gpu = crate::gpu::redaction();
+    crate::summary::Moteur { modele: models_dir().join(crate::models::modele_redaction().file), fils: threads(), gpu, mmap: !gpu && crate::models::redaction_en_mmap() }
 }
 
 fn dirs() -> ProjectDirs {

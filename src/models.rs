@@ -63,9 +63,10 @@ fn memoire_suffisante(octets: u64) -> bool {
     octets >= MEMOIRE_MINIMALE
 }
 
-/// Mémoire vive à partir de laquelle le grand modèle de rédaction est utilisé : les postes de
-/// 24 Go et plus, qui en déclarent un peu moins. Il occupe jusqu'à 14,2 Go pour une rencontre de
-/// deux heures : trop pour un poste de 16 ou de 20 Go.
+/// Mémoire vive à partir de laquelle le grand modèle de rédaction est chargé en entier, poids réorganisés pour le
+/// processeur : les postes de 24 Go et plus, qui en déclarent un peu moins. Il occupe alors jusqu'à 14,2 Go pour une
+/// rencontre de deux heures : trop pour un poste de 16 ou de 20 Go. En dessous, il est lu dans son fichier (mmap),
+/// sans réorganisation : le système garde en mémoire les parties utilisées et peut libérer les autres.
 const MEMOIRE_GRAND_MODELE: u64 = 22 * GIO;
 
 /// Mémoire vive du poste en Gio si elle est sous le minimum de 16 Go, calculée au lancement.
@@ -89,10 +90,14 @@ pub fn memoire_insuffisante() -> Option<f64> {
 /// taille. Qwen3.5 4B, plus rapide (13 min de compte rendu pour une rencontre de 27 min, processeur
 /// seul), inventait trop de sujets : d'où le minimum de 16 Go. Il réfléchit par défaut : le
 /// programme de rédaction le fait répondre directement. Ministral 3 8B était plus lent ; Qwen3
-/// 30B-A3B demandait 18,6 Go. Sur les postes de 24 Go et plus : Qwen3.6 35B-A3B (mélange d'experts,
+/// 30B-A3B demandait 18,6 Go. Retenu : Qwen3.6 35B-A3B (mélange d'experts,
 /// 3 milliards de paramètres actifs) en quantification APEX I-Nano. Banc d'essai du 16 novembre
 /// 2026, quatre rencontres : 32/44 en 36 min de moyenne, contre 29,5/44 en 64 min pour le 9B, mais
-/// 12,8 à 14,2 Go de mémoire contre 7,8 à 9,8 Go.
+/// 12,8 à 14,2 Go de mémoire contre 7,8 à 9,8 Go. Sur les postes de 16 et de 20 Go, lu dans son fichier
+/// (mmap, sans réorganisation des poids) : banc du 25 novembre 2026, rédaction limitée à 10 Go de mémoire,
+/// 34/44 en 47 min de moyenne (9,9 Go au plus), contre 29,5/44 en 66 min pour le 9B dans les mêmes conditions.
+/// Le 9B reste sur les Mac de moins de 24 Go : la rédaction y passe par la puce graphique (Metal), qui ne
+/// dispose que d'une partie de la mémoire, trop peu pour le 35B-A3B.
 pub struct LlmInfo {
     pub file: &'static str,
     pub label: &'static str,
@@ -145,12 +150,23 @@ pub fn llm_info(file: &str) -> Option<&'static LlmInfo> {
 /// Modèle de rédaction de ce poste : la mémoire vive est lue une seule fois.
 pub fn modele_redaction() -> &'static LlmInfo {
     static MODELE: OnceLock<&'static LlmInfo> = OnceLock::new();
-    MODELE.get_or_init(|| modele_pour(ram_totale()))
+    MODELE.get_or_init(|| modele_pour(ram_totale(), cfg!(feature = "metal")))
 }
 
-/// Qwen3.5 9B jusqu'à 20 Go de mémoire vive, Qwen3.6 35B-A3B à partir de 24 Go.
-fn modele_pour(ram: u64) -> &'static LlmInfo {
-    &LLM_CATALOG[usize::from(ram >= MEMOIRE_GRAND_MODELE)]
+/// Qwen3.6 35B-A3B ; Qwen3.5 9B sur les Mac (Metal) de moins de 24 Go.
+fn modele_pour(ram: u64, metal: bool) -> &'static LlmInfo {
+    &LLM_CATALOG[usize::from(!metal || ram >= MEMOIRE_GRAND_MODELE)]
+}
+
+/// Le modèle de rédaction est lu dans son fichier (mmap), sans réorganisation des poids pour le processeur : sur
+/// les postes de moins de 24 Go, pour tenir en mémoire.
+pub fn redaction_en_mmap() -> bool {
+    static MMAP: OnceLock<bool> = OnceLock::new();
+    *MMAP.get_or_init(|| en_mmap(ram_totale()))
+}
+
+fn en_mmap(ram: u64) -> bool {
+    ram < MEMOIRE_GRAND_MODELE
 }
 
 fn ram_totale() -> u64 {
@@ -459,14 +475,18 @@ mod tests {
     fn modele_selon_la_memoire() {
         let petit = "Qwen3.5-9B-Q4_K_M.gguf";
         let grand = "Qwen3.6-35B-A3B-APEX-MTP-I-Nano.gguf";
-        // Postes de 16 et de 20 Go : le 9B, même sous le minimum.
-        assert_eq!(modele_pour(7 * GIO + GIO / 2).file, petit);
-        assert_eq!(modele_pour(15 * GIO + GIO / 3).file, petit);
-        assert_eq!(modele_pour(19 * GIO + GIO / 2).file, petit);
-        assert_eq!(modele_pour(22 * GIO - 1).file, petit);
+        // Le 35B-A3B partout, sauf sur les Mac de 16 et de 20 Go.
+        for ram in [7 * GIO + GIO / 2, 15 * GIO + GIO / 3, 19 * GIO + GIO / 2, 22 * GIO - 1, 22 * GIO, 31 * GIO] {
+            assert_eq!(modele_pour(ram, false).file, grand);
+        }
+        assert_eq!(modele_pour(15 * GIO + GIO / 3, true).file, petit);
+        assert_eq!(modele_pour(22 * GIO - 1, true).file, petit);
         // Poste de 24 Go : ~22,9 Gio, parfois moins avec une carte graphique intégrée.
-        assert_eq!(modele_pour(22 * GIO).file, grand);
-        assert_eq!(modele_pour(31 * GIO).file, grand);
+        assert_eq!(modele_pour(22 * GIO, true).file, grand);
+        // Lu dans son fichier sous 24 Go seulement.
+        assert!(en_mmap(15 * GIO + GIO / 3));
+        assert!(en_mmap(22 * GIO - 1));
+        assert!(!en_mmap(22 * GIO));
         assert!(LLM_CATALOG.iter().any(|m| m.file == modele_redaction().file));
         for m in LLM_CATALOG {
             assert!(!ANCIENS_MODELES_REDACTION.contains(&m.file));
