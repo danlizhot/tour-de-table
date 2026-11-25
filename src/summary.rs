@@ -1587,7 +1587,7 @@ mod tests {
         let mut m = Meeting::new("test.bin");
         m.title = "Conseil d'administration".into();
         m.insert(Segment { start_ms: 0, end_ms: 1000, source: Source::Mixte, text: "Bonsoir tout le monde.".into() });
-        m.voix = Some(Voix { tours: vec![Tour { debut_ms: 0, fin_ms: 2000, voix: 0 }], noms: vec!["Hélène Brassard".into()] });
+        m.voix = Some(Voix { tours: vec![Tour { debut_ms: 0, fin_ms: 2000, voix: 0 }], noms: vec!["Hélène Brassard".into()], ..Default::default() });
         m.agenda = Some(Agenda::new("odj.txt".into(), "1. Mot de bienvenue\n2. Varia".into()));
         let d = demande_assistant(&m);
         assert!(d.starts_with("Tu es secrétaire de réunion. Rédige le compte rendu"));

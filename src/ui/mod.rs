@@ -131,6 +131,8 @@ pub struct TourDeTableApp {
     /// les noms des voix sont ouverts.
     voix_job: Option<crate::voix::Calcul>,
     voix_en_attente: Vec<String>,
+    /// Voix en direct pendant l'enregistrement (`voix_direct`).
+    voix_direct: Option<crate::voix_direct::Direct>,
     noms_des_voix: Option<String>,
     /// Archivages en cours (compression dans un fil) : la rencontre revient dans l'historique si l'archivage échoue.
     archivage: (Sender<FinArchivage>, Receiver<FinArchivage>),
@@ -193,6 +195,7 @@ impl TourDeTableApp {
             inoccupe_depuis: Instant::now(),
             voix_job: None,
             voix_en_attente: Vec::new(),
+            voix_direct: None,
             noms_des_voix: None,
             archivage: crossbeam_channel::unbounded(),
             archivages_en_cours: 0,
@@ -210,6 +213,7 @@ impl TourDeTableApp {
         };
         app.reprendre_rencontres_interrompues();
         app.reprendre_nettoyages();
+        app.reprendre_voix_provisoires();
         app.appliquer_theme();
         app.push_settings();
         app.load_model();
@@ -455,6 +459,11 @@ impl TourDeTableApp {
             }
         }
         while let Ok(u) = self.utt_rx.try_recv() {
+            if self.recorder.is_some()
+                && let Some(d) = &self.voix_direct
+            {
+                d.envoyer(&u);
+            }
             let context = match (&self.live, &self.fin_apres_panne) {
                 (Some(m), _) => m.recent_text(),
                 (None, Some(f)) => self.meetings.iter().find(|m| m.id == f.id).map(|m| m.recent_text()).unwrap_or_default(),
@@ -498,6 +507,7 @@ impl TourDeTableApp {
                 }
             }
         }
+        self.recevoir_voix_direct();
         if self.finishing && self.in_flight == 0 && self.utt_rx.is_empty() {
             self.finalize();
         }

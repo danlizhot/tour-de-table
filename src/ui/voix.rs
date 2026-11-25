@@ -24,6 +24,45 @@ impl TourDeTableApp {
         }
     }
 
+    /// Au démarrage : les rencontres restées avec des voix provisoires (application fermée avant le calcul
+    /// complet) sont remises en file.
+    pub(super) fn reprendre_voix_provisoires(&mut self) {
+        let ids: Vec<String> = self.meetings.iter().filter(|m| m.voix.as_ref().is_some_and(|v| v.provisoire)).map(|m| m.id.clone()).collect();
+        for id in ids {
+            self.demander_voix(&id);
+        }
+    }
+
+    /// Démarre les voix en direct d'un enregistrement qui commence (`oui` : rencontre sans voix).
+    pub(super) fn lancer_voix_direct(&mut self, oui: bool) {
+        self.voix_direct = None;
+        if !oui || !voix::modeles_installes() {
+            return;
+        }
+        match crate::voix_direct::Direct::lancer() {
+            Ok(d) => self.voix_direct = Some(d),
+            // Sans voix en direct, l'enregistrement continue : le calcul complet viendra à la fin.
+            Err(e) => log::error!("Voix en direct : {e:#}"),
+        }
+    }
+
+    /// Appelé à chaque image depuis `pump` : voix provisoires de la rencontre en cours, noms gardés.
+    pub(super) fn recevoir_voix_direct(&mut self) {
+        let Some(d) = &self.voix_direct else { return };
+        let mut derniere = None;
+        while let Ok(v) = d.voix.try_recv() {
+            derniere = Some(v);
+        }
+        if let (Some(mut v), Some(m)) = (derniere, self.live.as_mut()) {
+            // Un numéro peut passer à une autre personne (groupes réunis) : les noms suivent la parole.
+            if let Some(ancien) = &m.voix {
+                v.reporter_noms(ancien, false);
+            }
+            log::info!("Voix en direct : {} voix", v.nombre());
+            m.voix = Some(v);
+        }
+    }
+
     /// Appelé à chaque image depuis `pump`.
     pub(super) fn surveiller_voix(&mut self) {
         if self.occupe() || self.etalonnage.is_some() {
@@ -46,9 +85,10 @@ impl TourDeTableApp {
             let Some(m) = self.meetings.iter_mut().find(|m| m.id == id) else { return };
             match resultat {
                 Ok(mut v) => {
-                    // Une relance garde les noms déjà donnés.
+                    // Les noms déjà donnés (en direct, ou avant une relance) passent aux voix qui parlent aux mêmes
+                    // moments : les numéros changent d'un calcul à l'autre.
                     if let Some(ancien) = &m.voix {
-                        v.noms = ancien.noms.clone();
+                        v.reporter_noms(ancien, true);
                     }
                     log::info!("« {} » : {} voix reconnues", m.title, v.nombre());
                     m.voix = Some(v);
@@ -160,35 +200,8 @@ impl TourDeTableApp {
                 });
             });
             ui.add_space(6.0);
-            let m = &mut self.meetings[idx];
-            let Some(v) = &mut m.voix else { return };
-            let parole = v.parole();
-            v.noms.resize(parole.len().max(v.noms.len()), String::new());
-            let max = parole.iter().copied().max().unwrap_or(1).max(1);
-            for (i, ms) in parole.iter().enumerate() {
-                let couleur = couleur_locuteur(crate::audio::Source::Mixte, Some(i as u16));
-                let lettres = if v.noms[i].trim().is_empty() { format!("V{}", i + 1) } else { initiales(&v.noms[i]) };
-                ui.horizontal(|ui| {
-                    pastille(ui, &lettres, couleur, 30.0);
-                    let minutes = format!("{} min", (ms + 30_000) / 60_000);
-                    let largeur = ui.available_width() - 56.0;
-                    let champ = ui.add_sized(
-                        [largeur, 32.0],
-                        egui::TextEdit::singleline(&mut v.noms[i]).hint_text(format!("Voix {} : nom ou rôle", i + 1)).align(egui::Align2::LEFT_CENTER),
-                    );
-                    modifie |= champ.lost_focus();
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(RichText::new(minutes).size(12.0).color(p.texte2));
-                    });
-                });
-                let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 6.0), Sense::hover());
-                let piste = egui::Rect::from_min_max(egui::pos2(rect.left() + 38.0, rect.top()), rect.max);
-                ui.painter().rect_filled(piste, CornerRadius::same(3), p.piste);
-                let mut plein = piste;
-                plein.set_width(piste.width() * (*ms as f32 / max as f32));
-                ui.painter().rect_filled(plein, CornerRadius::same(3), couleur);
-                ui.add_space(6.0);
-            }
+            let Some(v) = &mut self.meetings[idx].voix else { return };
+            modifie = liste_voix(ui, v);
             ui.label(RichText::new("Le nom remplace « Voix 1 », « Voix 2 »… dans la transcription et les exports.").size(12.0).color(p.texte2));
             ui.add_space(4.0);
             if en_cours {
@@ -211,6 +224,32 @@ impl TourDeTableApp {
         if relancer {
             let id = self.meetings[idx].id.clone();
             self.demander_voix(&id);
+        }
+    }
+
+    /// Carte « Qui parle » pendant l'enregistrement : voix provisoires, qu'on peut déjà nommer.
+    pub(super) fn carte_voix_direct(&mut self, ui: &mut Ui) {
+        let p = palette(ui);
+        let mut modifie = false;
+        apparence::carte(ui).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.label(gras("Qui parle", 15.0).color(p.texte));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(RichText::new("temps de parole").size(12.0).color(p.texte2));
+                });
+            });
+            ui.add_space(6.0);
+            let Some(v) = self.live.as_mut().and_then(|m| m.voix.as_mut()) else { return };
+            modifie = liste_voix(ui, v);
+            ui.label(
+                RichText::new("Voix provisoires, mises à jour chaque minute ; elles sont recalculées à la fin de la rencontre, sans perdre les noms.")
+                    .size(12.0)
+                    .color(p.texte2),
+            );
+        });
+        if modifie && let Some(m) = &self.live && let Err(e) = m.save() {
+            log::warn!("Sauvegarde des noms : {e:#}");
         }
     }
 
@@ -237,4 +276,47 @@ impl TourDeTableApp {
             self.notify(format!("Sauvegarde des noms : {e:#}"), true);
         }
     }
+}
+
+/// Un nom par voix, avec sa pastille (en pointillé pour une voix provisoire) et son temps de parole en barre.
+/// Vrai quand un nom vient d'être modifié (on quitte le champ).
+fn liste_voix(ui: &mut Ui, v: &mut voix::Voix) -> bool {
+    let p = palette(ui);
+    let mut modifie = false;
+    let parole = v.parole();
+    v.noms.resize(parole.len().max(v.noms.len()), String::new());
+    let max = parole.iter().copied().max().unwrap_or(1).max(1);
+    for (i, ms) in parole.iter().enumerate() {
+        // Numéro libéré en direct (deux voix réunies) : pas de ligne vide.
+        if *ms == 0 {
+            continue;
+        }
+        let couleur = couleur_locuteur(crate::audio::Source::Mixte, Some(i as u16));
+        let lettres = if v.noms[i].trim().is_empty() { format!("V{}", i + 1) } else { initiales(&v.noms[i]) };
+        ui.horizontal(|ui| {
+            if v.provisoire {
+                apparence::pastille_provisoire(ui, &lettres, couleur, 30.0);
+            } else {
+                pastille(ui, &lettres, couleur, 30.0);
+            }
+            let minutes = format!("{} min", (ms + 30_000) / 60_000);
+            let largeur = ui.available_width() - 56.0;
+            let champ = ui.add_sized(
+                [largeur, 32.0],
+                egui::TextEdit::singleline(&mut v.noms[i]).hint_text(format!("Voix {} : nom ou rôle", i + 1)).align(egui::Align2::LEFT_CENTER),
+            );
+            modifie |= champ.lost_focus();
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(RichText::new(minutes).size(12.0).color(p.texte2));
+            });
+        });
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 6.0), Sense::hover());
+        let piste = egui::Rect::from_min_max(egui::pos2(rect.left() + 38.0, rect.top()), rect.max);
+        ui.painter().rect_filled(piste, CornerRadius::same(3), p.piste);
+        let mut plein = piste;
+        plein.set_width(piste.width() * (*ms as f32 / max as f32));
+        ui.painter().rect_filled(plein, CornerRadius::same(3), couleur);
+        ui.add_space(6.0);
+    }
+    modifie
 }

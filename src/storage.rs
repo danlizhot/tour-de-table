@@ -968,6 +968,7 @@ mod tests {
                 Tour { debut_ms: 4800, fin_ms: 6000, voix: 0 },
             ],
             noms: vec!["Présidente".into()],
+            ..Default::default()
         });
         assert_eq!(
             m.plain_text(),

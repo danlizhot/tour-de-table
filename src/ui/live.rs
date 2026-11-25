@@ -99,6 +99,8 @@ impl TourDeTableApp {
                     self.notify(w, true);
                 }
                 meeting.save().ok();
+                // Une rencontre poursuivie garde ses voix jusqu'au calcul complet de la fin.
+                self.lancer_voix_direct(meeting.voix.is_none());
                 self.live = Some(meeting);
                 self.push_settings();
                 self.recorder = Some(rec);
@@ -120,6 +122,7 @@ impl TourDeTableApp {
             }
             let echantillons = rec.echantillons.clone();
             rec.stop();
+            self.voix_direct = None;
             // Fin de la période en cours : après le dernier échantillon transmis.
             if let Some(m) = self.live.as_mut() {
                 let fin = crate::recorder::position_ms(&echantillons);
@@ -452,7 +455,18 @@ impl TourDeTableApp {
                         ui.label(RichText::new(text).weak());
                     });
                 } else {
-                    transcript(ui, m, true, Default::default());
+                    // Voix en direct dans une carte à droite quand l'écran est assez large, comme dans la fiche.
+                    if m.voix.is_some() && ui.available_width() >= 900.0 {
+                        egui::Panel::right("volet-voix-direct")
+                            .exact_size(300.0)
+                            .resizable(false)
+                            .show_separator_line(false)
+                            .frame(egui::Frame::new().inner_margin(egui::Margin { left: 16, right: 0, top: 0, bottom: 0 }))
+                            .show(ui, |ui| self.carte_voix_direct(ui));
+                    }
+                    if let Some(m) = &self.live {
+                        transcript(ui, m, true, Default::default());
+                    }
                 }
             }
             (None, ModelState::Missing | ModelState::Failed(_)) => self.welcome(ui),

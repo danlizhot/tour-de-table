@@ -2,7 +2,7 @@
 
 use eframe::egui::{self, Color32, CornerRadius, Pos2, RichText, Sense, Stroke, Ui, Vec2};
 
-use super::apparence::{gras, initiales, palette, pastille};
+use super::apparence::{gras, initiales, palette, pastille, pastille_provisoire};
 
 use crate::audio::{DeviceInfo, Source};
 use crate::config::Theme;
@@ -138,7 +138,11 @@ fn afficher_transcription(ui: &mut Ui, m: &Meeting, phrases: Vec<Phrase>, follow
                             (None, Source::Distance) => "D".into(),
                             (None, Source::Mixte) => "·".into(),
                         };
-                        pastille(ui, &lettres, couleur_locuteur(cle.0, cle.1), 34.0);
+                        if cle.1.is_some() && m.voix.as_ref().is_some_and(|v| v.provisoire) {
+                            pastille_provisoire(ui, &lettres, couleur_locuteur(cle.0, cle.1), 34.0);
+                        } else {
+                            pastille(ui, &lettres, couleur_locuteur(cle.0, cle.1), 34.0);
+                        }
                         ui.add_space(4.0);
                         ui.vertical(|ui| {
                             ui.spacing_mut().item_spacing.y = 3.0;
