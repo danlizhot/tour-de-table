@@ -227,6 +227,17 @@ pub(super) fn pastille(ui: &mut Ui, initiales: &str, couleur: Color32, diametre:
     resp
 }
 
+/// Pastille d'une voix provisoire (voix en direct) : même pastille, cerclée d'un pointillé.
+pub(super) fn pastille_provisoire(ui: &mut Ui, initiales: &str, couleur: Color32, diametre: f32) -> egui::Response {
+    let resp = pastille(ui, initiales, couleur, diametre);
+    if ui.is_rect_visible(resp.rect) {
+        let r = diametre / 2.0 - 0.75;
+        let points: Vec<egui::Pos2> = (0..=48).map(|i| resp.rect.center() + r * Vec2::angled(i as f32 / 48.0 * std::f32::consts::TAU)).collect();
+        ui.painter().extend(egui::Shape::dashed_line(&points, egui::Stroke::new(1.5, couleur), 3.0, 2.5));
+    }
+    resp
+}
+
 /// Initiales d'un nom : « Hélène Brassard » → « HB », « Marc-André Pelletier » → « MP », « Voix 3 » → « V3 ».
 pub(super) fn initiales(nom: &str) -> String {
     let nom = nom.split('(').next().unwrap_or(nom);

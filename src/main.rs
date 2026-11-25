@@ -23,6 +23,7 @@ mod stt;
 mod summary;
 mod ui;
 mod voix;
+mod voix_direct;
 
 use eframe::Renderer;
 
@@ -33,6 +34,14 @@ fn main() {
         // Lancé par l'application elle-même (voir `gpu::Etalonnage`), avant `diagnostic::init` :
         // ni rotation du journal de l'application, ni fenêtre d'erreur si le pilote plante.
         std::process::exit(if gpu::etalonner(&args[2..]).is_ok() { 0 } else { 1 });
+    }
+    if args.get(1).is_some_and(|a| a == "--voix-direct") {
+        // Lancé par l'application pendant un enregistrement (voir `voix_direct::Direct`).
+        if let Err(e) = voix_direct::commande() {
+            eprintln!("Erreur : {e:#}");
+            std::process::exit(1);
+        }
+        return;
     }
     if args.get(1).is_some_and(|a| a == "--voix") {
         // Lancé par l'application (voir `voix::Calcul`) : les voix en JSON sur la sortie standard.

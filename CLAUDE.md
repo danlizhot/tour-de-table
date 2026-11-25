@@ -65,6 +65,12 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   cinquième de la durée de la rencontre. `Meeting::voix` (tours de parole, noms) ; les paragraphes affichés et
   exportés sont coupés par voix (`storage::Decoupe::ParVoix`), mais le texte lu par le compte rendu ne change
   pas (`ParSource`) tant que l'effet des voix sur la rédaction n'est pas mesuré. File d'attente dans `ui/voix.rs`.
+* `voix_direct.rs` : voix provisoires pendant l'enregistrement, dans un processus à part (`tourdetable --voix-direct`)
+  qui reçoit les énoncés envoyés à Whisper (binaire sur stdin) : empreintes de morceaux de 4 s sur un seul fil (environ
+  4 % du temps réel d'un cœur), sans pyannote ; tout est regroupé chaque minute (seuil 0,30), numéros montrés gardés,
+  voix montrée après 30 s de parole. `Voix::provisoire` ; pastilles en pointillé et carte « Qui parle » dans le direct,
+  où l'on peut déjà nommer. À la fin, le calcul complet remplace ces voix et `Voix::reporter_noms` donne les noms aux
+  voix qui parlent aux mêmes moments. Pas de voix en direct pour une rencontre poursuivie qui a déjà ses voix.
 * `quebec.rs` : invite québécoise, typographie OQLF, lexique, filtre d'hallucinations.
 * `gpu.rs` : puce graphique (Vulkan, Windows) choisie par étalonnage (`tourdetable --etalonner`, processus
   à part lancé par `ui/puce.rs` quand l'application est inoccupée) ; sentinelle autour des transcriptions

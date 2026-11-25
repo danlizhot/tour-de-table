@@ -32,6 +32,9 @@ pub struct Voix {
     /// Nom de chaque voix, par numéro ; vide : « Voix 3 ».
     #[serde(default)]
     pub noms: Vec<String>,
+    /// Voix calculées pendant l'enregistrement (`voix_direct`), en attente du calcul complet.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub provisoire: bool,
 }
 
 /// Tour de parole, sur l'horloge des segments (`Segment::start_ms`).
@@ -62,7 +65,7 @@ impl Voix {
             let voix = *numeros.entry(v).or_insert(n);
             tours.push(Tour { debut_ms, fin_ms, voix });
         }
-        Self { tours, noms: Vec::new() }
+        Self { tours, noms: Vec::new(), provisoire: false }
     }
 
     pub fn nombre(&self) -> usize {
@@ -122,6 +125,50 @@ impl Voix {
         }
     }
 
+    /// Donne aux voix de `self` les noms des voix de `ancien` (voix provisoires du direct, ou calcul
+    /// précédent) qui parlent aux mêmes moments : les numéros peuvent changer d'un calcul à l'autre. Un nom
+    /// passe à une voix dont il recouvre au moins le tiers de la parole ; avec `unique`, à une seule (celle qu'il
+    /// recouvre le plus) : deux personnes réunies en direct ne doivent pas l'être de nouveau par leur nom. Sans
+    /// `unique` (d'un regroupement en direct au suivant), deux voix réunies par un même nom le restent.
+    pub fn reporter_noms(&mut self, ancien: &Voix, unique: bool) {
+        let n = self.nombre();
+        self.noms = vec![String::new(); n];
+        let parole = self.parole();
+        // Recouvrement (ms) entre chaque nom ancien et chaque voix nouvelle.
+        let mut rec = std::collections::HashMap::<(String, u16), u64>::new();
+        for a in &ancien.tours {
+            let nom = ancien.nom_donne(a.voix);
+            if nom.is_empty() {
+                continue;
+            }
+            let fin = self.tours.partition_point(|t| t.debut_ms < a.fin_ms);
+            for t in self.tours[..fin].iter().rev().take_while(|t| t.debut_ms + 600_000 > a.debut_ms) {
+                let r = t.fin_ms.min(a.fin_ms).saturating_sub(t.debut_ms.max(a.debut_ms));
+                if r > 0 {
+                    *rec.entry((nom.clone(), t.voix)).or_default() += r;
+                }
+            }
+        }
+        let mut paires: Vec<_> = rec.into_iter().collect();
+        paires.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        let mut donnes = std::collections::HashSet::new();
+        for ((nom, v), r) in paires {
+            let i = v as usize;
+            if self.noms[i].is_empty() && !(unique && donnes.contains(&nom)) && r * 3 >= parole[i] {
+                self.noms[i] = nom.clone();
+                donnes.insert(nom);
+            }
+        }
+        if self.noms.iter().all(String::is_empty) {
+            self.noms.clear();
+        }
+    }
+
+    /// Nom donné par l'utilisateur (vide sinon).
+    fn nom_donne(&self, voix: u16) -> String {
+        self.noms.get(voix as usize).map(|n| n.trim().to_string()).unwrap_or_default()
+    }
+
     /// Temps de parole de chaque voix, en millisecondes.
     pub fn parole(&self) -> Vec<u64> {
         let mut p = vec![0; self.nombre()];
@@ -175,7 +222,7 @@ fn fils() -> i32 {
 }
 
 /// Morceaux d'un tour : `MORCEAU_MS` au plus, le reste trop court rattaché au précédent.
-fn morceaux_du_tour(debut: u64, fin: u64) -> Vec<(u64, u64)> {
+pub(crate) fn morceaux_du_tour(debut: u64, fin: u64) -> Vec<(u64, u64)> {
     let mut out = Vec::new();
     let mut d = debut;
     while fin.saturating_sub(d) >= MORCEAU_MIN_MS {
@@ -341,6 +388,7 @@ mod tests {
                 Tour { debut_ms: 20_000, fin_ms: 30_000, voix: 1 },
             ],
             noms: vec![String::new(), "Julie".into()],
+            ..Default::default()
         };
         assert_eq!(v.voix_entre(8_000, 12_000), Some(0));
         assert_eq!(v.voix_entre(9_500, 13_000), Some(1));
@@ -353,10 +401,34 @@ mod tests {
     }
 
     #[test]
+    fn noms_reportes_par_recouvrement() {
+        let t = |d: u64, f: u64, voix: u16| Tour { debut_ms: d, fin_ms: f, voix };
+        // Direct : Julie (0) et Marc (1) ; une voix 2 sans nom.
+        let ancien = Voix {
+            tours: vec![t(0, 40_000, 0), t(40_000, 80_000, 1), t(80_000, 120_000, 2)],
+            noms: vec!["Julie".into(), "Marc".into()],
+            provisoire: true,
+        };
+        // Calcul complet : numéros changés, Marc coupé en deux (2 et 3).
+        let mut v = Voix { tours: vec![t(0, 40_000, 1), t(40_000, 65_000, 2), t(65_000, 80_000, 3), t(80_000, 120_000, 0)], ..Default::default() };
+        v.reporter_noms(&ancien, true);
+        assert_eq!(v.noms, vec!["".to_string(), "Julie".into(), "Marc".into(), "".into()]);
+        // Aucun nom : rien à reporter.
+        let mut w = v.clone();
+        w.reporter_noms(&Voix { tours: ancien.tours.clone(), ..Default::default() }, true);
+        // Sans `unique` : Marc passe aux deux moitiés.
+        let mut x = Voix { tours: v.tours.clone(), ..Default::default() };
+        x.reporter_noms(&ancien, false);
+        assert_eq!(x.noms, vec!["".to_string(), "Julie".into(), "Marc".into(), "Marc".into()]);
+        assert!(w.noms.is_empty());
+    }
+
+    #[test]
     fn meme_nom_meme_voix() {
         let mut v = Voix {
             tours: vec![Tour { debut_ms: 0, fin_ms: 1000, voix: 0 }, Tour { debut_ms: 1000, fin_ms: 2000, voix: 1 }, Tour { debut_ms: 2000, fin_ms: 3000, voix: 2 }],
             noms: vec!["Julie".into(), String::new(), " julie ".into()],
+            ..Default::default()
         };
         assert_eq!(v.voix_entre(2000, 3000), Some(0));
         assert_eq!(v.voix_entre(1000, 2000), Some(1));
