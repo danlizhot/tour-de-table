@@ -234,39 +234,19 @@ pub(crate) fn morceaux_du_tour(debut: u64, fin: u64) -> Vec<(u64, u64)> {
 }
 
 fn releve(audio: &[f32]) -> Result<Releve> {
-    use sherpa_onnx::{OfflineSpeakerDiarization, OfflineSpeakerDiarizationConfig, SpeakerEmbeddingExtractor, SpeakerEmbeddingExtractorConfig};
     if !modeles_installes() {
         bail!("Modèles de reconnaissance des voix absents");
     }
-    let empreinte = Some(crate::models::path(EMPREINTE).to_string_lossy().into_owned());
-    let mut c = OfflineSpeakerDiarizationConfig::default();
-    c.segmentation.pyannote.model = Some(crate::models::path(SEGMENTATION).to_string_lossy().into_owned());
-    c.segmentation.pyannote.window_shift_ratio = FENETRE;
-    c.segmentation.num_threads = fils();
-    c.embedding.model = empreinte.clone();
-    c.embedding.num_threads = fils();
-    c.clustering.num_clusters = -1;
-    c.clustering.threshold = SEUIL_TOURS;
-    let moteur = OfflineSpeakerDiarization::create(&c).context("Chargement des modèles de reconnaissance des voix")?;
     let debut = std::time::Instant::now();
-    let res = moteur.process(audio).context("Reconnaissance des voix")?;
-    let tours: Vec<(u64, u64, i32)> =
-        res.sort_by_start_time().iter().map(|s| ((s.start * 1000.0) as u64, (s.end * 1000.0) as u64, s.speaker)).collect();
+    let tours = tours_de_parole(audio)?;
     let duree_tours = debut.elapsed().as_secs_f32();
 
-    let ec = SpeakerEmbeddingExtractorConfig { model: empreinte, num_threads: fils(), ..Default::default() };
-    let extracteur = SpeakerEmbeddingExtractor::create(&ec).context("Chargement du modèle d'empreinte")?;
+    let mut empreintes = Empreintes::lancer(fils())?;
     let echantillon = |ms: u64| ((ms * crate::audio::SAMPLE_RATE as u64 / 1000) as usize).min(audio.len());
     let mut morceaux = Vec::new();
     for (i, &(d, f, _)) in tours.iter().enumerate() {
         for (md, mf) in morceaux_du_tour(d, f) {
-            let flux = extracteur.create_stream().context("Flux d'empreinte")?;
-            flux.accept_waveform(crate::audio::SAMPLE_RATE as i32, &audio[echantillon(md)..echantillon(mf)]);
-            flux.input_finished();
-            if !extracteur.is_ready(&flux) {
-                continue;
-            }
-            let Some(mut e) = extracteur.compute(&flux) else { continue };
+            let Some(mut e) = empreintes.calculer(&audio[echantillon(md)..echantillon(mf)])? else { continue };
             crate::regroupement::normaliser(&mut e);
             morceaux.push((md, mf, i, e));
         }
@@ -280,6 +260,98 @@ fn releve(audio: &[f32]) -> Result<Releve> {
         morceaux.len()
     );
     Ok(Releve { tours, morceaux })
+}
+
+// ─────────── Programme auxiliaire `tourdetable-voix` ───────────
+//
+// sherpa-onnx n'est pas lié à l'application : ses bibliothèques précompilées (GCC 11 sous Linux) font planter
+// whisper.cpp (`std::regex`, voir `voix/src/main.rs`). Il tourne dans un exécutable à part, livré à côté.
+
+fn auxiliaire(mode: &str) -> Result<Command> {
+    let programme = std::env::current_exe()?.with_file_name(format!("tourdetable-voix{}", std::env::consts::EXE_SUFFIX));
+    let mut cmd = Command::new(programme);
+    cmd.arg(mode).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW : programme console, sans fenêtre
+    }
+    Ok(cmd)
+}
+
+/// Tours de parole (début, fin, voix du moteur) par `tourdetable-voix tours`.
+fn tours_de_parole(audio: &[f32]) -> Result<Vec<(u64, u64, i32)>> {
+    use std::io::{Read, Write};
+    let mut enfant = auxiliaire("tours")?
+        .arg(crate::models::path(SEGMENTATION))
+        .arg(crate::models::path(EMPREINTE))
+        .arg(fils().to_string())
+        .arg(FENETRE.to_string())
+        .arg(SEUIL_TOURS.to_string())
+        .spawn()
+        .context("Lancement de la reconnaissance des voix (tourdetable-voix)")?;
+    // L'entrée reste ouverte jusqu'à la fin du calcul : si ce processus est tué, elle se ferme et
+    // l'auxiliaire s'arrête aussi.
+    let mut entree = enfant.stdin.take().expect("entrée redirigée");
+    let mut envoi = || -> std::io::Result<()> {
+        entree.write_all(&(audio.len() as u64).to_le_bytes())?;
+        for morceau in audio.chunks(1 << 16) {
+            entree.write_all(&morceau.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>())?;
+        }
+        entree.flush()
+    };
+    envoi().context("Envoi de l'audio à la reconnaissance des voix")?;
+    let mut json = String::new();
+    enfant.stdout.take().expect("sortie redirigée").read_to_string(&mut json)?;
+    let statut = enfant.wait()?;
+    drop(entree);
+    if !statut.success() {
+        bail!("La reconnaissance des voix a échoué ({statut})");
+    }
+    serde_json::from_str(json.trim()).context("Tours de parole")
+}
+
+/// Empreintes de morceaux d'audio par `tourdetable-voix empreintes`, une à la fois. Le programme s'arrête
+/// quand son entrée se ferme : à la fin, ou si ce processus est tué.
+pub(crate) struct Empreintes {
+    enfant: Child,
+    entree: Option<std::process::ChildStdin>,
+    sortie: BufReader<std::process::ChildStdout>,
+}
+
+impl Empreintes {
+    pub(crate) fn lancer(fils: i32) -> Result<Self> {
+        let mut enfant = auxiliaire("empreintes")?
+            .arg(crate::models::path(EMPREINTE))
+            .arg(fils.to_string())
+            .spawn()
+            .context("Lancement du calcul des empreintes de voix (tourdetable-voix)")?;
+        let entree = enfant.stdin.take();
+        let sortie = BufReader::new(enfant.stdout.take().expect("sortie redirigée"));
+        Ok(Self { enfant, entree, sortie })
+    }
+
+    /// Empreinte brute (non normalisée) d'un morceau ; `None` s'il est trop court.
+    pub(crate) fn calculer(&mut self, echantillons: &[f32]) -> Result<Option<Vec<f32>>> {
+        use std::io::Write;
+        let entree = self.entree.as_mut().expect("entrée ouverte");
+        let mut octets = Vec::with_capacity(4 + 4 * echantillons.len());
+        octets.extend((echantillons.len() as u32).to_le_bytes());
+        echantillons.iter().for_each(|x| octets.extend(x.to_le_bytes()));
+        entree.write_all(&octets).and_then(|_| entree.flush()).context("Envoi d'un morceau à tourdetable-voix")?;
+        let mut ligne = String::new();
+        if self.sortie.read_line(&mut ligne)? == 0 {
+            bail!("tourdetable-voix s'est arrêté");
+        }
+        serde_json::from_str(&ligne).context("Empreinte de voix")
+    }
+}
+
+impl Drop for Empreintes {
+    fn drop(&mut self) {
+        self.entree.take();
+        let _ = self.enfant.wait();
+    }
 }
 
 /// Regroupe les morceaux ; un tour sans morceau (trop court) prend la voix la plus fréquente des

@@ -4416,7 +4416,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "sherpa-onnx",
  "symphonia",
  "sysinfo",
  "ureq 3.5.0",
@@ -4436,6 +4435,16 @@ dependencies = [
  "llama-cpp-2",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "tourdetable-voix"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "sherpa-onnx",
 ]
 
 [[package]]
