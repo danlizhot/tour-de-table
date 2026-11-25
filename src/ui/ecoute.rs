@@ -91,7 +91,8 @@ impl TourDeTableApp {
     }
 
     /// Lecteur au bas de la fiche de la rencontre `idx` : −5 s, lecture, +5 s, heure, bandes des points et des voix.
-    pub(super) fn lecteur(&mut self, ui: &mut Ui, idx: usize) {
+    /// Rend l'heure où l'écoute vient de sauter (clic sur la ligne du temps, −5 s, +5 s), s'il y a lieu.
+    pub(super) fn lecteur(&mut self, ui: &mut Ui, idx: usize) -> Option<u64> {
         let p = palette(ui);
         let m = &self.meetings[idx];
         let fin = fin_ms(m).max(1);
@@ -175,6 +176,7 @@ impl TourDeTableApp {
                 None => self.ecouter_depuis(idx, 0),
             }
         }
+        saut
     }
 }
 

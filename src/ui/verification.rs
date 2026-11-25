@@ -47,6 +47,9 @@ pub struct Verification {
     pub(super) changer: bool,
     /// Heure d'un en-tête vers lequel faire défiler la transcription.
     pub(super) aller_a: Option<u64>,
+    /// Mode découpage d'une rencontre dont le nettoyage n'est pas terminé (il ne tourne pas pendant le découpage, et
+    /// un découpage validé le recommence) : transcription nettoyée sur place, calculée une fois.
+    pub(super) phrases: Option<Vec<crate::nettoyage::Phrase>>,
 }
 
 impl Verification {
@@ -65,6 +68,17 @@ impl Verification {
         self.lignes.push(Ligne { heure: clock(ms), f });
         self.trier();
         self.lignes.iter().position(|l| l.f.debut_ms == ms).unwrap_or(0)
+    }
+
+    /// Un point de l'ordre du jour ne commence qu'à un endroit : la frontière `k` qui vient de le recevoir retire les
+    /// autres du même point (« Hors point » peut revenir plusieurs fois). Rend le nouvel indice de `k`.
+    pub(super) fn garder_seul(&mut self, k: usize) -> usize {
+        let n = self.lignes.len();
+        let k = garder_seul(&mut self.lignes, k, |l| l.f.point);
+        if self.lignes.len() != n {
+            self.lecture = None;
+        }
+        k
     }
 
     /// Frontière déplacée ou ajoutée à la main : l'extrait suit la nouvelle heure.
@@ -163,7 +177,7 @@ impl TourDeTableApp {
         let duree_ms = index.blocs.iter().map(|b| blocs::ms(b.decalage + b.echantillons)).max().unwrap_or(0);
         let lignes = proposees.into_iter().map(|f| Ligne { heure: clock(f.debut_ms), f }).collect();
         self.verification =
-            Some(Verification { rencontre, nouvelle, lignes, audio, index, duree_ms, lecture: None, choix: None, choisi: None, changer: false, aller_a: None });
+            Some(Verification { rencontre, nouvelle, lignes, audio, index, duree_ms, lecture: None, choix: None, choisi: None, changer: false, aller_a: None, phrases: None });
     }
 
     /// Range l'audio par point dans un fil, d'après les frontières validées.
@@ -521,9 +535,23 @@ fn barre_frontiere(ui: &mut Ui, t: u64, duree_ms: u64, (fait, total): (u64, u64)
     .on_hover_text("Le trait marque l'heure de début du point");
 }
 
+/// Retire de `v` les éléments du même point que `v[k]` (sauf `v[k]`, et rien pour « Hors point ») ; rend le nouvel
+/// indice de `v[k]`.
+fn garder_seul<T>(v: &mut Vec<T>, k: usize, point: impl Fn(&T) -> Option<usize>) -> usize {
+    let Some(q) = point(&v[k]) else { return k };
+    let avant = v[..k].iter().filter(|l| point(l) == Some(q)).count();
+    let mut i = 0;
+    v.retain(|l| {
+        let garde = i == k || point(l) != Some(q);
+        i += 1;
+        garde
+    });
+    k - avant
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{heure_dans_l_ordre, lire_heure};
+    use super::{garder_seul, heure_dans_l_ordre, lire_heure};
 
     #[test]
     fn frontiere_rangee_entre_ses_voisins() {
@@ -548,5 +576,16 @@ mod tests {
         assert_eq!(lire_heure(" 12:34 "), Some(754_000));
         assert_eq!(lire_heure("45"), Some(45_000));
         assert_eq!(lire_heure("1 h"), None);
+    }
+
+    #[test]
+    fn un_point_ne_commence_qu_a_un_endroit() {
+        // Point 0 replacé au rang 3 : celui du rang 1 part ; « Hors point » (None) reste en double.
+        let mut v = vec![None, Some(0), Some(1), Some(0), None];
+        assert_eq!(garder_seul(&mut v, 3, |p| *p), 2);
+        assert_eq!(v, vec![None, Some(1), Some(0), None]);
+        let mut v = vec![None, Some(2), None];
+        assert_eq!(garder_seul(&mut v, 2, |p| *p), 2);
+        assert_eq!(v.len(), 3);
     }
 }
