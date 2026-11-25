@@ -53,15 +53,15 @@ québécoises citées. Reprends les montants et les chiffres exactement comme il
 sans faire de calcul ni en tirer de conclusion (dépassement, économie…). N'invente rien : si une information manque, écris « non précisé ». \
 Réponds uniquement avec le document, en Markdown.";
 
-const SANS_ORDRE_DU_JOUR: &str = "Tu es secrétaire de réunion. À partir de la transcription, produis :\n\
-## Résumé (5 phrases maximum)\n\
-## Points discutés (liste)\n\
-## Décisions\n\
-## Suites à donner\n\
-Regroupe les suites à donner par responsable : un titre de niveau 3 par personne ou organisation \
-(« ### Actions de [nom] »), puis une liste à puces d'actions courtes qui commencent par un verbe à l'infinitif, \
-avec l'échéance entre parenthèses si elle a été dite. Sans responsable connu : « ### Actions à préciser ». \
-Aucun tableau. « Salle » et « À distance » désignent des micros, jamais des personnes : ne les écris pas.\n";
+/// Rencontre sans ordre du jour : un simple résumé des discussions, comme le ferait un assistant en ligne à qui l'on
+/// demande « Résume la rencontre suivante ». L'ancienne consigne (résumé de cinq phrases, points discutés, décisions,
+/// suites à donner) donnait un document maigre et peu fidèle.
+const SANS_ORDRE_DU_JOUR: &str = "Résume la rencontre suivante à partir de sa transcription. Commence par un court \
+paragraphe qui dit de quoi la rencontre a traité. Puis rapporte les discussions dans l'ordre où elles se sont déroulées : \
+un intertitre de niveau 2 (« ## ») par sujet abordé, suivi d'un ou de quelques paragraphes sur ce qui a été présenté, \
+les points de vue exprimés, les questions soulevées et les conclusions, s'il y en a. Pas de rubrique « Décisions » ni \
+« Suites à donner », aucun tableau. Nomme une personne seulement quand son nom est dit dans la transcription. \
+« Salle » et « À distance » désignent des micros, jamais des personnes : ne les écris pas.\n";
 
 /// Forme commune à tous les points : celle des comptes rendus d'organisme.
 const FORME: &str = "Écris comme dans un compte rendu officiel : au présent, à la troisième personne, \
@@ -467,7 +467,9 @@ type Redacteur<'a> = dyn Modele + 'a;
 /// Comportement d'avant le découpage par point : toute la transcription d'un coup (condensée
 /// par tranches si elle est longue).
 fn en_un_appel(r: &Request, rediger: &mut Redacteur) -> Result<String> {
-    let transcript = if r.transcript.chars().count() > CHUNK_CHARS {
+    // Toute la transcription d'un coup quand elle est complète (méthode par défaut) : le modèle actuel la lit en entier,
+    // comme pour la répartition des sujets ; la condenser d'abord par tranches en perdait l'essentiel.
+    let transcript = if !transcription_complete() && r.transcript.chars().count() > CHUNK_CHARS {
         condense(r.transcript, r.agenda, "", rediger)?
     } else {
         r.transcript.to_string()
@@ -1566,7 +1568,7 @@ mod tests {
         assert_eq!(transcription.trim(), "[00:00] Hélène Brassard : Bonsoir tout le monde.");
 
         m.agenda = None;
-        assert!(demande_assistant(&m).starts_with("Tu es secrétaire de réunion. À partir de la transcription"));
+        assert!(demande_assistant(&m).starts_with("Résume la rencontre suivante"));
     }
 
     #[test]

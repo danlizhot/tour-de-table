@@ -180,6 +180,11 @@ pub fn compte_rendu(agenda_path: &str, source: &str, modele: Option<&str>) -> Re
         Some(m)
     } else if chemin.extension().is_some_and(|e| e == "json") {
         let mut m = crate::storage::charger_fichier(chemin)?;
+        // Essai : la rencontre comme si elle n'avait pas d'ordre du jour (résumé).
+        if std::env::var_os("TOURDETABLE_SANS_ODJ").is_some() {
+            m.agenda = None;
+            m.periodes.clear();
+        }
         // Essai : rencontre transcrite sans ordre du jour (`--transcrire`), découpée par point comme
         // à l'import. TOURDETABLE_DECOUPER=seul : découpage seulement, sans compte rendu.
         if let Some(mode) = std::env::var_os("TOURDETABLE_DECOUPER").filter(|_| m.agenda.is_none()) {
