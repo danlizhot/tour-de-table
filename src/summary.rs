@@ -8,7 +8,7 @@
 //! sans ordre du jour, on produit un résumé structuré.
 //!
 //! Forme du compte rendu, d'après de vrais comptes rendus d'organisme : en-tête (titre, date,
-//! heure), présences, puis chaque point de l'ordre du jour avec son numéro, rédigé au présent
+//! heure), présences (les noms donnés aux voix, sans le modèle), puis chaque point de l'ordre du jour avec son numéro, rédigé au présent
 //! et à la troisième personne (phrase d'introduction, puces, « Il est convenu… »), et la levée
 //! de la séance. Le tour de table donne un paragraphe par personne, le varia un sous-titre par
 //! sujet.
@@ -16,8 +16,7 @@
 //! Rencontre découpée par point : un appel par point, avec seulement sa transcription
 //! (nettoyée si elle existe), enregistré dans `resume.md` de son dossier pour reprendre un
 //! compte rendu interrompu ; puis un dernier appel court, à partir des points rédigés et des
-//! échanges hors point, pour les présences, les sujets hors ordre du jour et la levée de la
-//! séance. Toute la série se fait avec un seul chargement du modèle (`Session`).
+//! échanges hors point, pour les sujets hors ordre du jour et la levée de la séance. Toute la série se fait avec un seul chargement du modèle (`Session`).
 
 use std::io::{BufRead, BufReader, Lines, Write};
 use std::path::PathBuf;
@@ -81,14 +80,12 @@ Règles :\n\
 qui commencent par un verbe (« Poursuit… », « Prépare… »). Seulement des personnes, jamais un groupe (« les comptables »).\n\
 - Si la transcription s'arrête avant un point, écris « Point non abordé ou reporté. » : n'invente rien.\n\
 - « Point non abordé ou reporté. » remplace tout le contenu d'un point : ne l'ajoute jamais sous un point que tu as résumé.\n\
-- Présences : une liste à puces, prénom et nom, des personnes qui ont participé, jamais un groupe.\n\
 - L'ordre du jour sert uniquement à structurer : les faits (lieu, heure, montants, noms) viennent \
 de la transcription seulement. Ne recopie pas le lieu ou l'heure de cette rencontre pour la prochaine.\n\
 Structure du document :\n\
 # Compte rendu\n\
 **{titre}**\n\
 **Date** : {date}{heure}\n\
-## Présences\n\
 ## 1. … (chaque point de l'ordre du jour)\n\
 ## Levée de la séance\n\
 La levée de la séance est un court paragraphe qui résume l'esprit de la rencontre.\n";
@@ -172,10 +169,6 @@ rencontre, et les autres rencontres prévues d'ici là. Ne recopie pas le lieu o
 
 const ASSEMBLAGE: &str = "Tu es secrétaire de réunion. Les points de l'ordre du jour sont déjà rédigés (ci-dessous). \
 Rédige seulement les sections suivantes, en Markdown, dans cet ordre :\n\
-## Présences\n\
-Une liste à puces, prénom et nom, des personnes qui ont participé à la rencontre : celles qui prennent la parole \
-ou présentent leurs dossiers dans les points rédigés. N'ajoute pas une personne seulement mentionnée (absente, \
-partenaire externe), ni un groupe (« les comptables »).\n\
 ## Levée de la séance\n\
 Un paragraphe de 2 ou 3 phrases : la rencontre se termine, l'esprit des échanges et les principaux sujets qui \
 se poursuivront.\n\
@@ -190,7 +183,8 @@ const ASSEMBLAGE_PROCHAINE: &str = "## Prochaine rencontre\n\
 La date, l'heure et le lieu de la prochaine rencontre s'ils ont été annoncés ; sinon, omets cette section. \
 Ne recopie pas le lieu ou l'heure de cette rencontre-ci.\n";
 
-const PRESENCES_A_VERIFIER: &str = "*Liste établie d'après les personnes qui prennent la parole : à vérifier.*";
+/// Les présences viennent des voix nommées : qui n'a pas parlé n'y est pas.
+const PRESENCES_A_VERIFIER: &str = "*Liste établie d'après les voix nommées : une personne qui n'a pas pris la parole n'y figure pas.*";
 
 /// Forme d'un point, reconnue à son titre.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -331,6 +325,8 @@ pub struct Request<'a> {
     pub reprendre: bool,
     /// Termes du Lexique des paramètres (noms de l'organisation, sigles).
     pub lexique: Vec<String>,
+    /// Noms donnés aux voix qui ont parlé (`Voix::noms_entendus`) : la liste des présences, sans le modèle.
+    pub presences: Vec<String>,
 }
 
 /// Les sujets sont répartis avec toute la transcription, puis chaque point est rédigé d'après ses passages (méthode
@@ -404,6 +400,7 @@ fn rediger_compte_rendu(r: &Request, rediger: &mut Redacteur, complet: bool) -> 
     } else {
         par_point(r, rediger)?
     };
+    doc = avec_presences(&doc, &r.presences);
 
     // Garde-fou : un modèle local peut se tromper dans un calcul ou inventer un
     // chiffre. On signale tout nombre absent des sources.
@@ -413,6 +410,35 @@ fn rediger_compte_rendu(r: &Request, rediger: &mut Redacteur, complet: bool) -> 
         doc.push_str(&a_verifier(&suspects));
     }
     Ok(doc)
+}
+
+/// Section « Présences » faite des voix nommées, sous la date ; celle que le modèle aurait écrite malgré tout est
+/// retirée. Sans voix nommée, pas de section : le modèle devinait d'après les noms entendus, présents ou non.
+fn avec_presences(doc: &str, noms: &[String]) -> String {
+    let mut lignes: Vec<&str> = Vec::new();
+    let mut dans = false;
+    for l in doc.lines() {
+        if let Some(t) = l.trim_start().strip_prefix("## ") {
+            dans = t.trim().to_lowercase().starts_with("présences");
+        }
+        if !dans {
+            lignes.push(l);
+        }
+    }
+    let mut out = lignes.join("\n");
+    if !noms.is_empty() {
+        let liste: Vec<String> = noms.iter().map(|n| format!("- {n}")).collect();
+        let section = format!("## Présences\n\n{}\n\n{PRESENCES_A_VERIFIER}\n\n", liste.join("\n"));
+        let ou = if out.starts_with("## ") { Some(0) } else { out.find("\n## ").map(|i| i + 1) };
+        match ou {
+            Some(i) => out.insert_str(i, &section),
+            None => {
+                out.push_str("\n\n");
+                out.push_str(&section);
+            }
+        }
+    }
+    out.trim_end().to_string()
 }
 
 /// Appel au modèle, simulé dans les tests.
@@ -565,22 +591,6 @@ N'additionne pas de montants : un total n'apparaît que s'il est dit.\n";
 const NOMS_DU_LEXIQUE: &str = "Pour nommer une personne, prends son nom complet dans la liste « Noms et termes de \
 l'organisation » quand le prénom ou le nom entendu y correspond, même mal transcrit. N'invente aucun nom de famille. \
 Une personne de la liste qui n'est pas entendue dans la transcription n'était pas à la rencontre.\n";
-
-/// Présences dont le prénom ou le nom est entendu dans la transcription ; les autres sont retirées.
-fn presences_entendues(presences: &str, transcription: &str) -> String {
-    let bas = transcription.to_lowercase();
-    presences
-        .lines()
-        .filter(|l| {
-            let nom = l.trim().trim_start_matches(['-', '*', '•']).replace("**", "");
-            let mots: Vec<&str> = nom.split_whitespace().filter(|m| m.chars().count() > 2).collect();
-            // Marque de la reconnaissance des voix (« Voix 3 (Participant) ») : pas une personne.
-            let voix = nom.trim().strip_prefix("Voix ").is_some_and(|r| r.starts_with(|c: char| c.is_ascii_digit()));
-            !voix && (mots.is_empty() || mots.iter().any(|m| bas.contains(&m.to_lowercase())))
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
 
 /// Mot de bienvenue : rarement plus qu'une ouverture.
 const POINT_BIENVENUE: &str = "Forme : une ou deux phrases seulement (« La direction souhaite la bienvenue aux membres \
@@ -985,7 +995,7 @@ fn par_point_complet(r: &Request, rediger: &mut Redacteur) -> Result<String> {
     prompt.push_str(&sections);
     // Sans sujets hors ordre du jour : chaque point a déjà cherché dans toute la transcription.
     let fin = sections_de_fin(&generate(rediger, &prompt, JETONS_ASSEMBLAGE)?);
-    let fin = Fin { sujets: String::new(), presences: presences_entendues(&fin.presences, r.transcript), ..fin };
+    let fin = Fin { sujets: String::new(), ..fin };
     Ok(document(r, &sections, point_prochaine, &fin))
 }
 
@@ -1035,10 +1045,6 @@ fn document(r: &Request, sections: &str, point_prochaine: bool, fin: &Fin) -> St
     let (date, heure) = date_et_heure(r);
     let titre = r.title.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut doc = format!("# Compte rendu\n\n**{titre}**\n\n**Date** : {date}{}\n\n", mention_heure(&heure));
-    let presences = liste_des_presences(&fin.presences);
-    if !presences.is_empty() {
-        doc.push_str(&format!("## Présences\n\n{presences}\n\n{PRESENCES_A_VERIFIER}\n\n"));
-    }
     doc.push_str(sections);
     doc.push_str("\n\n");
     if !fin.sujets.is_empty() {
@@ -1101,50 +1107,9 @@ fn empreinte(texte: &str) -> String {
 /// Sections rédigées à l'étape 2.
 #[derive(Debug, Default, PartialEq)]
 struct Fin {
-    presences: String,
     sujets: String,
     prochaine: String,
     levee: String,
-}
-
-/// Présences en liste à puces, quelle que soit la forme rendue (liste, noms séparés par des
-/// virgules) : sans « Mme » ni « M. », sans groupe (« les comptables »), sans doublon.
-fn liste_des_presences(texte: &str) -> String {
-    let mut noms: Vec<String> = Vec::new();
-    // « Marco (Voix 1, 6, 9) » : la parenthèse est retirée avant de couper aux virgules.
-    let texte: String = texte.lines().map(sans_voix_entre_parentheses).collect::<Vec<_>>().join("\n");
-    for brut in texte.lines().flat_map(|l| l.split([',', ';'])) {
-        let nom = brut.trim().trim_start_matches(['-', '*', '•']).trim().trim_end_matches('.').replace("**", "");
-        let nom = nom.strip_prefix("Mme ").or_else(|| nom.strip_prefix("M. ")).unwrap_or(&nom).trim().to_string();
-        // « Annie (Annie) » : la parenthèse répète le nom.
-        let nom = match nom.split_once(" (") {
-            Some((avant, apres)) if avant.contains(apres.trim_end_matches(')').trim()) => avant.trim().to_string(),
-            _ => nom,
-        };
-        let bas = nom.to_lowercase();
-        let groupe = ["les ", "des ", "l'", "l’", "et ", "participant"].iter().any(|p| bas.starts_with(p));
-        if nom.is_empty() || groupe || nom.starts_with('*') || nom.split_whitespace().count() > 4 || noms.contains(&nom) {
-            continue;
-        }
-        noms.push(nom);
-    }
-    noms.iter().map(|n| format!("- {n}")).collect::<Vec<_>>().join("\n")
-}
-
-/// Parenthèse de marques de voix (« (Voix 1, 6) ») ou de remarque (« (prénom uniquement, nom non précisé) ») retirée.
-fn sans_voix_entre_parentheses(ligne: &str) -> String {
-    let mut out = ligne.to_string();
-    let mut depuis = 0;
-    while let Some(debut) = out[depuis..].find(" (").map(|d| depuis + d) {
-        let fin = out[debut..].find(')').map_or(out.len(), |f| debut + f + 1);
-        let dedans = out[debut + 2..fin].trim_end_matches(')').to_lowercase();
-        if dedans.starts_with("voix") || dedans.contains(',') || dedans.contains("nom ") || dedans.contains("prénom") {
-            out.replace_range(debut..fin, "");
-        } else {
-            depuis = fin;
-        }
-    }
-    out
 }
 
 /// Corps des sections de l'étape 2 ; toute autre section (point répété malgré la consigne…)
@@ -1174,11 +1139,10 @@ fn sections_de_fin(md: &str) -> Fin {
         }
     }
     // Section « omise » ou vide malgré la consigne : « Cette section est omise car… », « Aucun. »
-    let [presences, sujets, prochaine, levee] = lignes.map(|l| l.join("\n").trim().to_string()).map(|t| {
+    let [_presences, sujets, prochaine, levee] = lignes.map(|l| l.join("\n").trim().to_string()).map(|t| {
         let bas = t.to_lowercase();
         if bas.contains("omise") || bas.starts_with("aucun") || bas.starts_with("(aucun") { String::new() } else { t }
     });
-    fin.presences = presences;
     fin.sujets = sujets;
     fin.prochaine = prochaine;
     fin.levee = sans_heure_de_fin(&levee);
@@ -1755,9 +1719,6 @@ mod tests {
         assert_eq!(phrases("L'ordre du jour est adopté. La suite porte sur le budget, les", 3), "L'ordre du jour est adopté.");
         assert_eq!(phrases("Un. Deux. Trois. Quatre.", 3), "Un. Deux. Trois.");
         assert_eq!(phrases("Montant de 1.5 M$ adopté.", 3), "Montant de 1.5 M$ adopté.");
-        assert_eq!(liste_des_presences("- Annie (Annie)\n- Daniel Dufour (Daniel)\n- Gilles Brès"), "- Annie\n- Daniel Dufour\n- Gilles Brès");
-        assert_eq!(liste_des_presences("- Marco (Voix 1, 6, 9)\n- Annie (Voix 4)"), "- Marco\n- Annie");
-        assert_eq!(liste_des_presences("- Annie (prénom uniquement, nom non précisé)\n- Daniel (direction)"), "- Annie\n- Daniel (direction)");
         assert_eq!(sans_heure_de_fin("La rencontre se termine à 16 h 00 après le budget. Prochaine à 9 h."), "La rencontre se termine après le budget. Prochaine à 9 h.");
         assert_eq!(sans_heure_de_fin("Elle prend fin vers 18 h, à la salle 222."), "Elle prend fin, à la salle 222.");
     }
@@ -1766,7 +1727,6 @@ mod tests {
     fn titre_recopie_retire() {
         assert_eq!(sans_titre_recopie("6. Suivi des tâches\n\nLa direction…", "6. Suivi tâches à effectuer").trim(), "La direction…");
         assert_eq!(sans_titre_recopie("6 membres présents.\nSuite", "6. Suivi"), "6 membres présents.\nSuite");
-        assert_eq!(presences_entendues("- Voix 1 (Direction)\n- Daniel Dufour", "Daniel parle"), "- Daniel Dufour");
     }
 
     #[test]
@@ -1804,6 +1764,7 @@ mod tests {
             hors_point: hors_point.to_string(),
             reprendre,
             lexique: Vec::new(),
+            presences: vec!["Julie Roy".into(), "Marc Côté".into()],
         }
     }
 
@@ -1955,8 +1916,13 @@ mod tests {
 
     #[test]
     fn presences_et_sections_vides() {
-        let texte = "Anna, Marc Tremblay, les comptables, Mme Bérubé, Anna.\n- **Sophie Gagnon**\n- Les directeurs";
-        assert_eq!(liste_des_presences(texte), "- Anna\n- Marc Tremblay\n- Bérubé\n- Sophie Gagnon");
+        let doc = "# Compte rendu\n\n**Titre**\n\n## Présences\n- Personne entendue\n\n## 1. Ouverture\nTexte.";
+        let noms = vec!["Julie Roy".to_string(), "Marc Côté".to_string()];
+        assert_eq!(
+            avec_presences(doc, &noms),
+            format!("# Compte rendu\n\n**Titre**\n\n## Présences\n\n- Julie Roy\n- Marc Côté\n\n{PRESENCES_A_VERIFIER}\n\n## 1. Ouverture\nTexte.")
+        );
+        assert_eq!(avec_presences(doc, &[]), "# Compte rendu\n\n**Titre**\n\n## 1. Ouverture\nTexte.");
         let fin = sections_de_fin("## Sujets hors ordre du jour\nCette section est omise car rien.\n## Levée de la séance\nFin.");
         assert_eq!((fin.sujets.as_str(), fin.levee.as_str()), ("", "Fin."));
         assert_eq!(date_et_heure_de("Page 1 sur 1\n\nRENCONTRE\n16  AVR IL     2026, 10 h30").0.as_deref(), Some("16 avril 2026"));
@@ -2002,7 +1968,7 @@ mod tests {
         assert_eq!(Forme::du_point("11. Prochaine rencontre"), Forme::Prochaine);
         assert_eq!(Forme::du_point("8. Télétravail"), Forme::Ordinaire);
         let fin = sections_de_fin("Préambule\n## Présences\n- A\n## Autre\nB\n## Levée de la séance\nC");
-        assert_eq!(fin, Fin { presences: "- A".into(), levee: "C".into(), ..Fin::default() });
+        assert_eq!(fin, Fin { levee: "C".into(), ..Fin::default() });
         assert_eq!(sections_de_fin("Rien à signaler."), Fin::default());
         assert_eq!(tidy_answer("Il est résolu de adopter le budget."), "Il est résolu d'adopter le budget.");
         assert_eq!(tidy_answer("Il est résolu de reporter."), "Il est résolu de reporter.");

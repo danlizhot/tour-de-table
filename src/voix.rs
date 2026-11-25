@@ -169,6 +169,19 @@ impl Voix {
         self.noms.get(voix as usize).map(|n| n.trim().to_string()).unwrap_or_default()
     }
 
+    /// Noms donnés aux voix qui ont parlé, dans l'ordre où elles prennent la parole la première fois, sans doublon
+    /// (deux voix d'une même personne) : les présences du compte rendu.
+    pub fn noms_entendus(&self) -> Vec<String> {
+        let mut noms: Vec<String> = Vec::new();
+        for t in &self.tours {
+            let nom = self.nom_donne(t.voix);
+            if !nom.is_empty() && t.fin_ms > t.debut_ms && !noms.contains(&nom) {
+                noms.push(nom);
+            }
+        }
+        noms
+    }
+
     /// Temps de parole de chaque voix, en millisecondes.
     pub fn parole(&self) -> Vec<u64> {
         let mut p = vec![0; self.nombre()];
@@ -470,6 +483,19 @@ mod tests {
         assert_eq!(v.voix_entre(18_500, 19_000), Some(1));
         assert_eq!(v.nom(0), "Voix 1");
         assert_eq!(v.nom(1), "Julie");
+    }
+
+    #[test]
+    fn presences_des_voix_nommees() {
+        let t = |d: u64, f: u64, voix: u16| Tour { debut_ms: d, fin_ms: f, voix };
+        // Marc parle en premier ; Julie a deux voix ; la voix 3 n'a pas de nom.
+        let v = Voix {
+            tours: vec![t(0, 5_000, 1), t(5_000, 9_000, 0), t(9_000, 12_000, 3), t(12_000, 20_000, 2)],
+            noms: vec!["Julie Roy".into(), " Marc Côté ".into(), "Julie Roy".into(), String::new()],
+            provisoire: false,
+        };
+        assert_eq!(v.noms_entendus(), vec!["Marc Côté".to_string(), "Julie Roy".into()]);
+        assert!(Voix { tours: vec![t(0, 5_000, 0)], ..Default::default() }.noms_entendus().is_empty());
     }
 
     #[test]

@@ -255,6 +255,7 @@ pub fn compte_rendu(agenda_path: &str, source: &str, modele: Option<&str>) -> Re
         })
         .termes()
         .to_vec(),
+        presences: rencontre.as_ref().and_then(|m| m.voix.as_ref()).map(crate::voix::Voix::noms_entendus).unwrap_or_default(),
     };
     let cr = crate::summary::compte_rendu(&req)?;
     println!("{cr}");
