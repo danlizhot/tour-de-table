@@ -144,7 +144,7 @@ jobs:
         shell: pwsh
         run: |
           $objdump = Get-ChildItem "C:\Program Files\LLVM\bin\llvm-objdump.exe", "${env:ProgramFiles}\LLVM\bin\llvm-objdump.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          foreach ($exe in "tourdetable.exe", "tourdetable-redaction.exe") {
+          foreach ($exe in "tourdetable.exe", "tourdetable-redaction.exe", "tourdetable-voix.exe") {
             $dlls = & $objdump.FullName -p "target/release/$exe" | Select-String "DLL Name" | ForEach-Object { ($_ -split ":")[1].Trim() }
             Write-Host "DLL importées par $exe :"; $dlls | ForEach-Object { Write-Host "  $_" }
             $bad = $dlls | Where-Object { $_ -match '^(vcruntime|msvcp|concrt|vcomp|api-ms-win-crt)' }
@@ -158,6 +158,7 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/tourdetable.exe dist/TourDeTable.exe
           Copy-Item target/release/tourdetable-redaction.exe dist/
+          Copy-Item target/release/tourdetable-voix.exe dist/
           # Chargeur Vulkan (Khronos, Apache 2.0) livré à côté : sans lui, l'application ne
           # démarrerait pas sur un poste sans pilote Vulkan (machine virtuelle).
           $vk = @("$env:VULKAN_SDK\Bin\vulkan-1.dll", "$env:SystemRoot\System32\vulkan-1.dll") | Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -177,6 +178,7 @@ jobs:
           New-Item -ItemType Directory -Force msix/Assets | Out-Null
           Copy-Item target/release/tourdetable.exe msix/TourDeTable.exe
           Copy-Item target/release/tourdetable-redaction.exe msix/
+          Copy-Item target/release/tourdetable-voix.exe msix/
           Copy-Item dist/vulkan-1.dll msix/
           Copy-Item docs/guide/guide-utilisation.pdf msix/
           Copy-Item packaging/windows/Assets/* msix/Assets/
@@ -193,7 +195,7 @@ jobs:
         run: |
           APP="dist/Tour de table.app/Contents"
           mkdir -p "$APP/MacOS" "$APP/Resources"
-          cp target/release/tourdetable target/release/tourdetable-redaction "$APP/MacOS/"
+          cp target/release/tourdetable target/release/tourdetable-redaction target/release/tourdetable-voix "$APP/MacOS/"
           cp packaging/macos/Info.plist "$APP/"
           cp docs/guide/guide-utilisation.pdf "$APP/Resources/"
           mkdir tourdetable.iconset
@@ -209,7 +211,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist
-          cp target/release/tourdetable target/release/tourdetable-redaction packaging/linux/tourdetable.desktop assets/icon-256.png README.md docs/guide/guide-utilisation.pdf dist/
+          cp target/release/tourdetable target/release/tourdetable-redaction target/release/tourdetable-voix packaging/linux/tourdetable.desktop assets/icon-256.png README.md docs/guide/guide-utilisation.pdf dist/
           tar -czf ${{ matrix.artifact }}.tar.gz -C dist .
 
       # Les exécutables d'une PR provenant d'un fork (code d'un tiers non examiné) ne sont jamais

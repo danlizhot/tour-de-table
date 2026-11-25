@@ -1,0 +1,13 @@
+[package]
+name = "tourdetable-voix"
+description = "Reconnaissance des voix de Tour de table (sherpa-onnx)"
+license = "MIT"
+version = "0.4.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+# onnxruntime lié statiquement ; sous Windows, version « static-MT ».
+sherpa-onnx = "2.0.1"

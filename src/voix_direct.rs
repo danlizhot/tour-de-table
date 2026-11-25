@@ -23,7 +23,7 @@ use crossbeam_channel::{Receiver, Sender};
 
 use crate::audio::SAMPLE_RATE;
 use crate::audio::dsp::Utterance;
-use crate::voix::{EMPREINTE, Tour, Voix, modeles_installes, morceaux_du_tour};
+use crate::voix::{Tour, Voix, modeles_installes, morceaux_du_tour};
 
 /// Seuil du regroupement en direct : un peu plus bas que celui du calcul complet (0,36), une voix coupée en
 /// deux en cours de rencontre dérange plus que deux voix réunies pour quelques minutes. Simulation du
@@ -45,16 +45,11 @@ fn ms(echantillons: u64) -> u64 {
 
 /// Lit les énoncés sur l'entrée standard jusqu'à sa fermeture, et écrit les voix provisoires.
 pub fn commande() -> Result<()> {
-    use sherpa_onnx::{SpeakerEmbeddingExtractor, SpeakerEmbeddingExtractorConfig};
     if !modeles_installes() {
         bail!("Modèles de reconnaissance des voix absents");
     }
-    let ec = SpeakerEmbeddingExtractorConfig {
-        model: Some(crate::models::path(EMPREINTE).to_string_lossy().into_owned()),
-        num_threads: 1,
-        ..Default::default()
-    };
-    let extracteur = SpeakerEmbeddingExtractor::create(&ec).context("Chargement du modèle d'empreinte")?;
+    // sherpa-onnx tourne dans le programme auxiliaire (voir `voix::Empreintes`), sur un seul fil.
+    let mut empreintes = crate::voix::Empreintes::lancer(1)?;
     let mut entree = BufReader::new(std::io::stdin().lock());
     let mut sortie = std::io::stdout().lock();
     let mut suivi = Suivi::default();
@@ -76,13 +71,7 @@ pub fn commande() -> Result<()> {
         for (d, f) in morceaux_du_tour(debut_ms, fin_ms) {
             let a = ((d - debut_ms) * SAMPLE_RATE as u64 / 1000) as usize;
             let b = (((f - debut_ms) * SAMPLE_RATE as u64 / 1000) as usize).min(echantillons.len());
-            let Some(flux) = extracteur.create_stream() else { continue };
-            flux.accept_waveform(SAMPLE_RATE as i32, &echantillons[a.min(b)..b]);
-            flux.input_finished();
-            if !extracteur.is_ready(&flux) {
-                continue;
-            }
-            let Some(mut e) = extracteur.compute(&flux) else { continue };
+            let Some(mut e) = empreintes.calculer(&echantillons[a.min(b)..b])? else { continue };
             crate::regroupement::normaliser(&mut e);
             suivi.ajouter(d, f, e);
         }

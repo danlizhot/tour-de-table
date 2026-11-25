@@ -1,7 +1,7 @@
 # Tour de table — notes pour Claude
 
 Transcription locale de rencontres en français québécois : un exécutable Rust (egui + whisper.cpp)
-et un programme auxiliaire de rédaction (llama.cpp). Voir `README.md` pour le détail fonctionnel.
+et deux programmes auxiliaires : rédaction (llama.cpp) et reconnaissance des voix (sherpa-onnx). Voir `README.md` pour le détail fonctionnel.
 
 ## Principe directeur
 
@@ -57,10 +57,11 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   réel avec un 8B). Enchaînement : transcription → nettoyage →
   compte rendu. `Meeting::segments` (brut) n'est jamais modifié ; résultat dans
   `Meeting::nettoyage`. File d'attente et exclusion avec l'enregistrement dans `ui/nettoyage.rs`.
-* `voix.rs` : reconnaissance des voix (sherpa-onnx, onnxruntime lié statiquement) après la transcription, dans un
-  processus à part (`tourdetable --voix <dossier>`, réponse JSON) qu'on peut tuer : la bibliothèque n'offre ni
-  avancement ni arrêt. sherpa-onnx ne donne que les tours de parole ; les empreintes de morceaux de 4 s sont
-  regroupées par `regroupement.rs` (liaison moyenne, seuil fixe 0,36 : le regroupement de sherpa-onnx basculait
+* `voix.rs` : reconnaissance des voix après la transcription, dans un processus à part (`tourdetable --voix
+  <dossier>`, réponse JSON) qu'on peut tuer : la bibliothèque n'offre ni avancement ni arrêt. sherpa-onnx lui-même
+  tourne dans le programme auxiliaire `tourdetable-voix` (voir plus bas), comme pour les voix en direct.
+  sherpa-onnx ne donne que les tours de parole ; les empreintes de morceaux de 4 s sont regroupées par
+  `regroupement.rs` (liaison moyenne, seuil fixe 0,36 : le regroupement de sherpa-onnx basculait
   pour un arrondi de l'audio). Voix de moins de 30 s écartées ; deux voix de même nom n'en font qu'une. Environ un
   cinquième de la durée de la rencontre. `Meeting::voix` (tours de parole, noms) ; les paragraphes affichés et
   exportés sont coupés par voix (`storage::Decoupe::ParVoix`), mais le texte lu par le compte rendu ne change
@@ -102,6 +103,18 @@ sur tous les postes) copie consignes, ordre du jour et transcription à coller d
 
 **Ne JAMAIS ajouter `llama-cpp-2` (ni rien qui lie llama.cpp/ggml) aux dépendances du crate
 principal.** Toute fonction qui a besoin d'un modèle de langue passe par ce programme.
+
+### Crate auxiliaire `tourdetable-voix` (`voix/`)
+
+Les bibliothèques précompilées de sherpa-onnx et d'onnxruntime (GCC 11 sous Linux) contiennent leurs
+propres copies des modèles C++ de la bibliothèque standard. Liées avec whisper.cpp (GCC du poste), l'éditeur
+de liens n'en gardait qu'une : `std::regex` mélangé entre deux versions, « free(): invalid pointer » à la
+première transcription sous Linux (a199ef2, corrigé le 24 novembre 2026). D'où un exécutable à part, livré à côté de
+`tourdetable`, simple couche sur sherpa-onnx : `tours` (pyannote sur l'audio complet, reçu par l'entrée standard,
+gardée ouverte pendant le calcul : sa fermeture l'arrête) et `empreintes` (une empreinte JSON par morceau reçu),
+qu'emploient `voix::commande` et `voix_direct::commande` (`voix::Empreintes`). Réglages, découpage en morceaux et
+regroupement restent dans l'application. **Ne JAMAIS ajouter `sherpa-onnx` (ni onnxruntime) aux dépendances du
+crate principal.**
 
 ## Commandes
 

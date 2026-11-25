@@ -410,7 +410,7 @@ src/
   quebec.rs      invite, typographie, lexique, filtre d'hallucinations
   nettoyage.rs   nettoyage de la transcription, par règles (data/nettoyage.txt)
   storage.rs     rencontres (JSON) et exports MD/TXT/SRT
-  voix.rs        reconnaissance des voix (sherpa-onnx), processus tourdetable --voix
+  voix.rs        reconnaissance des voix, processus tourdetable --voix (calcul par tourdetable-voix)
   regroupement.rs regroupement des empreintes de voix (liaison moyenne, seuil fixe)
   ui/voix.rs     file de la reconnaissance des voix, « Nommer les voix »
   models.rs      modèles (Whisper, rédaction), téléchargement et vérification
@@ -423,6 +423,7 @@ src/
   ui/ecoute.rs   écoute dans la fiche : barre de lecture, arrêt au changement de rencontre
   ui/verification.rs  vérification des frontières proposées
 redaction/       programme auxiliaire de rédaction (llama.cpp), séparé à cause de ggml
+voix/            programme auxiliaire de reconnaissance des voix (sherpa-onnx), séparé à cause de std::regex
   cli.rs         commandes --transcrire et --compte-rendu
 ```
 
