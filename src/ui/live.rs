@@ -153,6 +153,9 @@ impl TourDeTableApp {
 
     pub(super) fn finalize(&mut self) {
         self.finishing = false;
+        // Fin d'un import : le calcul complet des voix prend le relais.
+        self.voix_direct = None;
+        self.voix_direct_import = None;
         let poursuivie = std::mem::take(&mut self.poursuivie);
         if let Some(m) = self.live.take() {
             if m.segments.is_empty() && !poursuivie {
@@ -502,8 +505,9 @@ impl TourDeTableApp {
                         ui.label(RichText::new(text).weak());
                     });
                 } else {
-                    // Voix en direct dans une carte à droite quand l'écran est assez large, comme dans la fiche.
-                    if m.voix.is_some() && ui.available_width() >= 900.0 {
+                    // Voix en direct dans une carte à droite quand le volet est assez large (aussi côte à côte avec
+                    // l'ordre du jour sur un écran de 1920 px), comme dans la fiche.
+                    if m.voix.is_some() && ui.available_width() >= 760.0 {
                         egui::Panel::right("volet-voix-direct")
                             .exact_size(300.0)
                             .resizable(false)
