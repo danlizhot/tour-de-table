@@ -51,6 +51,8 @@ pub(super) struct EtatEcoute<'a> {
     /// La lecture avance (pas en pause) : la transcription suit le paragraphe entendu.
     pub suivre: bool,
     pub aller_a: Option<u64>,
+    /// Heure où l'écoute vient de sauter (barre du lecteur, −5 s, +5 s) : son paragraphe vient au centre.
+    pub saut: Option<u64>,
     /// Plages (ms) dont les paragraphes sont surlignés : le point choisi dans le compte rendu.
     pub surligne: &'a [(u64, u64)],
 }
@@ -166,8 +168,11 @@ fn afficher_transcription(ui: &mut Ui, m: &Meeting, phrases: Vec<Phrase>, follow
             if cible == Some(k) {
                 reperes[0].scroll_to_me(Some(egui::Align::TOP));
             }
-            // Le paragraphe entendu change pendant la lecture : la transcription le suit.
-            if joue {
+            if ecoute.saut.is_some_and(|ms| debut_ms <= ms && ms < fin_suivante.max(fin_ms)) {
+                ui.data_mut(|d| d.insert_temp(egui::Id::unique(("suivi", &m.id)), debut_ms));
+                reperes[0].scroll_to_me(Some(egui::Align::Center));
+            } else if joue {
+                // Le paragraphe entendu change pendant la lecture : la transcription le suit.
                 let id = egui::Id::unique(("suivi", &m.id));
                 if ui.data(|d| d.get_temp::<u64>(id)) != Some(debut_ms) {
                     ui.data_mut(|d| d.insert_temp(id, debut_ms));
