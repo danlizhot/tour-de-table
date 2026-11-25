@@ -46,6 +46,21 @@ impl TourDeTableApp {
         }
     }
 
+    /// Import en cours : les voix en direct démarrent avec ses premiers énoncés, une fois par import (rencontre
+    /// sans voix seulement : une reprise qui a déjà ses voix provisoires les garde jusqu'au calcul complet).
+    pub(super) fn voix_direct_pour_import(&mut self) {
+        if self.import_job.is_none() || self.recorder.is_some() {
+            return;
+        }
+        let Some(m) = &self.live else { return };
+        if self.voix_direct_import.as_deref() == Some(m.id.as_str()) {
+            return;
+        }
+        self.voix_direct_import = Some(m.id.clone());
+        let oui = m.voix.is_none();
+        self.lancer_voix_direct(oui);
+    }
+
     /// Appelé à chaque image depuis `pump` : voix provisoires de la rencontre en cours, noms gardés.
     pub(super) fn recevoir_voix_direct(&mut self) {
         let Some(d) = &self.voix_direct else { return };

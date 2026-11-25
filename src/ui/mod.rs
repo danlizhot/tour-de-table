@@ -133,8 +133,10 @@ pub struct TourDeTableApp {
     /// les noms des voix sont ouverts.
     voix_job: Option<crate::voix::Calcul>,
     voix_en_attente: Vec<String>,
-    /// Voix en direct pendant l'enregistrement (`voix_direct`).
+    /// Voix en direct pendant l'enregistrement ou l'import (`voix_direct`).
     voix_direct: Option<crate::voix_direct::Direct>,
+    /// Rencontre importée pour laquelle les voix en direct ont été lancées (une seule fois par import).
+    voix_direct_import: Option<String>,
     noms_des_voix: Option<String>,
     /// Archivages en cours (compression dans un fil) : la rencontre revient dans l'historique si l'archivage échoue.
     archivage: (Sender<FinArchivage>, Receiver<FinArchivage>),
@@ -199,6 +201,7 @@ impl TourDeTableApp {
             voix_job: None,
             voix_en_attente: Vec::new(),
             voix_direct: None,
+            voix_direct_import: None,
             noms_des_voix: None,
             archivage: crossbeam_channel::unbounded(),
             archivages_en_cours: 0,
@@ -460,6 +463,8 @@ impl TourDeTableApp {
                     self.finishing = true;
                 }
                 Err(e) => {
+                    self.voix_direct = None;
+                    self.voix_direct_import = None;
                     if let Some(m) = self.live.take() {
                         let _ = std::fs::remove_dir_all(m.dir());
                     }
@@ -469,7 +474,8 @@ impl TourDeTableApp {
             }
         }
         while let Ok(u) = self.utt_rx.try_recv() {
-            if self.recorder.is_some()
+            self.voix_direct_pour_import();
+            if (self.recorder.is_some() || self.import_job.is_some())
                 && let Some(d) = &self.voix_direct
             {
                 d.envoyer(&u);
