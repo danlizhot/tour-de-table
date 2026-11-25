@@ -163,7 +163,7 @@ saisir à la main.
   transcription et de l'ordre du jour est signalé dans un encadré « À vérifier ». Exemple réel
   avec Qwen2.5 7B : « budget dépassé de 200 $ », alors que 2 300 $ avaient été dépensés sur
   2 500 $. Le compte rendu reste un **brouillon à relire** avant diffusion.
-* Sans ordre du jour, Tour de table produit un résumé structuré.
+* Sans ordre du jour, Tour de table produit un résumé des discussions, sujet par sujet.
 * **Compte rendu par point** : quand la rencontre a un ordre du jour, le modèle lit d'abord toute la
   transcription et range chaque sujet discuté sous un seul point (« 4.1 | sujet »), pour qu'un sujet
   ne soit pas rédigé deux fois. Chaque point est ensuite rédigé d'après ses sujets et les seuls
@@ -171,8 +171,8 @@ saisir à la main.
   point 3 sur 8 » compte les points terminés). Un point qui a des sous-points n'est qu'un intertitre ; une adoption ou la fin de
   la rencontre tient en une ou deux phrases. Un dernier appel ajoute la levée de la
   séance. Durée mesurée : de 0,7 à 1 fois la durée de la rencontre.
-* **Rencontres sans ordre du jour** : la transcription est rédigée d'un coup, condensée d'abord par
-  tranches au-delà d'environ 45 min.
+* **Rencontres sans ordre du jour** : la transcription complète est lue d'un coup, puis résumée dans
+  l'ordre de la rencontre (un intertitre par sujet, sans rubrique de décisions ni de suites à donner).
 * Exporté dans `compte-rendu.docx` (Word : Calibri, titres en gras, puces, prêt à relire et à
   diffuser) et `compte-rendu.md`, et inclus dans `transcription.md`.
 
