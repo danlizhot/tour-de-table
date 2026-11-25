@@ -58,8 +58,7 @@ reste sur le processeur.
 
 Rien d'autre à installer : au premier démarrage, Tour de table télécharge tout seul, une seule
 fois, ses modèles de reconnaissance vocale (574 Mo), de reconnaissance des voix (46 Mo) et de
-rédaction (5,7 Go, ou 11,7 Go sur un poste de 24 Go de mémoire et plus, pour un modèle plus
-puissant).
+rédaction (11,7 Go).
 
 ## Fonctionnalités (jusqu'à 20, ≤ 200 caractères chacune)
 
@@ -184,7 +183,7 @@ Version 0.1.1
 
 * Windows 10 (version 1809) ou plus récent, 64 bits
 * Mémoire : 16 Go minimum
-* Espace disque : 8 Go (6,3 Go de modèles téléchargés au premier démarrage)
+* Espace disque : 15 Go (12,3 Go de modèles téléchargés au premier démarrage)
 * Connexion Internet au premier démarrage seulement
 * Micro
 

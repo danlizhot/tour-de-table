@@ -60,6 +60,11 @@ struct Requete {
     /// Couches du modèle sur la puce graphique (si compilé avec Vulkan ou Metal).
     #[serde(default)]
     gpu: bool,
+    /// Modèle lu dans son fichier (mmap), sans réorganiser ses poids pour le processeur (« repack ») : le système
+    /// garde en mémoire les parties utilisées et peut libérer les autres. Sinon, le modèle est copié en mémoire,
+    /// poids réorganisés : plus rapide, mais tout le modèle reste en mémoire.
+    #[serde(default)]
+    mmap: bool,
 }
 
 fn defaut_contexte() -> u32 {
@@ -102,7 +107,7 @@ fn emettre(valeur: serde_json::Value) {
 /// Modèle chargé, gardé pour les requêtes suivantes qui le demandent.
 struct Charge {
     backend: LlamaBackend,
-    modele: Option<(String, bool, LlamaModel)>,
+    modele: Option<(String, bool, bool, LlamaModel)>,
     /// Au plus [`PREFIXES`] : le préfixe de base (ordre du jour et transcription) et un préfixe qui le prolonge
     /// (consigne commune à une série de questions), pour revenir au premier sans tout relire.
     prefixes: Vec<Prefixe>,
@@ -148,15 +153,18 @@ fn charger(charge: &mut Option<Charge>, r: &Requete) -> Result<()> {
     }
     let Charge { backend, modele: garde, prefixes: garde_prefixes } = charge.as_mut().expect("initialisé");
     regler_lot_de_lecture(r.gpu);
-    if garde.as_ref().is_none_or(|(chemin, gpu, _)| *chemin != r.modele || *gpu != r.gpu) {
+    if garde.as_ref().is_none_or(|(chemin, gpu, mmap, _)| *chemin != r.modele || *gpu != r.gpu || *mmap != r.mmap) {
         *garde = None; // libère l'ancien modèle avant de charger le suivant
         garde_prefixes.clear();
-        // Sans mmap : sur processeur, llama.cpp réorganise les poids (« repack ») et
-        // garderait sinon deux copies du modèle en mémoire (fichier + réorganisée).
-        let params_modele = LlamaModelParams::default().with_use_mmap(false).with_n_gpu_layers(if r.gpu { 999 } else { 0 });
+        // Réorganisation des poids (« repack ») seulement sans mmap : avec, llama.cpp garderait deux copies du
+        // modèle en mémoire (fichier + réorganisée).
+        let params_modele = LlamaModelParams::default()
+            .with_use_mmap(r.mmap)
+            .with_use_extra_bufts(!r.mmap)
+            .with_n_gpu_layers(if r.gpu { 999 } else { 0 });
         let m = LlamaModel::load_from_file(backend, &r.modele, &params_modele)
             .with_context(|| format!("Chargement du modèle {}", r.modele))?;
-        *garde = Some((r.modele.clone(), r.gpu, m));
+        *garde = Some((r.modele.clone(), r.gpu, r.mmap, m));
     }
     Ok(())
 }
@@ -208,7 +216,7 @@ fn fils_de(r: &Requete) -> i32 {
 fn rediger(charge: &mut Option<Charge>, r: &Requete) -> Result<String> {
     charger(charge, r)?;
     let Charge { backend, modele: garde, prefixes: garde_prefixes } = charge.as_mut().expect("initialisé");
-    let modele = &garde.as_ref().expect("chargé").2;
+    let modele = &garde.as_ref().expect("chargé").3;
     let backend = &*backend;
     let texte_invite = texte_de_l_invite(modele, r, &r.invite)?;
 
@@ -331,7 +339,7 @@ fn rediger(charge: &mut Option<Charge>, r: &Requete) -> Result<String> {
 fn rediger_lot(charge: &mut Option<Charge>, r: &Requete) -> Result<Vec<String>> {
     charger(charge, r)?;
     let Charge { backend, modele: garde, prefixes: garde_prefixes } = charge.as_mut().expect("initialisé");
-    let modele = &garde.as_ref().expect("chargé").2;
+    let modele = &garde.as_ref().expect("chargé").3;
     let backend = &*backend;
     let vocab = modele.vocab();
     if r.prefixe.is_empty() {

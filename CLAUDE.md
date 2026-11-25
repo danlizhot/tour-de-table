@@ -93,8 +93,10 @@ donne les durées de lecture et d'écriture, recopiées dans le journal de l'app
 programme ouvert pour toute une série (nettoyage, compte rendu par point).
 
 L'application est livrée sans modèle : `ui/installation.rs` les télécharge sans aucun clic
-(aucune autre interface de téléchargement). Modèle de rédaction selon la mémoire vive (`models::modele_redaction`) : Qwen3.5 9B
-jusqu'à 20 Go, Qwen3.6 35B-A3B (APEX I-Nano, 13 à 14 Go en rédaction) à partir de 24 Go ;
+(aucune autre interface de téléchargement). Modèle de rédaction selon la mémoire vive (`models::modele_redaction`) : Qwen3.6 35B-A3B
+(APEX I-Nano), chargé en entier à partir de 24 Go (13 à 14 Go en rédaction), lu dans son fichier sous 24 Go
+(`models::redaction_en_mmap` : mmap sans réorganisation des poids, `with_use_extra_bufts`, ajouté au llama-cpp-2
+copié dans `redaction/vendor`) ; Qwen3.5 9B seulement sur les Mac (Metal) de moins de 24 Go ;
 jamais choisi par l'utilisateur. **16 Go de mémoire vive minimum** : en dessous, un avertissement
 s'affiche au démarrage (`models::memoire_insuffisante`), le modèle de rédaction n'est pas téléchargé et la rédaction
 ne démarre pas d'elle-même (`models::redaction_locale`) ; « Copier pour un assistant en ligne » (`summary::demande_assistant`,

@@ -35,6 +35,8 @@ pub struct Moteur {
     pub fils: usize,
     /// Sur la puce graphique (décidé par `gpu`).
     pub gpu: bool,
+    /// Modèle lu dans son fichier, sans réorganisation des poids (décidé par `models::redaction_en_mmap`).
+    pub mmap: bool,
 }
 
 impl Moteur {
@@ -1374,6 +1376,7 @@ pub struct Session {
     modele: PathBuf,
     fils: usize,
     gpu: bool,
+    mmap: bool,
 }
 
 impl Session {
@@ -1399,7 +1402,7 @@ impl Session {
         let mut child = cmd.spawn().context("Lancement du programme de rédaction")?;
         let entree = child.stdin.take();
         let sortie = BufReader::new(child.stdout.take().expect("sortie redirigée")).lines();
-        Ok(Self { child, entree, sortie, modele: moteur.modele.clone(), fils: moteur.fils, gpu: moteur.gpu })
+        Ok(Self { child, entree, sortie, modele: moteur.modele.clone(), fils: moteur.fils, gpu: moteur.gpu, mmap: moteur.mmap })
     }
 
     /// Une requête. `annuler` arrête le programme dès sa prochaine ligne de sortie ; la session
@@ -1420,7 +1423,7 @@ impl Session {
         finies: &mut dyn FnMut(usize),
         annuler: Option<&AtomicBool>,
     ) -> Result<Vec<String>> {
-        let (modele, fils, gpu) = (self.modele.clone(), self.fils, self.gpu);
+        let (modele, fils, gpu, mmap) = (self.modele.clone(), self.fils, self.gpu, self.mmap);
         let requete = |invite: &str, max_jetons: usize| {
             // Contexte de travail : invite (≈ 3 caractères par jeton en français) + réponse.
             // Seulement un minimum : le programme de rédaction l'agrandit selon les jetons réels.
@@ -1434,6 +1437,7 @@ impl Session {
                 "temperature": 0.2,
                 "fils": fils,
                 "gpu": gpu,
+                "mmap": mmap,
             })
         };
         // Une à une : la requête d'origine, avec sa réponse `texte`.
@@ -1769,7 +1773,7 @@ mod tests {
     }
 
     fn moteur() -> Moteur {
-        Moteur { modele: PathBuf::from("absent.gguf"), fils: 1, gpu: false }
+        Moteur { modele: PathBuf::from("absent.gguf"), fils: 1, gpu: false, mmap: false }
     }
 
     /// Modèle simulé : répond selon le point demandé et note les invites reçues.

@@ -181,12 +181,15 @@ livré avec l'application, fait tourner llama.cpp sur l'ordinateur, avec un seul
 modèle pour tout le compte rendu. Le modèle est choisi par l'application selon la mémoire vive
 du poste, jamais par l'utilisateur :
 
-* **Jusqu'à 20 Go : Qwen3.5 9B** (licence Apache 2.0, 5,7 Go à télécharger, 8 à 10 Go de mémoire
-  pendant la rédaction).
-* **24 Go et plus : Qwen3.6 35B-A3B**, en quantification APEX I-Nano (licence Apache 2.0, 11,7 Go
-  à télécharger, 13 à 14 Go de mémoire pendant la rédaction). Sur le banc d'essai du 16 novembre
-  2026 (quatre rencontres), il rédige presque deux fois plus vite pour une note équivalente
-  (32/44 en 36 min de moyenne, contre 29,5/44 en 64 min), mais il rend moins bien les décisions.
+* **Qwen3.6 35B-A3B**, en quantification APEX I-Nano (licence Apache 2.0, 11,7 Go à télécharger).
+  Sur les postes de 24 Go et plus, il est chargé en entier (13 à 14 Go de mémoire pendant la
+  rédaction). Sur les postes de 16 et de 20 Go, il est lu dans son fichier (mmap) : le système
+  garde en mémoire les parties utilisées et libère les autres au besoin. Banc d'essai du
+  25 novembre 2026, rédaction limitée à 10 Go de mémoire (quatre rencontres) : 34/44 en 47 min de
+  moyenne, contre 29,5/44 en 66 min pour Qwen3.5 9B dans les mêmes conditions.
+* **Mac de 16 et de 20 Go : Qwen3.5 9B** (licence Apache 2.0, 5,7 Go à télécharger, 8 à 10 Go de
+  mémoire pendant la rédaction) : la rédaction y passe par la puce graphique, qui ne dispose que
+  d'une partie de la mémoire.
 
 Qwen3.5 4B, deux fois plus rapide que le 9B, inventait trop de sujets dans les comptes rendus. Ces
 modèles réfléchissent par défaut avant de répondre : Tour de table désactive cette réflexion, trop
@@ -226,7 +229,7 @@ d'impression), `couverture.html` et des captures de `docs/guide/captures/` (thè
 
 1. Lancez Tour de table. Au premier démarrage, il installe tout seul ses modèles, sans rien
    demander : reconnaissance de la parole (574 Mo), reconnaissance des voix (46 Mo), puis rédaction
-   des comptes rendus (5,7 Go, ou 11,7 Go sur un poste de 24 Go de mémoire et plus).
+   des comptes rendus (11,7 Go ; 5,7 Go sur un Mac de moins de 24 Go).
    L'écran « Installation… » montre l'avancement et le temps restant. C'est la seule connexion
    Internet, et elle n'a lieu qu'une fois (Hugging Face). Vous pouvez fermer l'application en
    cours de route : l'installation reprend là où elle s'était arrêtée au démarrage suivant.
@@ -328,8 +331,8 @@ supprimé, et l'écran d'installation tente de le télécharger.
 | `ggml-large-v3-turbo-q5_0.bin` | 574 041 195 | `394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2` | https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin |
 | `pyannote-segmentation-3.0.onnx` | 5 992 913 | `220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079` | https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.onnx |
 | `3dspeaker-eres2net-base-16k.onnx` | 39 593 762 | `f1ee61be04000b50392a63442e5dd9feaea7e81dddd494d3647cf1c3d88a1498` | https://huggingface.co/csukuangfj/speaker-embedding-models/resolve/main/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx |
-| `Qwen3.5-9B-Q4_K_M.gguf` | 5 680 522 464 | `03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8` | https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf |
-| `Qwen3.6-35B-A3B-APEX-MTP-I-Nano.gguf` (postes de 24 Go et plus, à la place du précédent) | 11 686 645 344 | `c41cdce38c767a13eccc65a676d28a5506ef285c31614d1e7d822979b9b3559e` | https://huggingface.co/mudler/Qwen3.6-35B-A3B-APEX-MTP-GGUF/resolve/main/Qwen3.6-35B-A3B-APEX-MTP-I-Nano.gguf |
+| `Qwen3.5-9B-Q4_K_M.gguf` (Mac de moins de 24 Go) | 5 680 522 464 | `03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8` | https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf |
+| `Qwen3.6-35B-A3B-APEX-MTP-I-Nano.gguf` | 11 686 645 344 | `c41cdce38c767a13eccc65a676d28a5506ef285c31614d1e7d822979b9b3559e` | https://huggingface.co/mudler/Qwen3.6-35B-A3B-APEX-MTP-GGUF/resolve/main/Qwen3.6-35B-A3B-APEX-MTP-I-Nano.gguf |
 
 | Système | Dossier des modèles (pour chaque utilisateur) |
 |---|---|

@@ -49,6 +49,7 @@ winresource = "0.1.34"
 
 [workspace]
 members = [".", "redaction", "voix"]
+exclude = ["redaction/vendor"]
 
 [features]
 default = []
@@ -70,3 +71,9 @@ strip = true
 ProductName = "Tour de table"
 FileDescription = "Tour de table — transcription de rencontres en français québécois"
 LegalCopyright = "MIT"
+
+# llama-cpp-2 0.1.160 avec une seule méthode ajoutée, `LlamaModelParams::with_use_extra_bufts` : le modèle de
+# rédaction lu dans son fichier (mmap) sans réorganisation des poids, sur les postes de moins de 24 Go. À retirer
+# quand une version publiée la proposera.
+[patch.crates-io]
+llama-cpp-2 = { path = "redaction/vendor/llama-cpp-2" }
