@@ -236,10 +236,14 @@ impl TourDeTableApp {
                 .show_separator_line(false)
                 .frame(egui::Frame::new().fill(p.surface).stroke(egui::Stroke::new(1.0, p.bordure)).corner_radius(egui::CornerRadius::same(14)).inner_margin(egui::Margin::symmetric(16, 10)).outer_margin(egui::Margin { left: 0, right: 0, top: 10, bottom: 0 }))
                 .show(ui, |ui| {
-                    self.lecteur(ui, idx);
+                    if let Some(ms) = self.lecteur(ui, idx) {
+                        self.saut_ecoute = Some((self.meetings[idx].id.clone(), ms));
+                    }
                 });
         }
         action = self.volets(ui, idx).or(action);
+        // Saut du lecteur non vu par la transcription (autre onglet affiché) : oublié.
+        self.saut_ecoute = None;
 
         match action {
             Some("archiver") => {
