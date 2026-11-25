@@ -208,19 +208,37 @@ impl TourDeTableApp {
         self.view = View::Live;
         self.push_settings();
 
+        self.lancer_import(name.clone(), path.to_path_buf(), None);
+        self.notify(format!("« {name} » importé : la transcription commence."), false);
+    }
+
+    /// Fil de l'import de la rencontre en cours (`self.live`) : copie du fichier (sauf en reprise), blocs, puis
+    /// transcription bloc par bloc. En reprise d'un import interrompu (`reprise` : fin du texte déjà transcrit, en
+    /// ms), le fichier déjà copié est redécodé et seuls les énoncés qui commencent après sont transcrits.
+    pub(super) fn lancer_import(&mut self, name: String, path: std::path::PathBuf, reprise: Option<u64>) {
         let (tx, rx) = crossbeam_channel::bounded(1);
         let avancement = Arc::new(import::Avancement::default());
-        let (path, dir, av, utt_tx) = (path.to_path_buf(), self.live.as_ref().map(Meeting::dir).unwrap_or_default(), avancement.clone(), self.utt_tx.clone());
+        let (dir, av, utt_tx) = (self.live.as_ref().map(Meeting::dir).unwrap_or_default(), avancement.clone(), self.utt_tx.clone());
         std::thread::spawn(move || {
             let result = (|| -> anyhow::Result<u64> {
-                let source = import::copier_source(&path, &dir)?;
                 let travail = dir.join(import::TRAVAIL);
+                let source = match reprise {
+                    None => import::copier_source(&path, &dir)?,
+                    Some(_) => {
+                        // Blocs à moitié écrits par l'import interrompu : récrits d'après la copie.
+                        let _ = std::fs::remove_dir_all(&travail);
+                        path
+                    }
+                };
+                let deja = reprise.map_or(0, |ms| ms * audio::SAMPLE_RATE as u64 / 1000);
                 let index = import::ecrire_blocs(&source, &travail, &av)?;
                 import::transcrire_blocs(&travail, &index, |k, enonces| {
                     // Un bloc d'avance au plus : la file de Whisper reste courte, la mémoire aussi.
                     while av.enonces_transcrits.load(Ordering::Relaxed) < av.envoyes_avant(k.saturating_sub(1)) {
                         std::thread::sleep(std::time::Duration::from_millis(50));
                     }
+                    // Reprise : un énoncé est transcrit en entier ou pas du tout ; ceux d'avant la fin du texte le sont.
+                    let enonces: Vec<_> = enonces.into_iter().filter(|u| reprise.is_none() || u.start >= deja).collect();
                     av.bloc_envoye(enonces.len());
                     for u in enonces {
                         utt_tx.send(u).map_err(|_| anyhow::anyhow!("Application fermée"))?;
@@ -231,12 +249,41 @@ impl TourDeTableApp {
             })();
             let _ = tx.send(result.map_err(|e| format!("{e:#}")));
         });
-        self.notify(format!("« {name} » importé : la transcription commence."), false);
         self.import_job = Some((name, rx, avancement));
     }
 
+    /// Import interrompu (application fermée pendant sa transcription) : il reprend dès que la transcription est
+    /// libre, là où il était rendu. Appelé à chaque image depuis `pump`.
+    pub(super) fn reprendre_import(&mut self) {
+        let libre = matches!(self.model, ModelState::Ready)
+            && self.recorder.is_none()
+            && self.live.is_none()
+            && !self.finishing
+            && self.import_job.is_none()
+            && self.fin_apres_panne.is_none()
+            && self.verification.is_none()
+            && self.decoupage_job.is_none();
+        if !libre || self.imports_a_reprendre.is_empty() {
+            return;
+        }
+        let id = self.imports_a_reprendre.remove(0);
+        let Some(i) = self.meetings.iter().position(|m| m.id == id) else { return };
+        let Some(source) = import::source_copiee(&self.meetings[i].dir()) else { return };
+        let m = self.meetings.remove(i);
+        let fin = m.segments.iter().map(|s| s.end_ms).max().unwrap_or(0);
+        let name = source.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        log::info!("Reprise de l'import « {} » à {}", m.title, clock(fin));
+        self.suspendre_nettoyage();
+        self.live = Some(m);
+        // L'écran suit le travail ; l'historique a perdu une ligne, une fiche ouverte n'est plus la bonne.
+        if matches!(self.view, View::Past(_)) {
+            self.view = View::Live;
+        }
+        self.lancer_import(name, source, Some(fin));
+    }
+
     /// Avancement de l'import (0 à 1), s'il est connu.
-    fn fraction_import(&self) -> Option<f32> {
+    pub(super) fn fraction_import(&self) -> Option<f32> {
         let (_, _, av) = self.import_job.as_ref()?;
         let total = av.total.load(Ordering::Relaxed);
         (total > 0).then(|| av.blocs_transcrits() as f32 / total as f32)

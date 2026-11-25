@@ -98,6 +98,8 @@ pub struct TourDeTableApp {
     import_job: Option<TacheImport>,
     /// Rencontres interrompues dont la fin reste à transcrire, et celle en cours.
     fins_a_transcrire: Vec<String>,
+    /// Imports interrompus pendant leur transcription, à reprendre (`live::reprendre_import`).
+    imports_a_reprendre: Vec<String>,
     fin_apres_panne: Option<FinApresPanne>,
     /// La rencontre en cours a été poursuivie après une panne : elle a déjà son audio et sa
     /// transcription, et n'est jamais supprimée, même sans parole dans la nouvelle partie.
@@ -177,6 +179,7 @@ impl TourDeTableApp {
             draft_agenda: None,
             import_job: None,
             fins_a_transcrire: Vec::new(),
+            imports_a_reprendre: Vec::new(),
             fin_apres_panne: None,
             poursuivie: false,
             verification: None,
@@ -313,7 +316,14 @@ impl TourDeTableApp {
     fn reprendre_rencontres_interrompues(&mut self) {
         for i in 0..self.meetings.len() {
             let dir = self.meetings[i].dir();
-            // Import (ou découpage) interrompu avant la validation : tout va hors point.
+            // Import interrompu : sa transcription reprend là où elle était rendue (puis le découpage par points).
+            if crate::audio::import::en_attente(&dir) && crate::audio::import::source_copiee(&dir).is_some() {
+                let titre = self.meetings[i].title.clone();
+                self.imports_a_reprendre.push(self.meetings[i].id.clone());
+                self.notify(format!("L'import de « {titre} » s'est interrompu : sa transcription reprend là où elle était rendue."), false);
+                continue;
+            }
+            // Import (ou découpage) interrompu, sans copie du fichier : tout va hors point.
             if crate::audio::import::en_attente(&dir) {
                 let m = &mut self.meetings[i];
                 let titre = m.title.clone();
@@ -512,6 +522,7 @@ impl TourDeTableApp {
             self.finalize();
         }
         self.pump_fin_apres_panne();
+        self.reprendre_import();
 
         if self.installation.as_ref().is_some_and(installation::Installation::terminee) {
             self.installation = None;

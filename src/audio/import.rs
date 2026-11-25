@@ -162,6 +162,14 @@ pub fn copier_source(fichier: &Path, dossier: &Path) -> Result<PathBuf> {
     Ok(copie)
 }
 
+/// Copie du fichier importé (`source/`), si elle est complète : de quoi reprendre un import interrompu.
+pub fn source_copiee(dossier: &Path) -> Option<PathBuf> {
+    std::fs::read_dir(dossier.join(SOURCE))
+        .ok()?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .find(|p| p.is_file() && p.extension().is_none_or(|x| x != "tmp"))
+}
+
 /// L'import attend-il encore son découpage par point (blocs dans `_import/`) ?
 pub fn en_attente(dossier: &Path) -> bool {
     blocs::existe(&dossier.join(TRAVAIL))
@@ -224,6 +232,19 @@ pub fn transcrire_blocs(travail: &Path, index: &Index, mut rappel: impl FnMut(us
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn copie_complete_seulement() {
+        let dir = std::env::temp_dir().join(format!("tdt-source-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(source_copiee(&dir).is_none());
+        std::fs::create_dir_all(dir.join(SOURCE)).unwrap();
+        std::fs::write(dir.join(SOURCE).join("rencontre.m4a.tmp"), b"x").unwrap();
+        assert!(source_copiee(&dir).is_none());
+        std::fs::write(dir.join(SOURCE).join("rencontre.m4a"), b"x").unwrap();
+        assert_eq!(source_copiee(&dir), Some(dir.join(SOURCE).join("rencontre.m4a")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn decode_un_wav_stereo_48k() {

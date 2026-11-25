@@ -94,6 +94,33 @@ impl TourDeTableApp {
             if resp.clicked() {
                 self.view = View::Live;
             }
+        } else if self.live.is_some() {
+            // Import ou fin d'une transcription : même carte, en ambre, pour revenir à l'écran qui suit le travail.
+            let detail = match self.fraction_import() {
+                Some(f) => format!("Import · {} %", (f * 100.0).round() as u32),
+                None if self.import_job.is_some() => "Import · préparation".to_string(),
+                None => format!("{} énoncés restants", self.in_flight),
+            };
+            let choisi = matches!(self.view, View::Live);
+            let resp = carte_cliquable(ui, largeur, 54.0, |ui, rect, survol| {
+                let fond = if choisi || survol { p.ambre_doux } else { p.ambre_doux.gamma_multiply(0.7) };
+                ui.painter().rect_filled(rect, CornerRadius::same(10), fond);
+                ui.painter().rect_stroke(rect, CornerRadius::same(10), Stroke::new(1.0, p.ambre_bord), egui::StrokeKind::Inside);
+                ui.painter().rect_filled(Rect::from_min_size(rect.min, Vec2::new(3.0, rect.height())), CornerRadius::same(2), p.ambre);
+                // Arc qui tourne : le travail avance.
+                let centre = Pos2::new(rect.left() + 20.0, rect.center().y);
+                let t = ui.input(|i| i.time) as f32;
+                let debut = t * 4.0;
+                let points: Vec<Pos2> = (0..=20).map(|i| centre + 6.0 * Vec2::angled(debut + i as f32 / 20.0 * 4.2)).collect();
+                ui.painter().add(egui::Shape::line(points, Stroke::new(2.0, p.ambre)));
+                let x = rect.left() + 36.0;
+                ui.painter().text(Pos2::new(x, rect.top() + 10.0), egui::Align2::LEFT_TOP, "Transcription en cours", police_grasse(14.0), p.texte);
+                ui.painter().text(Pos2::new(x, rect.top() + 30.0), egui::Align2::LEFT_TOP, detail, FontId::proportional(12.5), p.ambre_texte);
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
+            });
+            if resp.on_hover_text("Revenir à la transcription en cours").clicked() {
+                self.view = View::Live;
+            }
         } else {
             let b = egui::Button::new(gras("+  Nouvelle rencontre", 15.0).color(Color32::WHITE))
                 .fill(p.accent_plein)
