@@ -116,16 +116,27 @@ fn worker(rx: Receiver<Request>, tx: Sender<Reply>, wake: impl Fn()) {
                 let reply = match model.as_mut() {
                     None => Reply::Error { message: "Aucun modèle chargé".into(), handled },
                     Some(m) => {
-                        // Sur la puce, on garde l'énoncé : il est retranscrit sur le processeur s'il tourne en boucle.
-                        let copie = m.gpu.then(|| utterance.clone());
-                        match sur_la_puce(m.gpu, || transcribe(&mut m.state, &settings, utterance, &context)) {
+                        // On garde l'énoncé : il est transcrit de nouveau s'il tourne en boucle (sur le processeur
+                        // s'il bouclait sur la puce, puis par une relance sans contexte).
+                        let copie = utterance.clone();
+                        match sur_la_puce(m.gpu, || transcribe(&mut m.state, &settings, utterance, &context, false)) {
                             Ok(segments) => {
-                                let segments = match copie {
-                                    Some(u) if segments.iter().any(|s| en_boucle(&s.text)) => {
-                                        retranscrire_sur_le_processeur(&mut repli, &m.chemin, &settings, u, &context).unwrap_or(segments)
+                                let boucle = |v: &[Segment]| v.iter().any(|s| en_boucle(&s.text));
+                                let mut segments = segments;
+                                if m.gpu && boucle(&segments) {
+                                    segments = retranscrire_sur_le_processeur(&mut repli, &m.chemin, &settings, copie.clone(), &context)
+                                        .unwrap_or(segments);
+                                }
+                                if boucle(&segments) {
+                                    // Sur le processeur : la copie déjà chargée pour la puce, sinon le modèle lui-même.
+                                    let (state, gpu) = match repli.as_mut() {
+                                        Some(r) if m.gpu => (&mut r.state, false),
+                                        _ => (&mut m.state, m.gpu),
+                                    };
+                                    if let Some(v) = relancer(state, gpu, &settings, copie, boucle) {
+                                        segments = v;
                                     }
-                                    _ => segments,
-                                };
+                                }
                                 Reply::Segments { segments: sans_boucles(segments), handled }
                             }
                             Err(e) => Reply::Error { message: format!("Transcription : {e:#}"), handled },
@@ -240,13 +251,37 @@ fn retranscrire_sur_le_processeur(
         }
     }
     let m = repli.as_mut()?;
-    match transcribe(&mut m.state, s, utt, context) {
+    match transcribe(&mut m.state, s, utt, context, false) {
         Ok(segments) => {
             log::info!("Boucle de Whisper sur la puce : {audio_s:.1} s d'audio retranscrites sur le processeur en {:.1} s", t.elapsed().as_secs_f32());
             Some(segments)
         }
         Err(e) => {
             log::warn!("Boucle de Whisper sur la puce : retranscription sur le processeur en échec ({e:#})");
+            None
+        }
+    }
+}
+
+/// Énoncé qui tourne encore en boucle : transcrit une seconde fois, sans le texte précédent (qui amorce souvent la
+/// boucle), et avec les relances à température plus élevée de Whisper, qui redécodent un passage trop répétitif.
+/// Désactivées pour les autres énoncés (trop lentes sur l'audio bruité), elles ne coûtent ici que pour les rares
+/// énoncés en boucle. Rend la nouvelle transcription seulement si elle ne boucle plus : sinon la première est gardée,
+/// et sa boucle réduite (`sans_boucles`).
+fn relancer(state: &mut WhisperState, gpu: bool, s: &Settings, utt: Utterance, boucle: impl Fn(&[Segment]) -> bool) -> Option<Vec<Segment>> {
+    let audio_s = utt.samples.len() as f32 / SAMPLE_RATE as f32;
+    let t = std::time::Instant::now();
+    match sur_la_puce(gpu, || transcribe(state, s, utt, "", true)) {
+        Ok(v) if !boucle(&v) => {
+            log::info!("Boucle de Whisper : {audio_s:.1} s d'audio transcrites de nouveau sans boucle en {:.1} s", t.elapsed().as_secs_f32());
+            Some(v)
+        }
+        Ok(_) => {
+            log::info!("Boucle de Whisper : la relance ({audio_s:.1} s d'audio, {:.1} s) boucle encore ; boucle réduite", t.elapsed().as_secs_f32());
+            None
+        }
+        Err(e) => {
+            log::warn!("Boucle de Whisper : relance en échec ({e:#})");
             None
         }
     }
@@ -275,7 +310,7 @@ pub fn transcrire_extrait(path: &std::path::Path, use_gpu: bool, audio: &[f32]) 
         agenda_hint: String::new(),
     };
     let utt = Utterance { source: crate::audio::Source::Salle, start: 0, samples: audio.to_vec() };
-    let segments = transcribe(&mut m.state, &s, utt, "")?;
+    let segments = transcribe(&mut m.state, &s, utt, "", false)?;
     Ok(segments.iter().map(|s| s.text.trim()).collect::<Vec<_>>().join(" "))
 }
 
@@ -296,7 +331,8 @@ fn load(path: &std::path::Path, use_gpu: bool) -> Result<Loaded> {
     })
 }
 
-fn transcribe(state: &mut WhisperState, s: &Settings, utt: Utterance, context: &str) -> Result<Vec<Segment>> {
+/// `relance` : seconde transcription d'un énoncé en boucle, avec les relances à température plus élevée (voir `relancer`).
+fn transcribe(state: &mut WhisperState, s: &Settings, utt: Utterance, context: &str, relance: bool) -> Result<Vec<Segment>> {
     let mut audio = utt.samples;
     // Les sons système et les micros lointains sont souvent faibles : on normalise.
     let peak = crate::audio::dsp::peak(&audio);
@@ -329,7 +365,7 @@ fn transcribe(state: &mut WhisperState, s: &Settings, utt: Utterance, context: &
     // (jusqu'à 5 fois) et faisait exploser le temps sur l'audio bruité. Les
     // hallucinations restantes sont filtrées plus bas (`quebec::is_hallucination`).
     p.set_temperature(0.0);
-    p.set_temperature_inc(0.0);
+    p.set_temperature_inc(if relance { 0.2 } else { 0.0 });
     p.set_print_progress(false);
     p.set_print_realtime(false);
     p.set_print_special(false);
