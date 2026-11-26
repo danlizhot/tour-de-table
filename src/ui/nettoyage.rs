@@ -21,6 +21,8 @@ pub(super) struct TacheNettoyage {
     puis_compte_rendu: bool,
     /// Arrêt demandé par l'utilisateur ; sinon, interruption par un enregistrement, reprise ensuite.
     par_utilisateur: bool,
+    /// Début de cette partie du nettoyage : son temps s'ajoute à `Meeting::temps`.
+    debut: std::time::Instant,
 }
 
 enum Action {
@@ -79,7 +81,7 @@ impl TourDeTableApp {
             let m = m.clone();
             let avancement = Arc::new(Avancement::default());
             let rx = nettoyage::lancer(m, self.cfg.glossary.clone(), avancement.clone());
-            self.nettoyage_job = Some(TacheNettoyage { id, rx, avancement, puis_compte_rendu, par_utilisateur: false });
+            self.nettoyage_job = Some(TacheNettoyage { id, rx, avancement, puis_compte_rendu, par_utilisateur: false, debut: std::time::Instant::now() });
             return;
         }
     }
@@ -108,7 +110,7 @@ impl TourDeTableApp {
         let etapes: Vec<Etape> = self.nettoyage_job.iter().flat_map(|t| t.rx.try_iter()).collect();
         for etape in etapes {
             let Some(t) = &self.nettoyage_job else { break };
-            let (id, puis_compte_rendu, par_utilisateur) = (t.id.clone(), t.puis_compte_rendu, t.par_utilisateur);
+            let (id, puis_compte_rendu, par_utilisateur, debut) = (t.id.clone(), t.puis_compte_rendu, t.par_utilisateur, t.debut);
             let idx = self.meetings.iter().position(|m| m.id == id);
             match etape {
                 Etape::Groupe(n) => {
@@ -130,6 +132,7 @@ impl TourDeTableApp {
                     let Some(i) = idx else { continue };
                     let m = &mut self.meetings[i];
                     m.nettoyage = Some(n);
+                    crate::storage::Temps::ajouter(&mut m.temps.nettoyage_s, debut.elapsed());
                     let enregistre = if termine { m.save().and_then(|_| m.export_all().map(|_| ())) } else { m.save() };
                     if let Err(e) = enregistre {
                         self.notify(format!("Sauvegarde du nettoyage : {e:#}"), true);

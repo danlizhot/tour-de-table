@@ -43,7 +43,9 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   champ `dossier`) avec `rencontre.json`, sauvegardé après chaque
   segment (écriture atomique `.tmp` + `rename`). « Archiver » comprime le dossier dans `Archives/<dossier>.zip`
   (`storage::archiver`, dans un fil ; écrit en `.part`, relu, puis le dossier est retiré) ; l'ancienne corbeille
-  du dossier de données y passe au démarrage (`archiver_corbeille`). « Supprimer définitivement » et « Annuler l'import »
+  du dossier de données y passe au démarrage (`archiver_corbeille`). `Meeting::temps` : temps de traitement par
+  étape, noté à la fin de chacune (transcription dans `live::finalize`, nettoyage, compte rendu, voix à part), affiché
+  sous le titre de la fiche (`past::ligne_temps`). « Supprimer définitivement » et « Annuler l'import »
   (`ui/suppression.rs`) : le dossier n'est retiré qu'une fois que plus rien n'y travaille (fil de l'import arrêté par
   `import::Avancement::annule`, énoncés encore chez Whisper jetés, aucune autre transcription d'ici là : sinon la
   sauvegarde après chaque segment le recréerait ou les segments iraient dans une autre rencontre). Il est d'abord

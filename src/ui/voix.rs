@@ -94,7 +94,7 @@ impl TourDeTableApp {
                 return;
             };
             c.conclure();
-            let id = c.id.clone();
+            let (id, duree) = (c.id.clone(), c.debut.elapsed());
             self.voix_job = None;
             self.inoccupe_depuis = Instant::now();
             let Some(m) = self.meetings.iter_mut().find(|m| m.id == id) else { return };
@@ -107,6 +107,9 @@ impl TourDeTableApp {
                     }
                     log::info!("« {} » : {} voix reconnues", m.title, v.nombre());
                     m.voix = Some(v);
+                    // Le dernier calcul complet : un calcul interrompu recommence du début.
+                    m.temps.voix_s = None;
+                    crate::storage::Temps::ajouter(&mut m.temps.voix_s, duree);
                     if let Err(e) = m.save().and_then(|_| m.export_all().map(|_| ())) {
                         self.notify(format!("Sauvegarde des voix : {e:#}"), true);
                     }

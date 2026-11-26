@@ -39,6 +39,7 @@ impl TourDeTableApp {
             log::warn!("Annulation de l'import « {} » : {e:#}", m.title);
         }
         self.finishing = false;
+        self.debut_transcription = None;
         self.poursuivie = false;
         self.voix_direct = None;
         self.voix_direct_import = None;

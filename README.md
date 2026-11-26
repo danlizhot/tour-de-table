@@ -179,6 +179,10 @@ saisir à la main.
   séance. Durée mesurée : de 0,7 à 1 fois la durée de la rencontre.
 * **Rencontres sans ordre du jour** : la transcription complète est lue d'un coup, puis résumée dans
   l'ordre de la rencontre (un intertitre par sujet, sans rubrique de décisions ni de suites à donner).
+* **Temps de traitement** : la fiche indique le temps de chaque étape sur l'ordinateur et leur total
+  (« Traitement : transcription 35 min · nettoyage 12 s · compte rendu 42 min · total 1 h 17 · voix 12 min
+  (à part) »). Pour un enregistrement, la transcription ne compte que la fin, après « Arrêter » ; les voix,
+  calculées quand l'ordinateur est libre, restent hors du total. Absent des rencontres d'avant.
 * Exporté dans `compte-rendu.docx` (Word : Calibri, titres en gras, puces, prêt à relire et à
   diffuser) et `compte-rendu.md`, et inclus dans `transcription.md`.
 

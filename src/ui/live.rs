@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::Instant;
 
 use eframe::egui::{self, Color32, CornerRadius, RichText, Sense, Ui, Vec2};
 
@@ -134,6 +135,7 @@ impl TourDeTableApp {
             self.proposition = None;
             self.bandeau = None;
             self.finishing = true;
+            self.debut_transcription = Some(Instant::now());
         }
     }
 
@@ -157,7 +159,11 @@ impl TourDeTableApp {
         self.voix_direct = None;
         self.voix_direct_import = None;
         let poursuivie = std::mem::take(&mut self.poursuivie);
-        if let Some(m) = self.live.take() {
+        let debut = self.debut_transcription.take();
+        if let Some(mut m) = self.live.take() {
+            if let Some(t) = debut {
+                crate::storage::Temps::ajouter(&mut m.temps.transcription_s, t.elapsed());
+            }
             if m.segments.is_empty() && !poursuivie {
                 self.notify("Aucune parole détectée : rien n'a été enregistré.", false);
                 self.signaler();
@@ -220,6 +226,7 @@ impl TourDeTableApp {
     /// ms), le fichier déjà copié est redécodé et seuls les énoncés qui commencent après sont transcrits.
     pub(super) fn lancer_import(&mut self, name: String, path: std::path::PathBuf, reprise: Option<u64>) {
         let (tx, rx) = crossbeam_channel::bounded(1);
+        self.debut_transcription = Some(Instant::now());
         let avancement = Arc::new(import::Avancement::default());
         let (dir, av, utt_tx) = (self.live.as_ref().map(Meeting::dir).unwrap_or_default(), avancement.clone(), self.utt_tx.clone());
         std::thread::spawn(move || {
