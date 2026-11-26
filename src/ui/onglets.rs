@@ -514,10 +514,8 @@ impl TourDeTableApp {
                 if m.summary.is_some() && ui.button("Visualiser").on_hover_text("Ouvre le compte rendu dans Word (compte-rendu.docx)").clicked() {
                     action = Some("visualiser");
                 }
-                if let Some(sum) = &m.summary
-                    && ui.button("Copier").clicked()
-                {
-                    ui.ctx().copy_text(sum.clone());
+                if m.summary.is_some() && ui.button("Copier").clicked() {
+                    action = Some("copier_cr");
                 }
             }
             if !occupe
