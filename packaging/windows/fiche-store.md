@@ -89,14 +89,31 @@ transcription · compte rendu · réunion · procès-verbal · québécois · or
 
 ## Notes de version (≤ 1 500 caractères)
 
+Version 0.5.0
+* Nouvelle apparence de tous les écrans, thèmes clair et foncé, et lecteur au bas de la fiche :
+  la transcription suit ce qu'on entend.
+* Voix en direct : pendant la rencontre ou un import, Tour de table montre qui parle et l'on peut
+  déjà nommer les voix. Les présences du compte rendu viennent des voix nommées.
+* Compte rendu : une synthèse de la discussion pour chaque point ; sans ordre du jour, un résumé
+  des discussions.
+* Comptes rendus de meilleure qualité sur les ordinateurs de 16 et de 20 Go (nouveau modèle de
+  rédaction, 11,7 Go à télécharger une fois).
+* « Découper par points » directement dans la transcription.
+* Fermer la fenêtre pendant un travail : Tour de table le termine en arrière-plan, avec une icône
+  près de l'horloge, et une notification annonce la fin. Le relancer ramène la fenêtre ouverte.
+* Supprimer définitivement une rencontre ; annuler un import en cours.
+* Moins de phrases répétées en boucle dans la transcription.
+* Temps de traitement de chaque étape affiché dans la fiche.
+* Menu « Aide » : guide, page du Store et page du projet. Un avis confirme chaque copie.
+
+### Versions précédentes
+
 Version 0.4.0
 * Ordinateurs de moins de 16 Go de mémoire vive : la transcription fonctionne, mais le compte
   rendu n'est plus rédigé sur place (le modèle de rédaction n'est pas téléchargé).
 * Nouveau bouton « Copier pour un assistant en ligne » (onglet Compte rendu) : il copie les
   consignes, l'ordre du jour et la transcription, à coller dans Copilot, ChatGPT ou l'assistant
   permis par votre organisme. Tour de table n'envoie rien lui-même.
-
-### Versions précédentes
 
 Version 0.3.3
 * Le bouton « Guide d'utilisation » ouvre maintenant le guide (il ouvrait le dossier Documents).
