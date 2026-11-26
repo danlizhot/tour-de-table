@@ -140,6 +140,9 @@ const JETONS_ASSEMBLAGE: usize = 900;
 const JETONS_SANS_SUJET: usize = 150;
 const JETONS_NOTES: usize = 1200;
 const JETONS_DOCUMENT: usize = 3072;
+/// Résumé d'une rencontre sans ordre du jour, rédigé en un seul passage : de quoi couvrir une rencontre de trois heures
+/// et plus. Un plafond, pas une cible : le modèle s'arrête de lui-même (l'atelier d'essai de 1 h 22 : 1 547 jetons).
+const JETONS_RESUME: usize = 6144;
 
 const PAR_POINT: &str = "Tu es secrétaire de réunion. Voici la transcription d'un seul point de l'ordre du jour : \
 « {point} ». Rédige uniquement ce point, sans titre.\n";
@@ -492,7 +495,8 @@ fn en_un_appel(r: &Request, rediger: &mut Redacteur) -> Result<String> {
     }
     prompt.push_str("\n\n=== TRANSCRIPTION ===\n");
     prompt.push_str(&transcript);
-    Ok(sans_consignes_recopiees(&generate(rediger, &prompt, JETONS_DOCUMENT)?))
+    let plafond = if r.agenda.is_some() { JETONS_DOCUMENT } else { JETONS_RESUME };
+    Ok(sans_consignes_recopiees(&generate(rediger, &prompt, plafond)?))
 }
 
 /// Ce que le modèle recopie des consignes : précision entre parenthèses dans un titre
@@ -1949,6 +1953,20 @@ mod tests {
         assert!(invites[0].contains("**Date** : 30 octobre 2026 · **Heure** : 19 h 00") && invites[0].contains("au présent"));
         // Garde-fou des chiffres conservé.
         assert!(doc.contains("> **À vérifier**") && doc.contains("300"), "{doc}");
+    }
+
+    #[test]
+    fn resume_sans_ordre_du_jour_plus_long() {
+        let moteur = moteur();
+        let mut plafonds = Vec::new();
+        let mut appel = |_: &str, max_jetons: usize| {
+            plafonds.push(max_jetons);
+            Ok("La rencontre porte sur le budget.\n## Budget\nCoût de 300 $.".to_string())
+        };
+        let mut r = requete(&moteur, Vec::new(), "", true);
+        r.agenda = None;
+        rediger_compte_rendu(&r, &mut appel, false).unwrap();
+        assert_eq!(plafonds, [JETONS_RESUME]);
     }
 
     #[test]
