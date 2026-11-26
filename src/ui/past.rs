@@ -221,7 +221,7 @@ impl TourDeTableApp {
                     });
                     apparence::chevron(ui, &resp, Color32::WHITE);
                     if ui.add(apparence::bouton_widget(ui, "Copier", apparence::Genre::Secondaire, 38.0)).on_hover_text("Copie la transcription").clicked() {
-                        ui.ctx().copy_text(m.plain_text());
+                        action = Some("copier");
                     }
                     if decoupable
                         && ui
@@ -279,6 +279,17 @@ impl TourDeTableApp {
             }
             Some("supprimer") => self.confirmer_suppression = Some(self.meetings[idx].id.clone()),
             Some("reveal") => storage::reveal(&self.meetings[idx].dir()),
+            Some("copier") => {
+                self.ctx.copy_text(self.meetings[idx].plain_text());
+                self.notify("Transcription copiée dans le presse-papiers : collez-la (Ctrl+V) dans un courriel ou un document.", false);
+            }
+            Some("copier_cr") => {
+                if let Some(texte) = self.meetings[idx].summary.clone() {
+                    let quoi = if self.meetings[idx].agenda.is_some() { "Compte rendu copié" } else { "Résumé copié" };
+                    self.ctx.copy_text(texte);
+                    self.notify(format!("{quoi} dans le presse-papiers : collez-le (Ctrl+V) dans un courriel ou un document."), false);
+                }
+            }
             Some("audio") => self.exporter_audio(idx, blocs::Portee::Tout),
             Some("export") => match self.meetings[idx].export_all() {
                 Ok(dir) => storage::reveal(&dir),
