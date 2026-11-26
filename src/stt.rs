@@ -126,7 +126,7 @@ fn worker(rx: Receiver<Request>, tx: Sender<Reply>, wake: impl Fn()) {
                                     }
                                     _ => segments,
                                 };
-                                Reply::Segments { segments, handled }
+                                Reply::Segments { segments: sans_boucles(segments), handled }
                             }
                             Err(e) => Reply::Error { message: format!("Transcription : {e:#}"), handled },
                         }
@@ -189,6 +189,34 @@ pub fn en_boucle(texte: &str) -> bool {
         *n += 1;
         *n >= 6
     })
+}
+
+/// Boucles de Whisper, surtout sur les silences, réduites à une seule occurrence : dans un segment (« Oui. Oui. Oui. … »
+/// → « Oui. »), puis d'un segment à l'autre (le même texte, segment après segment). Après `en_boucle`, qui en a besoin
+/// pour reprendre sur le processeur un énoncé que la puce a fait boucler. Le texte suivant ne reçoit donc plus la boucle
+/// comme contexte (`Meeting::recent_text`), ce qui l'entretenait.
+fn sans_boucles(mut segments: Vec<Segment>) -> Vec<Segment> {
+    use crate::nettoyage::{SEGMENTS_EN_BOUCLE, cle_texte};
+    for s in &mut segments {
+        let reduit = crate::nettoyage::sans_boucles(&s.text);
+        if reduit != s.text {
+            log::info!("Boucle de Whisper réduite : {} mots → {}", s.text.split_whitespace().count(), reduit.split_whitespace().count());
+            s.text = reduit;
+        }
+    }
+    let mut i = 0;
+    while i < segments.len() {
+        let (source, cle) = (segments[i].source, cle_texte(&segments[i].text));
+        let r = segments[i..].iter().take_while(|s| s.source == source && cle_texte(&s.text) == cle).count();
+        if r >= SEGMENTS_EN_BOUCLE {
+            let fin = segments[i..i + r].iter().map(|s| s.end_ms).max().unwrap_or(segments[i].end_ms);
+            segments.drain(i + 1..i + r);
+            segments[i].end_ms = fin;
+            log::info!("Boucle de Whisper réduite : {r} segments identiques → 1");
+        }
+        i += 1;
+    }
+    segments
 }
 
 /// Énoncé que la puce a fait tourner en boucle : transcrit de nouveau sur le processeur. `None` si la copie du
@@ -341,6 +369,29 @@ fn transcribe(state: &mut WhisperState, s: &Settings, utt: Utterance, context: &
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn seg(start_ms: u64, end_ms: u64, text: &str) -> Segment {
+        Segment { start_ms, end_ms, source: crate::audio::Source::Mixte, text: text.into() }
+    }
+
+    #[test]
+    fn boucles_reduites_a_la_sortie_de_whisper() {
+        // Dans un segment : la boucle sur un silence devient une seule réponse.
+        let v = sans_boucles(vec![seg(0, 30_000, &format!("Hum hum. {}Oui", "Oui. ".repeat(110)))]);
+        assert_eq!(v[0].text, "Hum hum. Oui.");
+        // D'un segment à l'autre : un seul segment, qui couvre toute la durée.
+        let mut v: Vec<Segment> = (0..8).map(|k| seg(k * 1000, k * 1000 + 900, "Merci beaucoup.")).collect();
+        v.push(seg(9000, 9500, "On passe au point 3."));
+        let v = sans_boucles(v);
+        assert_eq!(v.len(), 2);
+        assert_eq!((v[0].start_ms, v[0].end_ms, v[1].text.as_str()), (0, 7900, "On passe au point 3."));
+        // Ce qu'on dit vraiment reste tel quel.
+        for vrai in ["Oui, oui, oui, oui, c'est adopté.", "Non, non, non. On ne peut pas faire ça.", "Merci, merci beaucoup."] {
+            assert_eq!(sans_boucles(vec![seg(0, 1000, vrai)])[0].text, vrai);
+        }
+        let quatre: Vec<Segment> = (0..4).map(|k| seg(k * 1000, k * 1000 + 900, "Oui.")).collect();
+        assert_eq!(sans_boucles(quatre).len(), 4);
+    }
 
     #[test]
     fn boucles_de_whisper() {

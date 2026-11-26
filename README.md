@@ -87,7 +87,10 @@ transcription nettoyée avec le nom des voix. L'application n'envoie rien elle-m
 * **Lexique** (Paramètres) : noms propres, organismes et acronymes, un par ligne, pour guider la
   reconnaissance. On peut aussi y mettre des corrections, p. ex. `hydro québec => Hydro-Québec`.
 * **Filtre d'hallucinations** : Whisper invente parfois « Sous-titrage Société Radio-Canada » ou
-  « Merci d'avoir regardé » sur du silence. Ces phrases sont retirées.
+  « Merci d'avoir regardé » sur du silence. Ces phrases sont retirées. Une boucle (« Oui. Oui. Oui. … »,
+  une même suite de 1 à 12 mots répétée 5 fois ou plus, ou le même segment 5 fois de suite) est réduite à
+  une seule occurrence dès la sortie de Whisper : elle n'entretient plus la suite par le contexte, et un vrai
+  « oui, oui, oui, oui » reste intact.
 
 ## Nettoyage de la transcription
 
