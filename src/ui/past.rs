@@ -145,12 +145,7 @@ impl TourDeTableApp {
             && self.live.is_none()
             && self.fin_apres_panne.is_none()
             && matches!(self.model, super::ModelState::Ready);
-        let id = self.meetings[idx].id.as_str();
-        let travail_en_cours = self.summary_job.as_ref().is_some_and(|(i, ..)| i == id)
-            || self.nettoyage_job.as_ref().is_some_and(|t| t.id == id)
-            || self.voix_job.as_ref().is_some_and(|c| c.id == id)
-            || self.audio_export.is_some()
-            || self.decoupage_job.is_some();
+        let travail_en_cours = self.travail_sur(&self.meetings[idx].id);
         let p = apparence::palette(ui);
         {
             let m = &mut self.meetings[idx];
@@ -158,7 +153,7 @@ impl TourDeTableApp {
             let decoupable = audio && m.agenda.as_ref().is_some_and(|a| !a.points.is_empty());
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                let largeur_titre = (ui.available_width() - if m.interrompue { 720.0 } else { 520.0 }).max(260.0);
+                let largeur_titre = (ui.available_width() - if m.interrompue { 768.0 } else { 568.0 }).max(260.0);
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 4.0;
                     let titre = egui::TextEdit::singleline(&mut m.title)
@@ -187,6 +182,13 @@ impl TourDeTableApp {
                         .on_hover_text(format!("{} segments transcrits avec {}", m.segments.len(), short_model(&m.model)));
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if colonne::bouton_icone(ui, colonne::icone_corbeille, !travail_en_cours)
+                        .on_hover_text("Supprimer définitivement : efface la rencontre de l'ordinateur, sans corbeille (confirmation demandée)")
+                        .on_disabled_hover_text("Attendez la fin du travail en cours sur cette rencontre")
+                        .clicked()
+                    {
+                        action = Some("supprimer");
+                    }
                     if colonne::bouton_icone(ui, colonne::icone_archive, !travail_en_cours)
                         .on_hover_text("Archiver : comprime la rencontre dans un fichier .zip du dossier Archives et la retire de l'historique")
                         .on_disabled_hover_text("Attendez la fin du travail en cours sur cette rencontre")
@@ -265,6 +267,7 @@ impl TourDeTableApp {
                     ctx.request_repaint();
                 });
             }
+            Some("supprimer") => self.confirmer_suppression = Some(self.meetings[idx].id.clone()),
             Some("reveal") => storage::reveal(&self.meetings[idx].dir()),
             Some("audio") => self.exporter_audio(idx, blocs::Portee::Tout),
             Some("export") => match self.meetings[idx].export_all() {

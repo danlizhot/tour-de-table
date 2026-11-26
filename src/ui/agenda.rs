@@ -80,7 +80,7 @@ impl TourDeTableApp {
     }
 
     fn peut_demarrer(&self) -> bool {
-        matches!(self.model, ModelState::Ready) && !self.finishing && self.import_job.is_none()
+        matches!(self.model, ModelState::Ready) && !self.finishing && self.import_job.is_none() && self.annulation.is_none()
     }
 
     /// Débute un point (ou, pour `None`, ferme la période en cours) à la position courante de

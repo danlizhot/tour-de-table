@@ -596,7 +596,14 @@ pub fn list() -> Vec<Meeting> {
 }
 
 fn list_dans(racine: &Path) -> Vec<Meeting> {
-    let mut v: Vec<Meeting> = std::fs::read_dir(racine).into_iter().flatten().flatten().filter_map(|e| charger(&e.path())).collect();
+    let mut v: Vec<Meeting> = std::fs::read_dir(racine)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|dir| !finir_suppression(dir))
+        .filter_map(|dir| charger(&dir))
+        .collect();
     v.sort_by_key(|m| std::cmp::Reverse(m.started_at));
     v
 }
@@ -618,6 +625,72 @@ fn charger(dir: &Path) -> Option<Meeting> {
     // Le dossier fait foi : ancien format sans `dossier`, ou dossier renommé à la main.
     m.dossier = dir.file_name()?.to_string_lossy().into_owned();
     Some(m)
+}
+
+/// Marque d'un dossier de rencontre à supprimer, posée avant la suppression : si elle ne va pas au bout (application
+/// fermée, fichier encore ouvert sous Windows), le dossier est retiré au prochain démarrage au lieu de revenir dans
+/// l'historique à moitié vidé, ou d'être repris comme un import interrompu.
+const A_SUPPRIMER: &str = "a-supprimer";
+
+/// Marque le dossier d'une rencontre pour sa suppression ; seulement un dossier de rencontre (avec `rencontre.json` ou
+/// déjà marqué), jamais la racine des rencontres.
+pub fn marquer_a_supprimer(dir: &Path) -> Result<()> {
+    let racine = std::path::absolute(crate::config::meetings_dir()).unwrap_or_else(|_| crate::config::meetings_dir());
+    let absolu = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
+    anyhow::ensure!(absolu != racine && absolu.parent().is_some(), "{} n'est pas le dossier d'une rencontre", dir.display());
+    marquer_dans(dir)
+}
+
+fn marquer_dans(dir: &Path) -> Result<()> {
+    anyhow::ensure!(
+        dir.join("rencontre.json").is_file() || dir.join(A_SUPPRIMER).is_file(),
+        "{} n'est pas le dossier d'une rencontre",
+        dir.display()
+    );
+    std::fs::write(dir.join(A_SUPPRIMER), b"").with_context(|| format!("Suppression de {}", dir.display()))
+}
+
+/// Supprime définitivement le dossier d'une rencontre, sans corbeille : marqué d'abord, puis retiré, avec quelques
+/// essais si un fichier est encore ouvert (lecture audio qui se termine, antivirus). En cas d'échec, la marque reste
+/// et le dossier sera retiré au prochain démarrage.
+pub fn supprimer_dossier(dir: &Path) -> Result<()> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    marquer_a_supprimer(dir)?;
+    retirer(dir)
+}
+
+fn retirer(dir: &Path) -> Result<()> {
+    let mut essais = 0;
+    loop {
+        match std::fs::remove_dir_all(dir) {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(_) if essais < 5 => {
+                essais += 1;
+                std::thread::sleep(std::time::Duration::from_millis(400));
+            }
+            Err(e) => {
+                // La marque a pu partir avec une partie des fichiers : reposée pour le prochain démarrage.
+                let _ = std::fs::write(dir.join(A_SUPPRIMER), b"");
+                return Err(anyhow::Error::new(e).context(format!("Suppression de {}", dir.display())));
+            }
+        }
+    }
+}
+
+/// Dossier marqué pour sa suppression (voir `A_SUPPRIMER`) : retiré. Rend vrai s'il était marqué, même si le retrait
+/// échoue encore : il ne revient jamais dans l'historique.
+fn finir_suppression(dir: &Path) -> bool {
+    if !dir.join(A_SUPPRIMER).exists() {
+        return false;
+    }
+    match retirer(dir) {
+        Ok(()) => log::info!("{} supprimé (suppression inachevée)", dir.display()),
+        Err(e) => log::warn!("{e:#}"),
+    }
+    true
 }
 
 /// Nom du dossier d'une nouvelle rencontre : `AAAA-MM-JJ-rencontre-<slug du titre>`, ou
@@ -1271,6 +1344,43 @@ mod tests {
         // Sans périodes, les exports restent comme avant (aucun intertitre).
         assert_eq!(m.plain_text(), "[00:01] Salle : Bonjour.");
         assert_eq!(serde_json::from_str::<Periode>(r#"{"point": 2, "debut_ms": 10}"#).unwrap().declenchement, Declenchement::Manuel);
+    }
+
+    #[test]
+    fn supprimer_retire_le_dossier_et_rien_d_autre() {
+        let d = temporaire("suppression");
+        let racine = d.join("Musique/Tour de table");
+        let (dir, voisin) = (racine.join("2026-10-30-rencontre-ca"), racine.join("2026-10-31-rencontre"));
+        for r in [&dir, &voisin] {
+            std::fs::create_dir_all(r.join("source")).unwrap();
+            std::fs::write(r.join("rencontre.json"), ANCIEN_FORMAT).unwrap();
+            std::fs::write(r.join("source/bloc-001.wav"), vec![7u8; 1000]).unwrap();
+        }
+        supprimer_dossier(&dir).unwrap();
+        assert!(!dir.exists() && voisin.join("source/bloc-001.wav").exists());
+        // Déjà supprimé : rien à faire. Un dossier qui n'est pas celui d'une rencontre est refusé.
+        supprimer_dossier(&dir).unwrap();
+        let autre = d.join("Documents");
+        std::fs::create_dir_all(&autre).unwrap();
+        std::fs::write(autre.join("notes.txt"), "à garder").unwrap();
+        assert!(supprimer_dossier(&autre).is_err());
+        assert!(autre.join("notes.txt").exists());
+        assert!(supprimer_dossier(&racine).is_err() && voisin.exists());
+    }
+
+    #[test]
+    fn suppression_inachevee_terminee_au_demarrage() {
+        let d = temporaire("suppression-inachevee");
+        let racine = d.join("Musique/Tour de table");
+        let (dir, voisin) = (racine.join("2026-10-30-rencontre-ca"), racine.join("2026-10-31-rencontre"));
+        for r in [&dir, &voisin] {
+            std::fs::create_dir_all(r).unwrap();
+            std::fs::write(r.join("rencontre.json"), ANCIEN_FORMAT).unwrap();
+        }
+        // Marqué, puis l'application fermée avant le retrait : jamais rechargé, retiré au démarrage.
+        marquer_dans(&dir).unwrap();
+        assert_eq!(list_dans(&racine).len(), 1);
+        assert!(!dir.exists() && voisin.exists());
     }
 
     #[test]

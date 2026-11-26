@@ -14,7 +14,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use anyhow::{Context, Result, anyhow, bail};
 use symphonia::core::codecs::CodecParameters;
@@ -126,9 +126,19 @@ pub struct Avancement {
     pub enonces_transcrits: AtomicUsize,
     /// Énoncés envoyés à la transcription, cumulés bloc par bloc.
     cumul: Mutex<Vec<usize>>,
+    /// « Annuler l'import » : le fil s'arrête au prochain morceau décodé ou au prochain bloc.
+    pub annule: AtomicBool,
 }
 
 impl Avancement {
+    /// Erreur qui arrête le fil d'un import annulé.
+    pub fn verifier(&self) -> Result<()> {
+        if self.annule.load(Ordering::Relaxed) {
+            bail!("Import annulé");
+        }
+        Ok(())
+    }
+
     /// Note les énoncés d'un bloc envoyés à la transcription.
     pub fn bloc_envoye(&self, enonces: usize) {
         let mut c = self.cumul.lock().unwrap_or_else(|e| e.into_inner());
@@ -187,6 +197,7 @@ pub fn ecrire_blocs(fichier: &Path, travail: &Path, avancement: &Avancement) -> 
     // Morceaux de 30 ms, comme les trames du découpeur.
     let morceau = SAMPLE_RATE as usize * 30 / 1000;
     decode(fichier, |audio| {
+        avancement.verifier()?;
         for m in audio.chunks(morceau) {
             seg.push(m, &mut jetes);
             jetes.clear();

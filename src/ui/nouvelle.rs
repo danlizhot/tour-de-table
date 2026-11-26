@@ -61,7 +61,7 @@ impl TourDeTableApp {
                 ui.add_space(20.0);
 
                 // Démarrer.
-                let pret = matches!(self.model, ModelState::Ready) && !self.finishing && self.import_job.is_none() && self.fin_apres_panne.is_none();
+                let pret = matches!(self.model, ModelState::Ready) && !self.finishing && self.import_job.is_none() && self.annulation.is_none() && self.fin_apres_panne.is_none();
                 let source = self.cfg.capture_mic || self.cfg.capture_system;
                 let resp = bouton_demarrer(ui, pret && source);
                 let resp = match (pret, source) {

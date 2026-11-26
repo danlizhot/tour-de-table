@@ -132,7 +132,7 @@ impl TourDeTableApp {
             }
         }
         ui.add_space(8.0);
-        let libre = self.recorder.is_none() && !self.finishing && self.import_job.is_none() && self.verification.is_none();
+        let libre = self.recorder.is_none() && !self.finishing && self.import_job.is_none() && self.annulation.is_none() && self.verification.is_none();
         let b = bouton_widget(ui, "Importer un enregistrement…", Genre::Secondaire, 38.0).min_size(Vec2::new(largeur, 38.0));
         if ui
             .add_enabled(libre, b)
@@ -300,6 +300,21 @@ pub(super) fn icone_archive(p: &egui::Painter, r: Rect, c: Color32) {
     p.rect_stroke(haut, CornerRadius::same(1), t, egui::StrokeKind::Middle);
     p.rect_stroke(bas, CornerRadius::same(1), t, egui::StrokeKind::Middle);
     p.line_segment([Pos2::new(r.center().x - 2.5, r.min.y + 9.5), Pos2::new(r.center().x + 2.5, r.min.y + 9.5)], t);
+}
+
+/// Corbeille : couvercle, poignée et cuve à rainures.
+pub(super) fn icone_corbeille(p: &egui::Painter, r: Rect, c: Color32) {
+    let t = Stroke::new(1.6, c);
+    let (x0, x1) = (r.min.x + 1.0, r.max.x - 1.0);
+    p.line_segment([Pos2::new(x0, r.min.y + 3.5), Pos2::new(x1, r.min.y + 3.5)], t);
+    p.line_segment([Pos2::new(r.center().x - 2.5, r.min.y + 3.5), Pos2::new(r.center().x - 2.5, r.min.y + 1.0)], t);
+    p.line_segment([Pos2::new(r.center().x - 2.5, r.min.y + 1.0), Pos2::new(r.center().x + 2.5, r.min.y + 1.0)], t);
+    p.line_segment([Pos2::new(r.center().x + 2.5, r.min.y + 1.0), Pos2::new(r.center().x + 2.5, r.min.y + 3.5)], t);
+    let cuve = Rect::from_min_max(Pos2::new(x0 + 1.5, r.min.y + 3.5), Pos2::new(x1 - 1.5, r.max.y - 0.5));
+    p.rect_stroke(cuve, CornerRadius::same(2), t, egui::StrokeKind::Middle);
+    for dx in [-2.2, 2.2] {
+        p.line_segment([Pos2::new(r.center().x + dx, r.min.y + 6.5), Pos2::new(r.center().x + dx, r.max.y - 3.0)], t);
+    }
 }
 
 fn icone_engrenage(p: &egui::Painter, r: Rect, c: Color32) {
