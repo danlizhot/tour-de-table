@@ -52,6 +52,42 @@ pub struct Meeting {
     /// Voix reconnues après la transcription (voir `voix`) : absentes des rencontres d'avant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voix: Option<crate::voix::Voix>,
+    /// Temps de traitement sur l'ordinateur, par étape : absents des rencontres d'avant.
+    #[serde(default, skip_serializing_if = "Temps::vide")]
+    pub temps: Temps,
+}
+
+/// Temps de traitement d'une rencontre, en secondes, par étape. La transcription d'un enregistrement ne compte que la
+/// fin, après « Arrêter » (le reste se fait pendant la rencontre). Une étape interrompue puis reprise additionne ses
+/// parties ; un compte rendu rédigé de nouveau remplace le temps du précédent.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Temps {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcription_s: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nettoyage_s: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compte_rendu_s: Option<u64>,
+    /// Reconnaissance des voix : faite quand l'ordinateur est libre, parfois bien plus tard ; hors du total.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voix_s: Option<u64>,
+}
+
+impl Temps {
+    pub fn vide(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Ajoute `duree` à une étape.
+    pub fn ajouter(etape: &mut Option<u64>, duree: std::time::Duration) {
+        *etape = Some(etape.unwrap_or(0) + duree.as_secs_f64().round() as u64);
+    }
+
+    /// Total de la chaîne (transcription, nettoyage, compte rendu), sans les voix ; `None` si aucune étape n'est connue.
+    pub fn total_s(&self) -> Option<u64> {
+        let etapes = [self.transcription_s, self.nettoyage_s, self.compte_rendu_s];
+        etapes.iter().any(Option::is_some).then(|| etapes.iter().flatten().sum())
+    }
 }
 
 /// Ordre du jour déposé avant ou après la rencontre.
@@ -151,6 +187,7 @@ impl Meeting {
             pauses: Vec::new(),
             interrompue: false,
             voix: None,
+            temps: Temps::default(),
         }
     }
 

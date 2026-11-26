@@ -395,6 +395,8 @@ fn voix_du_releve(r: &Releve) -> Voix {
 /// Calcul en cours dans un processus à part, côté application.
 pub struct Calcul {
     pub id: String,
+    /// Début du calcul : son temps est noté dans la rencontre (`Meeting::temps`).
+    pub debut: std::time::Instant,
     enfant: Option<Child>,
     pub fin: Receiver<Result<Voix, String>>,
 }
@@ -426,7 +428,7 @@ impl Calcul {
                 .and_then(|l| serde_json::from_str::<Voix>(l).map_err(|e| e.to_string()));
             let _ = tx.send(resultat);
         });
-        Ok(Self { id, enfant: Some(enfant), fin })
+        Ok(Self { id, debut: std::time::Instant::now(), enfant: Some(enfant), fin })
     }
 
     /// Arrête le processus : le calcul sera repris plus tard, depuis le début.

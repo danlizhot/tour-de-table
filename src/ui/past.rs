@@ -40,6 +40,10 @@ impl TourDeTableApp {
     /// enregistrés (resume.md) d'un compte rendu interrompu.
     pub(super) fn summarize(&mut self, idx: usize, reprendre: bool) {
         self.notify("Le compte rendu se rédige en arrière-plan : vous pouvez continuer à utiliser Tour de table.", false);
+        // Rédigé de nouveau : le temps du précédent ne compte plus. Repris : les deux parties s'additionnent.
+        if !reprendre {
+            self.meetings[idx].temps.compte_rendu_s = None;
+        }
         let m = &self.meetings[idx];
         let (tx, rx) = crossbeam_channel::bounded(1);
         let moteur = config::moteur();
@@ -180,6 +184,12 @@ impl TourDeTableApp {
                     }
                     ui.label(RichText::new(morceaux.join(" · ")).size(13.0).color(p.texte2))
                         .on_hover_text(format!("{} segments transcrits avec {}", m.segments.len(), short_model(&m.model)));
+                    if let Some(ligne) = ligne_temps(&m.temps, m.agenda.is_some()) {
+                        ui.label(RichText::new(ligne).size(12.5).color(p.texte2)).on_hover_text(
+                            "Temps de traitement sur cet ordinateur. Pour un enregistrement, la transcription ne compte que la fin, \
+                             après « Arrêter ». Les voix, calculées quand l'ordinateur est libre, ne comptent pas dans le total.",
+                        );
+                    }
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if colonne::bouton_icone(ui, colonne::icone_corbeille, !travail_en_cours)
@@ -296,5 +306,45 @@ impl TourDeTableApp {
             Some("poursuivre") => self.poursuivre(idx),
             _ => {}
         }
+    }
+}
+
+/// « Traitement : transcription 35 min · compte rendu 42 min · total 1 h 17 · voix 12 min », d'après les étapes connues.
+fn ligne_temps(t: &storage::Temps, avec_ordre_du_jour: bool) -> Option<String> {
+    let duree = |s: u64| if s < 60 { format!("{s} s") } else { apparence::duree_courte(s) };
+    let redaction = if avec_ordre_du_jour { "compte rendu" } else { "résumé" };
+    let mut morceaux: Vec<String> = [("transcription", t.transcription_s), ("nettoyage", t.nettoyage_s), (redaction, t.compte_rendu_s)]
+        .into_iter()
+        .filter_map(|(nom, s)| s.map(|s| format!("{nom} {}", duree(s))))
+        .collect();
+    if morceaux.len() > 1
+        && let Some(total) = t.total_s()
+    {
+        morceaux.push(format!("total {}", duree(total)));
+    }
+    if let Some(s) = t.voix_s {
+        morceaux.push(format!("voix {} (à part)", duree(s)));
+    }
+    (!morceaux.is_empty()).then(|| format!("Traitement : {}", morceaux.join(" · ")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ligne_des_temps() {
+        let mut t = storage::Temps::default();
+        assert_eq!(ligne_temps(&t, true), None);
+        t.transcription_s = Some(35 * 60);
+        assert_eq!(ligne_temps(&t, true).unwrap(), "Traitement : transcription 35 min");
+        t.nettoyage_s = Some(12);
+        t.compte_rendu_s = Some(42 * 60);
+        t.voix_s = Some(12 * 60);
+        assert_eq!(
+            ligne_temps(&t, true).unwrap(),
+            "Traitement : transcription 35 min · nettoyage 12 s · compte rendu 42 min · total 1 h 17 · voix 12 min (à part)"
+        );
+        assert!(ligne_temps(&t, false).unwrap().contains("résumé 42 min"));
     }
 }

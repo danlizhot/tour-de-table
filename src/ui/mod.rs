@@ -145,6 +145,9 @@ pub struct TourDeTableApp {
     /// Archivages en cours (compression dans un fil) : la rencontre revient dans l'historique si l'archivage échoue.
     archivage: (Sender<FinArchivage>, Receiver<FinArchivage>),
     archivages_en_cours: usize,
+    /// Début de la transcription d'un import, ou de la fin d'un enregistrement (après « Arrêter ») : son temps est
+    /// noté dans la rencontre à la fin (`Meeting::temps`).
+    debut_transcription: Option<Instant>,
     /// Dossier d'un import annulé : retiré une fois le fil de l'import arrêté et les derniers énoncés revenus de
     /// Whisper, qui ne doivent jamais aller dans une autre rencontre. Rien d'autre n'est transcrit d'ici là.
     annulation: Option<std::path::PathBuf>,
@@ -219,6 +222,7 @@ impl TourDeTableApp {
             noms_des_voix: None,
             archivage: crossbeam_channel::unbounded(),
             archivages_en_cours: 0,
+            debut_transcription: None,
             annulation: None,
             suppression: crossbeam_channel::unbounded(),
             confirmer_suppression: None,
@@ -487,6 +491,7 @@ impl TourDeTableApp {
                 Err(e) => {
                     self.voix_direct = None;
                     self.voix_direct_import = None;
+                    self.debut_transcription = None;
                     if let Some(m) = self.live.take() {
                         let _ = std::fs::remove_dir_all(m.dir());
                     }
@@ -564,16 +569,17 @@ impl TourDeTableApp {
             self.load_model();
         }
 
-        if let Some((id, rx, _, _)) = &self.summary_job
+        if let Some((id, rx, _, debut)) = &self.summary_job
             && let Ok(res) = rx.try_recv()
         {
-            let id = id.clone();
+            let (id, duree) = (id.clone(), debut.elapsed());
             self.summary_job = None;
             match res {
                 Ok(text) => {
                     if let Some(i) = self.meetings.iter().position(|m| m.id == id) {
                         let m = &mut self.meetings[i];
                         m.summary = Some(text);
+                        crate::storage::Temps::ajouter(&mut m.temps.compte_rendu_s, duree);
                         // Compte rendu rédigé : la rencontre est terminée, on ne la poursuit plus.
                         m.interrompue = false;
                         let _ = m.save().and_then(|_| m.export_all().map(|_| ()));
