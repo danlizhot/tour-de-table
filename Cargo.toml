@@ -36,8 +36,9 @@ resvg = "0.48.1"
 
 # Windows : avancement dans l'icône de la barre des tâches (ITaskbarList3).
 [target."cfg(windows)".dependencies]
-# Et avis de mise à jour de la version du Microsoft Store (Windows.Services.Store).
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell", "Services_Store", "Foundation", "Foundation_Collections", "ApplicationModel", "System"] }
+# Et avis de mise à jour de la version du Microsoft Store (Windows.Services.Store), icône près de l'horloge et
+# notifications pendant un travail en arrière-plan.
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi", "Services_Store", "Foundation", "Foundation_Collections", "ApplicationModel", "System", "UI_Notifications", "Data_Xml_Dom"] }
 raw-window-handle = "0.6"
 
 # Linux : choix de X11 pour la fenêtre (même version que celle d'eframe).

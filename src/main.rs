@@ -11,6 +11,11 @@ mod decoupage;
 mod diagnostic;
 mod docx;
 mod gpu;
+mod instance;
+#[cfg(windows)]
+mod notification;
+#[cfg(windows)]
+mod zone_notification;
 mod mise_a_jour;
 mod models;
 mod nettoyage;
@@ -52,6 +57,13 @@ fn main() {
         }
         return;
     }
+    // Interface : un seul exemplaire. Relancé alors qu'il tourne (même caché en arrière-plan), il ramène sa fenêtre.
+    let interface = !matches!(args.get(1).map(String::as_str), Some("--transcrire" | "--compte-rendu"));
+    let verrou = match interface.then(instance::demarrer) {
+        Some(instance::Demarrage::DejaOuvert) => return,
+        Some(instance::Demarrage::Premier(v)) => v,
+        None => None,
+    };
     diagnostic::init();
     gpu::init();
     whisper_rs::install_logging_hooks();
@@ -113,7 +125,8 @@ fn main() {
     log::error!("Moteur d'affichage {first:?} indisponible : {error}");
 
     // Après un échec, la boucle d'événements de la fenêtre n'est plus réutilisable :
-    // on relance l'application dans un processus neuf avec l'autre moteur.
+    // on relance l'application dans un processus neuf avec l'autre moteur, qui prend le verrou de l'exemplaire unique.
+    drop(verrou);
     match std::env::var("TOURDETABLE_ERREUR_AFFICHAGE") {
         Err(_) => {
             let relaunch = std::env::current_exe().and_then(|exe| {

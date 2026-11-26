@@ -186,6 +186,10 @@ saisir à la main.
   (« Traitement : transcription 35 min · nettoyage 12 s · compte rendu 42 min · total 1 h 17 · voix 12 min
   (à part) »). Pour un enregistrement, la transcription ne compte que la fin, après « Arrêter » ; les voix,
   calculées quand l'ordinateur est libre, restent hors du total. Absent des rencontres d'avant.
+* **Arrière-plan (Windows)** : fermer la fenêtre pendant un travail (transcription, nettoyage, compte rendu,
+  voix) le laisse se terminer, avec une icône près de l'horloge (avancement, Ouvrir, Quitter) ; à la fin, une
+  notification dit ce qui est prêt, avec « Ouvrir », et l'application se ferme. Jamais pendant un enregistrement.
+  Relancer Tour de table ramène la fenêtre déjà ouverte au lieu d'en ouvrir une deuxième.
 * Exporté dans `compte-rendu.docx` (Word : Calibri, titres en gras, puces, prêt à relire et à
   diffuser) et `compte-rendu.md`, et inclus dans `transcription.md`.
 

@@ -1,6 +1,7 @@
 //! Interface native (egui) : rendu GPU immédiat, aucun navigateur embarqué.
 
 mod agenda;
+mod arriere_plan;
 mod apparence;
 mod barre_taches;
 mod colonne;
@@ -145,6 +146,8 @@ pub struct TourDeTableApp {
     /// Archivages en cours (compression dans un fil) : la rencontre revient dans l'historique si l'archivage échoue.
     archivage: (Sender<FinArchivage>, Receiver<FinArchivage>),
     archivages_en_cours: usize,
+    /// Arrière-plan (Windows) : fenêtre fermée pendant un travail, cachée jusqu'à la fin (`arriere_plan`).
+    arriere_plan: arriere_plan::ArrierePlan,
     /// Début de la transcription d'un import, ou de la fin d'un enregistrement (après « Arrêter ») : son temps est
     /// noté dans la rencontre à la fin (`Meeting::temps`).
     debut_transcription: Option<Instant>,
@@ -222,6 +225,7 @@ impl TourDeTableApp {
             noms_des_voix: None,
             archivage: crossbeam_channel::unbounded(),
             archivages_en_cours: 0,
+            arriere_plan: arriere_plan::ArrierePlan::new(&cc.egui_ctx),
             debut_transcription: None,
             annulation: None,
             suppression: crossbeam_channel::unbounded(),
@@ -579,6 +583,9 @@ impl TourDeTableApp {
                     if let Some(i) = self.meetings.iter().position(|m| m.id == id) {
                         let m = &mut self.meetings[i];
                         m.summary = Some(text);
+                        let (titre, avec_ordre_du_jour) = (m.title.clone(), m.agenda.is_some());
+                        self.arriere_plan.compte_rendu_pret(&titre, avec_ordre_du_jour);
+                        let m = &mut self.meetings[i];
                         crate::storage::Temps::ajouter(&mut m.temps.compte_rendu_s, duree);
                         // Compte rendu rédigé : la rencontre est terminée, on ne la poursuit plus.
                         m.interrompue = false;
@@ -645,6 +652,7 @@ impl TourDeTableApp {
 impl eframe::App for TourDeTableApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.pump();
+        self.gerer_arriere_plan(ctx);
         let a = self.avancement_global();
         self.barre_taches.afficher(a);
         let ecoute = self.verification.as_ref().is_some_and(verification::Verification::lecture_en_cours);

@@ -61,6 +61,9 @@ Le menu « Aide » (à côté du numéro de version) ouvre, seulement quand vous
 fiche du Microsoft Store ou le projet sur GitHub dans votre navigateur ; l'application elle-même ne s'y
 connecte pas.
 
+Les notifications de Windows (travail en arrière-plan, puis terminé) sont produites sur votre ordinateur et
+ne contiennent que le titre de la rencontre ; aucune connexion.
+
 L'application ne fait aucune autre connexion.
 
 ## Conservation et suppression

@@ -46,6 +46,8 @@ pub struct Config {
     /// Passer seul au point dont l'annonce est entendue ; sinon, son bouton est mis en évidence.
     pub passage_auto: bool,
     pub theme: Theme,
+    /// Fois où l'explication « Tour de table continue en arrière-plan » a été montrée (les premières seulement).
+    pub avis_arriere_plan: u32,
 
     // Anciens choix, lus seulement pour journaliser la bascule sur les choix
     // automatiques ; ils disparaissent du fichier au prochain enregistrement.
@@ -70,6 +72,7 @@ impl Default for Config {
             glossary: String::new(),
             passage_auto: false,
             theme: Theme::Systeme,
+            avis_arriere_plan: 0,
             ancien_modele: None,
             ancien_moteur: None,
             ancien_modele_redaction: None,

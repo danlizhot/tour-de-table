@@ -78,6 +78,13 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   voix montrée après 30 s de parole. `Voix::provisoire` ; pastilles en pointillé et carte « Qui parle » dans le direct,
   où l'on peut déjà nommer. À la fin, le calcul complet remplace ces voix et `Voix::reporter_noms` donne les noms aux
   voix qui parlent aux mêmes moments. Pas de voix en direct pour une rencontre poursuivie qui a déjà ses voix.
+* `ui/arriere_plan.rs` : fenêtre fermée pendant un travail (Windows) → cachée (CancelClose + `Visible(false)`) ; eframe 0.37
+  appelle toujours `App::logic` (donc `pump`) fenêtre cachée. Icône près de l'horloge (`zone_notification.rs`, Win32,
+  fenêtre de messages dans son fil) et notifications (`notification.rs`, WinRT, version du Store seulement) ; à la fin,
+  notification « Ouvrir » et fermeture, jamais de retour de la fenêtre seule. `instance.rs` : un seul exemplaire (verrou
+  `instance.verrou`, fichier `ouvrir` déposé par un exemplaire suivant, surveillé par un fil). `zone_notification.rs`
+  et `notification.rs` ne dépendent que de `std`/`windows`/`log` : vérifiables hors ligne depuis Linux dans une caisse
+  d'essai (`cargo check --target x86_64-pc-windows-gnu`).
 * `quebec.rs` : invite québécoise, typographie OQLF, lexique, filtre d'hallucinations. Boucles réduites à la sortie de
   Whisper (`stt::sans_boucles`, après `en_boucle` qui en a besoin pour le repli de la puce ; `nettoyage::sans_boucles`, 5 répétitions) ; avant, `stt::relancer` transcrit de nouveau un énoncé en boucle sans contexte et
   avec `temperature_inc` 0,2, seulement pour lui).
