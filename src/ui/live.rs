@@ -302,21 +302,34 @@ impl TourDeTableApp {
         (total > 0).then(|| av.blocs_transcrits() as f32 / total as f32)
     }
 
+    /// Import qui vient de finir sa transcription : son audio est rangé par point dans un fil (`decoupage_job`). La
+    /// rencontre n'est ni en cours ni encore dans l'historique : l'écran du traitement reste affiché d'ici là, plutôt
+    /// que celui d'une nouvelle rencontre.
+    pub(super) fn rencontre_en_finition(&self) -> Option<&Meeting> {
+        self.decoupage_job.as_ref().filter(|(nouvelle, ..)| *nouvelle && self.verification.is_none()).map(|(_, m, _)| m)
+    }
+
     /// Carte en haut de l'écran pendant un import ou la fin d'une transcription : la rencontre, puis les étapes qui
-    /// suivent, la première en cours.
+    /// suivent, celle en cours animée et les précédentes cochées.
     pub(super) fn carte_traitement(&mut self, ui: &mut Ui) {
         let p = palette(ui);
-        let Some(m) = &self.live else { return };
+        let finition = self.live.is_none();
+        let Some(m) = self.live.as_ref().or(self.rencontre_en_finition()) else { return };
         let titre = m.title.clone();
         let avec_ordre_du_jour = m.agenda.as_ref().is_some_and(|a| !a.points.is_empty());
         let (detail, fraction) = match self.etat_import() {
+            _ if finition && !avec_ordre_du_jour => ("Finalisation : rangement de l'audio…".to_string(), None),
+            _ if finition => ("Terminée".to_string(), None),
             Some(etat) => (etat, self.fraction_import()),
             None => (format!("Fin de la transcription · {} énoncés restants", self.in_flight), None),
         };
         let mut etapes: Vec<(&str, String)> = vec![("Transcription", detail)];
         if avec_ordre_du_jour {
-            etapes.push(("Découpage par points", "Vous vérifierez où commence chaque point".into()));
+            let decoupage = if finition { "Rangement de l'audio par point…" } else { "D'après les annonces (« on passe au point 3 »)" };
+            etapes.push(("Découpage par points", decoupage.into()));
         }
+        // Étape en cours : le découpage pendant la finition d'un import avec ordre du jour ; sinon la transcription.
+        let en_cours = usize::from(finition && avec_ordre_du_jour);
         etapes.push(("Nettoyage", "Quelques secondes".into()));
         if avec_ordre_du_jour && crate::models::redaction_locale() {
             etapes.push(("Compte rendu", "Rédigé d'après l'ordre du jour".into()));
@@ -375,10 +388,16 @@ impl TourDeTableApp {
             for (k, (nom, detail)) in etapes.iter().enumerate() {
                 // Texte aligné à gauche : les colonnes d'egui le justifieraient, mots écartés.
                 colonnes[k].with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                let en_cours = k == 0;
+                let (en_cours, faite) = (k == en_cours, k < en_cours);
                 ui.horizontal(|ui| {
                     let (r, _) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::hover());
-                    if en_cours {
+                    if faite {
+                        ui.painter().circle_filled(r.center(), 12.0, p.vert);
+                        let c = r.center();
+                        let t = egui::Stroke::new(2.2, Color32::WHITE);
+                        ui.painter().line_segment([c + Vec2::new(-5.0, 0.5), c + Vec2::new(-1.5, 4.0)], t);
+                        ui.painter().line_segment([c + Vec2::new(-1.5, 4.0), c + Vec2::new(5.0, -3.5)], t);
+                    } else if en_cours {
                         ui.painter().circle_filled(r.center(), 12.0, p.accent_plein);
                         let angle = ui.input(|i| i.time) as f32 * 5.0;
                         let points: Vec<egui::Pos2> = (0..=18).map(|j| {
@@ -390,11 +409,11 @@ impl TourDeTableApp {
                         ui.painter().circle_filled(r.center(), 12.0, p.piste);
                         ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, (k + 1).to_string(), super::colonne::police_grasse(12.0), p.texte);
                     }
-                    let titre = if en_cours { gras(*nom, 14.0).color(p.texte) } else { RichText::new(*nom).size(14.0).color(p.texte2) };
+                    let titre = if en_cours || faite { gras(*nom, 14.0).color(p.texte) } else { RichText::new(*nom).size(14.0).color(p.texte2) };
                     ui.label(titre);
                 });
                 let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width() - 10.0, 6.0), Sense::hover());
-                ui.painter().rect_filled(r, CornerRadius::same(3), p.piste);
+                ui.painter().rect_filled(r, CornerRadius::same(3), if faite { p.vert } else { p.piste });
                 if en_cours {
                     match fraction {
                         Some(f) => {
@@ -518,6 +537,13 @@ impl TourDeTableApp {
 
     pub(super) fn live_view(&mut self, ui: &mut Ui) {
         self.bandeau(ui);
+        // Fin d'un import : sa transcription reste à l'écran pendant le rangement de l'audio.
+        if self.live.is_none()
+            && let Some(m) = self.rencontre_en_finition()
+        {
+            transcript(ui, m, false, Default::default());
+            return;
+        }
         // Avant la rencontre : l'écran « Nouvelle rencontre ».
         if self.live.is_none() && self.recorder.is_none() && !matches!(self.model, ModelState::Missing | ModelState::Failed(_)) {
             self.ecran_nouvelle(ui);

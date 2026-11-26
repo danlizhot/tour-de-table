@@ -705,7 +705,7 @@ impl eframe::App for TourDeTableApp {
                                 self.bandeau_enregistrement(ui);
                             });
                     });
-            } else if self.live.is_some() {
+            } else if self.live.is_some() || self.rencontre_en_finition().is_some() {
                 // Import ou fin de transcription : les étapes du traitement, en haut de l'écran.
                 let p = apparence::palette(ui);
                 egui::Panel::top("traitement")
