@@ -77,7 +77,8 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   où l'on peut déjà nommer. À la fin, le calcul complet remplace ces voix et `Voix::reporter_noms` donne les noms aux
   voix qui parlent aux mêmes moments. Pas de voix en direct pour une rencontre poursuivie qui a déjà ses voix.
 * `quebec.rs` : invite québécoise, typographie OQLF, lexique, filtre d'hallucinations. Boucles réduites à la sortie de
-  Whisper (`stt::sans_boucles`, après `en_boucle` qui en a besoin pour le repli de la puce ; `nettoyage::sans_boucles`, 5 répétitions).
+  Whisper (`stt::sans_boucles`, après `en_boucle` qui en a besoin pour le repli de la puce ; `nettoyage::sans_boucles`, 5 répétitions) ; avant, `stt::relancer` transcrit de nouveau un énoncé en boucle sans contexte et
+  avec `temperature_inc` 0,2, seulement pour lui).
 * `gpu.rs` : puce graphique (Vulkan, Windows) choisie par étalonnage (`tourdetable --etalonner`, processus
   à part lancé par `ui/puce.rs` quand l'application est inoccupée) ; sentinelle autour des transcriptions
   sur la puce, repli de la rédaction sur le processeur après un plantage. Sans verdict : processeur, et

@@ -91,6 +91,9 @@ transcription nettoyée avec le nom des voix. L'application n'envoie rien elle-m
   une même suite de 1 à 12 mots répétée 5 fois ou plus, ou le même segment 5 fois de suite) est réduite à
   une seule occurrence dès la sortie de Whisper : elle n'entretient plus la suite par le contexte, et un vrai
   « oui, oui, oui, oui » reste intact.
+  Un énoncé qui boucle est d'abord transcrit une seconde fois, sans le texte précédent et avec les relances à
+  température plus élevée de Whisper (seulement pour cet énoncé) : ce qui avait été dit sous la boucle est
+  récupéré quand c'est possible ; sinon, la boucle est réduite.
 
 ## Nettoyage de la transcription
 
