@@ -1023,6 +1023,16 @@ pub fn ouvrir_guide() -> Result<()> {
 }
 
 /// Ouvre un dossier dans l'explorateur de fichiers du système.
+/// Pages du menu « Aide » : ouvertes dans le navigateur, seulement sur un clic. L'application ne s'y connecte pas.
+pub const LIEN_GUIDE_EN_LIGNE: &str = "https://danlizhot.github.io/tour-de-table/guide/guide-utilisation.pdf";
+pub const LIEN_STORE: &str = "https://apps.microsoft.com/detail/9nz4g5fg7l15";
+pub const LIEN_GITHUB: &str = "https://github.com/danlizhot/tour-de-table";
+
+/// Ouvre une page Web dans le navigateur par défaut.
+pub fn ouvrir_lien(url: &str) {
+    reveal(std::path::Path::new(url));
+}
+
 pub fn reveal(path: &std::path::Path) {
     let cmd = if cfg!(windows) {
         "explorer"
@@ -1381,6 +1391,14 @@ mod tests {
         // Sans périodes, les exports restent comme avant (aucun intertitre).
         assert_eq!(m.plain_text(), "[00:01] Salle : Bonjour.");
         assert_eq!(serde_json::from_str::<Periode>(r#"{"point": 2, "debut_ms": 10}"#).unwrap().declenchement, Declenchement::Manuel);
+    }
+
+    #[test]
+    fn liens_de_l_aide() {
+        for lien in [LIEN_GUIDE_EN_LIGNE, LIEN_STORE, LIEN_GITHUB] {
+            assert!(lien.starts_with("https://") && !lien.contains(' '), "{lien}");
+        }
+        assert!(LIEN_GUIDE_EN_LIGNE.ends_with(".pdf"));
     }
 
     #[test]

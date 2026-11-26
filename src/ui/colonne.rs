@@ -219,8 +219,36 @@ impl TourDeTableApp {
                     self.appliquer_theme();
                     self.cfg.save();
                 }
+                self.menu_aide(ui);
             });
         });
+    }
+
+    /// Petit bouton « Aide », à côté du numéro de version : guide livré, guide à jour en ligne, Microsoft Store, projet
+    /// sur GitHub. Les pages s'ouvrent dans le navigateur.
+    fn menu_aide(&mut self, ui: &mut Ui) {
+        let p = palette(ui);
+        let bouton = egui::Button::new(egui::RichText::new("Aide").size(12.5).color(p.texte2)).frame(false);
+        let mut guide = false;
+        egui::containers::menu::MenuButton::from_button(bouton).ui(ui, |ui| {
+            ui.set_min_width(300.0);
+            if ui.button("Guide d'utilisation").on_hover_text("Le guide livré avec cette version (PDF)").clicked() {
+                guide = true;
+            }
+            for (texte, bulle, lien) in [
+                ("Guide à jour, en ligne", "La dernière version du guide (PDF à imprimer), dans votre navigateur", storage::LIEN_GUIDE_EN_LIGNE),
+                ("Tour de table dans le Microsoft Store", "Fiche de l'application : mises à jour, avis", storage::LIEN_STORE),
+                ("Projet sur GitHub", "Code source, versions et suivi des problèmes", storage::LIEN_GITHUB),
+            ] {
+                if ui.button(texte).on_hover_text(bulle).clicked() {
+                    storage::ouvrir_lien(lien);
+                }
+            }
+        });
+        if guide && let Err(e) = storage::ouvrir_guide() {
+            log::error!("Guide d'utilisation : {e:#}");
+            self.notify(format!("{e:#}"), true);
+        }
     }
 }
 

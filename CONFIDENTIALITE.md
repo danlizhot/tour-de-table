@@ -57,6 +57,10 @@ et des consignes de rédaction dans le presse-papiers : **Tour de table n'envoie
 collez ce texte dans un service en ligne (Copilot, ChatGPT…), il quitte alors votre ordinateur
 et relève des conditions de ce service. Vérifiez d'abord que votre organisme le permet.
 
+Le menu « Aide » (à côté du numéro de version) ouvre, seulement quand vous cliquez, le guide en ligne, la
+fiche du Microsoft Store ou le projet sur GitHub dans votre navigateur ; l'application elle-même ne s'y
+connecte pas.
+
 L'application ne fait aucune autre connexion.
 
 ## Conservation et suppression

@@ -21,6 +21,8 @@ Linux : voir les [versions sur GitHub](https://github.com/danlizhot/tour-de-tabl
 
 📘 **[Guide d'utilisation (PDF imprimable)](https://danlizhot.github.io/tour-de-table/guide/guide-utilisation.pdf)**, avec des captures
 d'écran pas à pas. Il est aussi livré avec l'application : bouton « Guide d'utilisation », au bas de la colonne de gauche.
+Le menu « Aide », à côté du numéro de version, ouvre aussi ce guide à jour en ligne, la fiche du Microsoft Store et
+le projet sur GitHub, dans le navigateur.
 
 ![Capture d'écran](assets/capture.png)
 
