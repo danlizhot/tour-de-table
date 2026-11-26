@@ -54,7 +54,7 @@
     <tr><td><b>Hors point</b></td><td>Discussion en dehors de l'ordre du jour.</td></tr>
     <tr><td><b>Transcription brute</b></td><td>Le texte tel que reconnu, phrase par phrase. Elle n'est jamais modifiée.</td></tr>
     <tr><td><b>Transcription nettoyée</b></td><td>La même, avec les phrases recollées et les hésitations, répétitions et interjections retirées. C'est celle que lit le compte rendu.</td></tr>
-    <tr><td><b>Voix</b></td><td>Une personne qui parle, reconnue après la rencontre (« Voix 1 », « Voix 2 »…). On peut lui donner un nom.</td></tr>
+    <tr><td><b>Voix</b></td><td>Une personne qui parle (« Voix 1 », « Voix 2 »…), reconnue pendant la rencontre de façon provisoire, puis plus précisément après. On peut lui donner un nom.</td></tr>
     <tr><td><b>Compte rendu</b></td><td>Le brouillon rédigé à partir de la transcription, avec la même numérotation que l'ordre du jour. Sans ordre du jour, c'est un <b>résumé</b>.</td></tr>
     <tr><td><b>Archiver</b></td><td>Comprimer une rencontre dans un fichier .zip et la retirer de l'historique.</td></tr>
   </tbody>
@@ -85,7 +85,7 @@
 <h2>Le premier démarrage</h2>
 <p>Au premier lancement, Tour de table télécharge tout seul les modèles dont il a besoin, sans rien vous demander : la reconnaissance de la parole (574 Mo), la reconnaissance des voix (46 Mo), puis la rédaction des comptes rendus (11,7 Go ; 5,7 Go sur un Mac de moins de 24 Go). L'écran <b>Installation…</b> montre l'avancement de chaque modèle et le temps restant.</p>
 
-<figure class="fig moyenne" data-img="installation.png" data-crop="380:60:1060:640">
+<figure class="fig moyenne" data-img="installation.png" data-crop="260:40:1180:680">
   <figcaption>L'installation des modèles, au premier démarrage seulement</figcaption>
 </figure>
 
@@ -108,34 +108,42 @@
 <!-- ===================================================== 3 -->
 <h1 id="ecran">L'écran principal</h1>
 
-<p>La fenêtre est divisée en trois parties : la <b>colonne de gauche</b> (nouvelle rencontre, import et historique), la <b>zone de travail</b> au centre, et la <b>barre du bas</b>, qui sert à démarrer et à suivre l'enregistrement.</p>
+<p>La fenêtre est divisée en deux parties : la <b>colonne de gauche</b> (nouvelle rencontre, import, historique, guide et paramètres) et la <b>zone de travail</b>, à droite. Au démarrage, la zone de travail prépare une nouvelle rencontre : l'ordre du jour, ce qu'on enregistre, puis le bouton qui lance l'enregistrement.</p>
 
-<figure class="fig" data-img="accueil.png" data-bulles="1:228:78 2:228:114 3:215:160 4:700:91 5:385:843 6:660:850 7:210:815 8:1385:30">
+<figure class="fig" data-img="accueil.png" data-bulles="1:252:94 2:252:147 3:215:250 4:1300:270 5:1300:500 6:705:607 7:252:788 8:160:873 9:252:873">
   <figcaption>L'écran d'accueil, prêt pour une nouvelle rencontre</figcaption>
 </figure>
 <ol class="legende">
-  <li><b>+ Nouvelle rencontre</b> revient à cet écran pour préparer la rencontre suivante. Pendant un enregistrement, ce bouton devient <b>Rencontre en cours</b>.</li>
+  <li><b>+ Nouvelle rencontre</b> revient à cet écran pour préparer la rencontre suivante. Pendant un enregistrement, ce bouton devient la carte <b>Rencontre en cours</b>, avec la durée.</li>
   <li><b>Importer un enregistrement…</b> transcrit un fichier audio ou vidéo existant (voir <a class="ref" href="#import">Importer un enregistrement</a>).</li>
   <li><b>L'historique</b> : toutes vos rencontres, la plus récente en haut, avec leur date et leur durée. Cliquez sur une rencontre pour ouvrir sa fiche.</li>
-  <li><b>L'ordre du jour</b>, facultatif : glissez le document dans la fenêtre, ou utilisez <b>Parcourir…</b> ou <b>Saisir</b>.</li>
-  <li><b>Démarrer</b> lance l'enregistrement.</li>
-  <li><b>Les sources</b> : le micro de la salle et le son de l'ordinateur (participants à distance).</li>
-  <li><b>Guide d'utilisation</b> ouvre ce guide, livré avec l'application; <b>Archives</b> ouvre le dossier des rencontres archivées; <b>Paramètres</b> ouvre la fenêtre des réglages. Le numéro de version de l'application est inscrit juste en dessous; à côté, <b>Aide</b> ouvre un menu : ce guide, le <b>guide à jour en ligne</b> (PDF à imprimer), la fiche de Tour de table dans le <b>Microsoft Store</b> et le <b>projet sur GitHub</b>.</li>
+  <li><b>L'ordre du jour</b>, facultatif : glissez le document dans le cadre, ou utilisez <b>Parcourir…</b> ou <b>Saisir les points</b>.</li>
+  <li><b>Ce qu'on enregistre</b> : le micro de la salle et le son de l'ordinateur (participants à distance).</li>
+  <li><b>Démarrer l'enregistrement</b> lance la rencontre.</li>
+  <li><b>Guide d'utilisation</b> ouvre ce guide, livré avec l'application; <b>Archives</b> ouvre le dossier des rencontres archivées; <b>Paramètres</b> ouvre la fenêtre des réglages.</li>
+  <li>Sous le numéro de version, <b>Aide</b> ouvre un menu (voir ci-dessous).</li>
   <li>Le bouton rond change l'<b>apparence</b> : celle du système, claire ou foncée.</li>
 </ol>
 
-<h2>Les messages</h2>
-<p>Les avis s'affichent quelques secondes dans le coin inférieur droit. Une information disparaît seule. Une erreur, en rouge, reste affichée jusqu'à ce que vous la fermiez avec le petit <b>×</b>.</p>
+<h2>Le menu Aide</h2>
+<p>Le petit bouton <b>Aide</b>, à côté du numéro de version, offre ce guide, le <b>guide à jour en ligne</b> (la dernière version, en PDF à imprimer), la fiche de Tour de table dans le <b>Microsoft Store</b> et le <b>projet sur GitHub</b>. Les pages s'ouvrent dans votre navigateur.</p>
 
-<figure class="fig detail" data-img="avis.png" data-crop="880:790:1440:900">
+<figure class="fig detail reduite" data-img="aide.png" data-crop="0:700:980:900">
+  <figcaption>Le menu Aide, au bas de la colonne de gauche</figcaption>
+</figure>
+
+<h2>Les messages</h2>
+<p>Les avis s'affichent quelques secondes dans le coin inférieur droit. Une information disparaît seule : par exemple, après <b>Copier</b>, un avis confirme ce qui a été copié. Une erreur, en rouge, reste affichée jusqu'à ce que vous la fermiez avec le petit <b>×</b>.</p>
+
+<figure class="fig detail" data-img="avis.png" data-crop="960:810:1440:890">
   <figcaption>Un avis : le compte rendu est prêt</figcaption>
 </figure>
 
 <h2>Les mises à jour</h2>
 <p>Dans la version du Microsoft Store, un bandeau annonce chaque nouvelle version. <span class="bouton">Mettre à jour</span> ouvre le Store, qui installe la nouvelle version; <span class="bouton">Plus tard</span> masque le bandeau. Le bouton reste grisé pendant une rencontre ou une rédaction, parce que la mise à jour ferme l'application.</p>
 
-<figure class="fig" data-img="maj.png" data-crop="0:0:1440:150">
-  <figcaption>Le bandeau de mise à jour, sous le titre</figcaption>
+<figure class="fig" data-img="maj.png" data-crop="260:0:1440:120">
+  <figcaption>Le bandeau de mise à jour, en haut de la zone de travail</figcaption>
 </figure>
 
 <!-- ===================================================== 4 -->
@@ -162,24 +170,23 @@
   <p>Un PDF numérisé en image ne contient pas de texte lisible : aucun point n'est reconnu. Utilisez plutôt le document Word d'origine, ou saisissez les points à la main.</p>
 </div>
 
-<figure class="fig" data-img="accueil-oj.png" data-crop="0:0:1440:832" data-bulles="1:378:78 2:500:144 3:1322:162 4:345:299 5:430:548 6:560:801 7:1300:93">
+<figure class="fig" data-img="accueil-oj.png" data-crop="260:100:1440:900" data-bulles="1:700:181 2:1240:200 3:1290:227 4:480:399 5:420:585 6:705:839">
   <figcaption>L'ordre du jour déposé avant la rencontre</figcaption>
 </figure>
 <ol class="legende">
-  <li><b>Les onglets</b> : l'ordre du jour, et la transcription qui s'y affichera pendant la rencontre.</li>
   <li><b>Le document</b> d'où viennent les points.</li>
-  <li><b>Débuter le point</b> démarre l'enregistrement directement sur ce point.</li>
+  <li><b>Modifier les points</b>, <b>Remplacer…</b> (un autre document) et <b>Retirer</b> (enlever l'ordre du jour).</li>
+  <li><b>Débuter</b> démarre l'enregistrement directement sur ce point.</li>
   <li><b>Détail</b> affiche les précisions écrites sous un point dans le document.</li>
   <li><b>Voir et modifier le texte</b> affiche le texte complet de l'ordre du jour.</li>
-  <li><b>Modifier les points</b>, <b>Remplacer…</b> (un autre document) et <b>Retirer</b> (enlever l'ordre du jour).</li>
-  <li><b>Côte à côte</b> affiche l'ordre du jour et la transcription en même temps.</li>
+  <li><b>Démarrer l'enregistrement</b> commence la rencontre sans point en cours.</li>
 </ol>
 
 
 <h2 id="modifier-points">Modifier les points</h2>
 <p><span class="bouton">Modifier les points</span> corrige la liste, avant, pendant ou après la rencontre.</p>
 
-<figure class="fig" data-img="fiche-points.png" data-crop="240:200:1440:720" data-bulles="1:520:253 2:1250:232 3:1420:232 4:372:589 5:455:589">
+<figure class="fig" data-img="fiche-points.png" data-crop="260:160:1440:600" data-bulles="1:720:218 2:1238:200 3:1425:200 4:345:576 5:452:576">
   <figcaption>La modification des points</figcaption>
 </figure>
 <ol class="legende">
@@ -192,9 +199,9 @@
 <p>Après une correction du texte complet (<b>Voir et modifier le texte</b>), le bouton <b>Relire le texte</b> reconnaît de nouveau les points.</p>
 
 <h2>Saisir l'ordre du jour à la main</h2>
-<p>Sans document, cliquez sur <span class="bouton">Saisir</span>, puis sur <span class="bouton">Ajouter un point</span> pour chaque point. Cliquez dans un titre pour le nommer.</p>
+<p>Sans document, cliquez sur <span class="bouton">Saisir les points</span>, puis sur <span class="bouton">Ajouter un point</span> pour chaque point. Cliquez dans un titre pour le nommer.</p>
 
-<figure class="fig" data-img="accueil-saisir.png" data-crop="240:66:1440:400">
+<figure class="fig" data-img="accueil-saisir.png" data-crop="260:100:1440:620">
   <figcaption>Un ordre du jour saisi à la main, encore vide</figcaption>
 </figure>
 
@@ -207,10 +214,10 @@
 <h1 id="enregistrer">Enregistrer une rencontre</h1>
 
 <h2>Choisir les sources</h2>
-<p>Sous le bouton <b>Démarrer</b>, deux cases indiquent ce qui est capté :</p>
+<p>Sous <b>Ce qu'on enregistre</b>, deux cases indiquent ce qui est capté :</p>
 <ul>
   <li><b>Micro de la salle</b> : les personnes présentes autour de l'ordinateur;</li>
-  <li><b>Son de l'ordinateur (Teams, Zoom…)</b> : les participants à distance, tels que vous les entendez.</li>
+  <li><b>Son de l'ordinateur</b> : les participants à distance (Teams, Zoom, Meet…), tels que vous les entendez.</li>
 </ul>
 <p>Aucun pilote à installer. Sur Mac, l'autorisation est demandée au premier usage. Pour une rencontre hybride, gardez les deux cases cochées.</p>
 
@@ -221,43 +228,57 @@
 
 <h2>Pendant la rencontre</h2>
 <ol class="etapes">
-  <li>Cliquez sur <span class="bouton vert">Démarrer</span>, ou directement sur <span class="bouton">Débuter le point</span> du premier point.</li>
-  <li>Quand on change de sujet, cliquez sur <span class="bouton">Débuter le point</span> du point abordé. Vous pouvez revenir sur un point déjà traité avec <span class="bouton">Revenir au point</span>.</li>
-  <li>Pour une discussion en dehors de l'ordre du jour, cliquez sur <span class="bouton">Hors point</span>.</li>
+  <li>Cliquez sur <span class="bouton rouge">Démarrer l'enregistrement</span>, ou directement sur <span class="bouton">Débuter</span> du premier point.</li>
+  <li>Quand on change de sujet, cliquez sur <span class="bouton">Débuter</span> du point abordé. Vous pouvez revenir sur un point déjà traité avec <span class="bouton">Revenir</span>.</li>
+  <li>Pour une discussion en dehors de l'ordre du jour, cliquez sur <span class="bouton">Hors point</span>, au bas de l'onglet.</li>
   <li>À la fin, cliquez sur <span class="bouton rouge">Arrêter</span>. La rencontre apparaît dans l'historique.</li>
 </ol>
 
-<figure class="fig" data-img="direct.png" data-bulles="1:228:78 2:1268:160 3:1340:316 4:655:807 5:385:847 6:528:847 7:583:834 8:830:856">
+<figure class="fig" data-img="direct.png" data-bulles="1:252:100 2:420:58 3:985:68 4:1160:52 5:1290:30 6:1282:231 7:1400:450 8:1368:520 9:695:870">
   <figcaption>Une rencontre en cours, sur le point 5</figcaption>
 </figure>
 <ol class="legende">
   <li><b>Rencontre en cours</b> ramène à la rencontre si vous consultez une autre fiche pendant l'enregistrement.</li>
-  <li>Chaque <b>point traité</b> porte un crochet vert et le temps qui lui a été consacré.</li>
-  <li>Le <b>point en cours</b> est surligné, avec son chronomètre.</li>
-  <li><b>Hors point</b> range ce qui suit en dehors de l'ordre du jour.</li>
-  <li><b>Arrêter</b> termine la rencontre.</li>
+  <li>Le témoin rouge et la <b>durée</b> de la rencontre.</li>
+  <li>Le <b>niveau du son</b> de chaque source. S'il ne bouge pas quand quelqu'un parle, vérifiez les sources. Une source décochée est marquée « non enregistré ».</li>
   <li><b>Pause</b> suspend la captation (voir plus bas).</li>
-  <li>La <b>durée</b> de la rencontre.</li>
-  <li>Le <b>niveau du son</b> de chaque source. S'il ne bouge pas quand quelqu'un parle, vérifiez les sources.</li>
+  <li><b>Arrêter</b> termine la rencontre.</li>
+  <li>Chaque <b>point traité</b> porte un crochet vert et le temps qui lui a été consacré; <b>Revenir</b> y retourne.</li>
+  <li>Le <b>point en cours</b> est surligné, avec le moment où il a commencé.</li>
+  <li><b>Débuter</b> passe à ce point.</li>
+  <li><b>Hors point</b> range ce qui suit en dehors de l'ordre du jour.</li>
 </ol>
 
 <h2>La transcription en direct</h2>
 <p>L'onglet <b>Transcription</b> affiche le texte au fil de la rencontre, avec l'heure et la source de chaque passage : <b>Salle</b> ou <b>À distance</b>. La transcription est sauvegardée après chaque phrase : une panne ou une coupure de courant ne fait rien perdre.</p>
 
-<figure class="fig" data-img="direct-cote.png" data-crop="240:66:1440:900">
+<figure class="fig" data-img="direct-cote.png" data-crop="260:0:1440:900">
   <figcaption>L'ordre du jour et la transcription côte à côte, pendant la rencontre</figcaption>
 </figure>
 
-<h2>Les changements de point annoncés</h2>
-<p>Quand quelqu'un annonce « on passe au point 6 », Tour de table met en évidence le bouton <b>Débuter le point</b> de ce point : un clic suffit pour confirmer.</p>
+<h2 id="voix-direct">Qui parle, en direct</h2>
+<p>Après quelques minutes, l'onglet <b>Transcription</b> distingue les personnes qui parlent : chaque passage porte une voix (« Voix 3 », « Voix 4 »…) et sa couleur, et la carte <b>Qui parle</b> donne le temps de parole de chacune. Vous pouvez déjà taper le nom ou le rôle d'une voix : il s'affiche aussitôt dans la transcription.</p>
+<p>Ces voix sont <b>provisoires</b> (pastilles en pointillé) : elles sont recalculées chaque minute, puis entièrement à la fin de la rencontre. Les noms déjà donnés sont gardés et passent aux voix définitives qui parlent aux mêmes moments.</p>
 
-<figure class="fig" data-img="direct-propose.png" data-crop="240:300:1440:440">
+<figure class="fig" data-img="direct-voix.png" data-crop="260:100:1440:900" data-bulles="1:300:226 2:1398:190 3:1342:357">
+  <figcaption>Les voix provisoires pendant la rencontre : deux déjà nommées</figcaption>
+</figure>
+<ol class="legende">
+  <li>La <b>voix</b> de chaque passage, en pointillé tant qu'elle est provisoire.</li>
+  <li><b>Qui parle</b> : chaque voix et son temps de parole.</li>
+  <li>Tapez ici le <b>nom ou le rôle</b> de la personne.</li>
+</ol>
+
+<h2>Les changements de point annoncés</h2>
+<p>Quand quelqu'un annonce « on passe au point 6 », Tour de table met en évidence le bouton <b>Débuter</b> de ce point : un clic suffit pour confirmer.</p>
+
+<figure class="fig" data-img="direct-propose.png" data-crop="260:420:1440:600">
   <figcaption>Le point annoncé est mis en évidence</figcaption>
 </figure>
 
-<p>Si la case <b>Passer automatiquement au point annoncé</b> est cochée dans les Paramètres, la rencontre passe seule au point annoncé. Un bandeau bleu l'indique, avec un bouton <b>Annuler</b> pendant 10 secondes.</p>
+<p>Si la case <b>Passer automatiquement au point annoncé</b> est cochée dans les Paramètres, la rencontre passe seule au point annoncé. Un bandeau jaune l'indique, avec un bouton <b>Annuler</b> pendant 10 secondes.</p>
 
-<figure class="fig" data-img="direct-bandeau.png" data-crop="240:66:1440:200">
+<figure class="fig" data-img="direct-bandeau.png" data-crop="260:0:1440:200">
   <figcaption>Le passage automatique, annulable</figcaption>
 </figure>
 
@@ -275,13 +296,13 @@
 <p><span class="bouton">Pause</span> suspend la captation, par exemple pour un huis clos ou une discussion hors sujet : rien n'est capté, transcrit ni conservé dans l'audio, jusqu'à <span class="bouton">Reprendre</span>. Les pauses sont indiquées dans la fiche de la rencontre.</p>
 
 <h2>Après la rencontre</h2>
-<p>Dès l'arrêt, plusieurs travaux s'enchaînent seuls, en arrière-plan. Vous pouvez continuer à utiliser l'ordinateur et Tour de table. Si une nouvelle rencontre commence, le nettoyage et la reconnaissance des voix s'interrompent, puis reprennent ensuite là où ils en étaient.</p>
+<p>Dès l'arrêt, plusieurs travaux s'enchaînent seuls, en arrière-plan; l'écran de la rencontre montre chaque étape à mesure qu'elle se termine. Vous pouvez continuer à utiliser l'ordinateur et Tour de table. Si une nouvelle rencontre commence, le nettoyage et la reconnaissance des voix s'interrompent, puis reprennent ensuite là où ils en étaient.</p>
 <table class="tableau">
   <thead><tr><th style="width:30%">Étape</th><th>Durée approximative</th></tr></thead>
   <tbody>
     <tr><td>Nettoyage de la transcription</td><td>Quelques secondes.</td></tr>
-    <tr><td>Rédaction du compte rendu</td><td>De 0,7 à 1 fois la durée de la rencontre, selon l'ordinateur. Un avis s'affiche quand il est prêt.</td></tr>
-    <tr><td>Reconnaissance des voix</td><td>Environ le cinquième de la durée de la rencontre, quand l'application n'a rien d'autre à faire.</td></tr>
+    <tr><td>Rédaction du compte rendu</td><td>De 0,7 à 1,4 fois la durée de la rencontre, selon l'ordinateur. Un avis s'affiche quand il est prêt.</td></tr>
+    <tr><td>Reconnaissance des voix</td><td>Environ le cinquième de la durée de la rencontre, quand l'application n'a rien d'autre à faire. Elle remplace les voix provisoires.</td></tr>
   </tbody>
 </table>
 
@@ -298,9 +319,9 @@
 <p>Une séance du conseil diffusée en ligne, un webinaire, une vidéo de formation? Tour de table la transcrit en captant le son de l'ordinateur pendant que la vidéo joue, comme pour les participants à distance d'une rencontre Teams.</p>
 <ol class="etapes">
   <li>Au besoin, déposez d'abord l'<b>ordre du jour</b> sur l'écran d'accueil.</li>
-  <li>Sous <b>Démarrer</b>, gardez <b>Son de l'ordinateur</b> coché et décochez <b>Micro de la salle</b> : seuls les sons de la vidéo sont captés, pas les bruits de la pièce.</li>
-  <li>Ouvrez la vidéo, prête à jouer, puis cliquez sur <span class="bouton vert">Démarrer</span> dans Tour de table.</li>
-  <li>Lancez la vidéo, à vitesse normale. Le niveau du son de l'ordinateur doit bouger dans la barre du bas.</li>
+  <li>Sous <b>Ce qu'on enregistre</b>, gardez <b>Son de l'ordinateur</b> coché et décochez <b>Micro de la salle</b> : seuls les sons de la vidéo sont captés, pas les bruits de la pièce.</li>
+  <li>Ouvrez la vidéo, prête à jouer, puis cliquez sur <span class="bouton rouge">Démarrer l'enregistrement</span> dans Tour de table.</li>
+  <li>Lancez la vidéo, à vitesse normale. Le niveau du son « À distance » doit bouger dans le bandeau d'enregistrement, en haut.</li>
   <li>À la fin de la vidéo, cliquez sur <span class="bouton rouge">Arrêter</span>. La suite est la même que pour une rencontre : nettoyage, compte rendu (ou résumé) et voix.</li>
 </ol>
 <div class="encadre attention">
@@ -330,48 +351,53 @@
 
 <p>Formats acceptés : MP4 (enregistrements Teams), M4A (Zoom, téléphones), MP3, WAV, FLAC et OGG. Même un enregistrement de plusieurs heures est lu sans difficulté, et une copie intacte du fichier est gardée.</p>
 
-<figure class="fig" data-img="import.png" data-bulles="1:1060:923">
-  <figcaption>Un import en cours : l'avancement s'affiche par tranche de 2 minutes</figcaption>
+<figure class="fig" data-img="import.png" data-crop="0:0:1440:330" data-bulles="1:252:100 2:395:88 3:1420:42">
+  <figcaption>Un import en cours : la transcription commence</figcaption>
 </figure>
+<ol class="legende">
+  <li>La carte <b>Transcription en cours</b>, dans la colonne de gauche, donne l'avancement et ramène à l'import.</li>
+  <li><b>Les étapes</b> : transcription, découpage par points, nettoyage, compte rendu et voix. Chacune se coche quand elle est terminée.</li>
+  <li><b>Annuler l'import</b> arrête tout (voir ci-dessous).</li>
+</ol>
 
-<p>L'avancement s'affiche dans la barre du bas. L'application reste utilisable pendant l'import. Mauvais fichier, enregistrement déjà importé? <span class="bouton">Annuler l'import</span>, en haut à droite de la carte, puis <b>Oui, annuler et supprimer</b> : la transcription s'arrête et les fichiers créés pour cette rencontre sont effacés. Le fichier que vous avez importé n'est pas touché. Si le découpage par point n'est pas juste, corrigez-le avec <b>Découper par points</b> (voir <a class="ref" href="#decoupage">Corriger le découpage par point</a>).</p>
+<p>L'application reste utilisable pendant l'import : vous pouvez consulter d'autres rencontres. Mauvais fichier, enregistrement déjà importé? <span class="bouton">Annuler l'import</span>, puis <b>Oui, annuler et supprimer</b> : la transcription s'arrête et les fichiers créés pour cette rencontre sont effacés. Le fichier que vous avez importé n'est pas touché. Si le découpage par point n'est pas juste, corrigez-le avec <b>Découper par points</b> (voir <a class="ref" href="#decoupage">Corriger le découpage par point</a>).</p>
 
 <!-- ===================================================== 7 -->
 <h1 id="fiche">La fiche d'une rencontre</h1>
 
 <p>Cliquez sur une rencontre de l'historique pour ouvrir sa fiche. Elle s'ouvre sur le compte rendu s'il existe, sinon sur la transcription.</p>
 
-<figure class="fig" data-img="fiche-cr.png" data-bulles="1:780:78 2:1100:120 3:530:126 4:650:160 5:1300:131 6:490:870">
+<figure class="fig" data-img="fiche-cr.png" data-bulles="1:565:26 2:940:20 3:890:72 4:680:117 5:1300:100 6:770:771 7:1290:875">
   <figcaption>La fiche d'une rencontre, ouverte sur le compte rendu</figcaption>
 </figure>
 <ol class="legende">
   <li><b>Le titre</b> se modifie directement : cliquez dessus et tapez.</li>
   <li><b>Les boutons de la rencontre</b>, décrits dans le tableau ci-dessous.</li>
-  <li><b>Les détails</b> : date et heure, durée, nombre de segments, pauses et modèle de reconnaissance. Dessous, le <b>temps de traitement</b> de chaque étape (transcription, nettoyage, compte rendu) et leur total; les voix, calculées quand l'ordinateur est libre, sont indiquées à part. Pour un enregistrement, la transcription ne compte que la fin, après <b>Arrêter</b>.</li>
+  <li><b>Les détails</b> : date et heure, durée, nombre de voix et de points. Dessous, le <b>temps de traitement</b> de chaque étape (transcription, nettoyage, compte rendu) et leur total; les voix, calculées quand l'ordinateur est libre, sont indiquées à part. Pour un enregistrement, la transcription ne compte que la fin, après <b>Arrêter</b>.</li>
   <li><b>Les onglets</b> : ordre du jour, transcription et compte rendu. Un indicateur tourne sur l'onglet où un travail est en cours.</li>
   <li><b>Côte à côte</b> affiche deux onglets en même temps.</li>
   <li><b>Les boutons de l'onglet</b>, toujours au bas du volet.</li>
+  <li><b>Le lecteur</b>, au bas de la fiche, fait réécouter la rencontre (voir <a class="ref" href="#ecouter">Réécouter la rencontre</a>).</li>
 </ol>
 
 <h2>Les boutons de la rencontre</h2>
 <table class="tableau">
   <thead><tr><th style="width:30%">Bouton</th><th>Ce qu'il fait</th></tr></thead>
   <tbody>
+    <tr><td><span class="bouton">Découper par points</span></td><td>Répartit la transcription entre les points de l'ordre du jour (voir <a class="ref" href="#decoupage">Corriger le découpage par point</a>).</td></tr>
     <tr><td><span class="bouton">Copier</span></td><td>Copie la transcription, à coller dans un courriel ou un document.</td></tr>
-    <tr><td><span class="bouton">Exporter</span></td><td>Écrit la transcription en Markdown, en texte et en sous-titres (SRT), puis ouvre le dossier.</td></tr>
-    <tr><td><span class="bouton">Exporter l'audio complet</span></td><td>Enregistre l'audio de toute la rencontre dans un fichier WAV.</td></tr>
-    <tr><td><span class="bouton">Découper par points</span></td><td>Ouvre la vérification du découpage par point (voir <a class="ref" href="#decoupage">Corriger le découpage par point</a>).</td></tr>
-    <tr><td><span class="bouton">Dossier</span></td><td>Ouvre le dossier de la rencontre : audio, transcriptions, compte rendu Word.</td></tr>
-    <tr><td><span class="bouton">Archiver</span></td><td>Comprime la rencontre dans un fichier .zip du dossier Archives et la retire de l'historique (voir <a class="ref" href="#fichiers">Où sont mes fichiers?</a>).</td></tr>
-    <tr><td><span class="bouton">Supprimer définitivement</span> (corbeille)</td><td>Efface la rencontre de l'ordinateur, sans passer par la corbeille, après confirmation. Irréversible.</td></tr>
+    <tr><td><span class="bouton">Exporter</span></td><td>Un menu : <b>Fichiers texte</b> écrit la transcription en Word, en Markdown et en sous-titres (SRT), puis ouvre le dossier; <b>Audio complet</b> enregistre l'audio de toute la rencontre dans un fichier WAV.</td></tr>
+    <tr><td>Dossier (icône)</td><td>Ouvre le dossier de la rencontre : audio, transcriptions, compte rendu Word.</td></tr>
+    <tr><td>Archiver (icône)</td><td>Comprime la rencontre dans un fichier .zip du dossier Archives et la retire de l'historique (voir <a class="ref" href="#fichiers">Où sont mes fichiers?</a>).</td></tr>
+    <tr><td>Supprimer définitivement (corbeille)</td><td>Efface la rencontre de l'ordinateur, sans passer par la corbeille, après confirmation. Irréversible.</td></tr>
     <tr><td><span class="bouton">Poursuivre la rencontre</span></td><td>Seulement après une panne : reprend l'enregistrement à la suite.</td></tr>
   </tbody>
 </table>
 
 <h2>L'onglet Ordre du jour</h2>
-<p>Chaque point traité porte un crochet vert et le temps qui lui a été consacré. <span class="bouton">Exporter l'audio de ce point</span> enregistre, dans un fichier WAV, tous les passages sur ce point, bout à bout.</p>
+<p>Chaque point traité porte un crochet vert et le temps qui lui a été consacré. <span class="bouton">Exporter l'audio</span> enregistre, dans un fichier WAV, tous les passages sur ce point, bout à bout.</p>
 
-<figure class="fig" data-img="fiche-oj.png" data-crop="240:200:1440:620" data-bulles="1:1190:236 2:1415:236">
+<figure class="fig" data-img="fiche-oj.png" data-crop="260:160:1440:600" data-bulles="1:1258:200 2:1422:200">
   <figcaption>L'onglet Ordre du jour d'une rencontre terminée</figcaption>
 </figure>
 <ol class="legende">
@@ -382,7 +408,7 @@
 <h2>Deux onglets côte à côte</h2>
 <p>Le bouton <span class="bouton">Côte à côte</span> partage la fiche en deux volets de même largeur, par exemple l'ordre du jour à côté de la transcription. Choisissez l'onglet de chaque volet dans sa propre barre; choisir d'un côté l'onglet affiché de l'autre échange les deux. Cliquez de nouveau sur <span class="bouton">Côte à côte</span> pour revenir à un seul volet. Le bouton n'apparaît pas quand la fenêtre est trop étroite.</p>
 
-<figure class="fig" data-img="fiche-cote.png" data-crop="240:66:1440:900">
+<figure class="fig" data-img="fiche-cote.png" data-crop="260:0:1440:900">
   <figcaption>L'ordre du jour et la transcription côte à côte</figcaption>
 </figure>
 
@@ -398,11 +424,11 @@
 </ul>
 <p>Chaque point est rédigé au présent et à la troisième personne : une synthèse de la discussion en quelques paragraphes (ce qui est présenté, les points de vue, les questions soulevées), puis ce qui est convenu (« Il est convenu que… »). Un point qui a des sous-points devient un intertitre, une adoption tient en une phrase, et un point non abordé est indiqué comme tel. Sans ordre du jour, Tour de table produit un <b>résumé</b> des discussions, sujet par sujet.</p>
 
-<figure class="fig" data-img="fiche-cr.png" data-crop="240:200:1440:900" data-bulles="1:445:500 2:640:500 3:300:856 4:380:856 5:458:856 6:605:856">
+<figure class="fig" data-img="fiche-cr.png" data-crop="260:150:1440:800" data-bulles="1:662:525 2:790:528 3:312:792 4:398:792 5:487:792 6:640:792">
   <figcaption>L'onglet Compte rendu</figcaption>
 </figure>
 <ol class="legende">
-  <li><b>▶</b> fait entendre l'audio de ce point. Cliquez de nouveau pour arrêter.</li>
+  <li><b>Écouter</b> fait entendre ce point dans le lecteur, au bas de la fiche.</li>
   <li><b>Voir dans la transcription</b> ouvre la transcription à côté du compte rendu, au passage du point surligné.</li>
   <li><b>Régénérer</b> rédige tout à nouveau, par exemple après une correction de l'ordre du jour ou du découpage.</li>
   <li><b>Visualiser</b> ouvre le compte rendu dans Word (<span class="code">compte-rendu.docx</span>), prêt à relire et à diffuser.</li>
@@ -413,16 +439,16 @@
 <p><b>Copier pour un assistant en ligne</b> copie une demande prête à coller dans Copilot, ChatGPT ou l'assistant permis par votre organisme : les mêmes consignes de rédaction que le modèle local, l'ordre du jour et la transcription nettoyée, avec le nom des voix. C'est la façon d'obtenir un compte rendu sur un poste de moins de 16 Go, ou de comparer avec celui de Tour de table. L'application n'envoie rien elle-même, mais le texte collé quitte l'ordinateur : vérifiez d'abord que votre organisme le permet.</p>
 
 <h2>Pendant la rédaction</h2>
-<p>La rédaction se fait toute seule après la rencontre, en arrière-plan. Le bas de l'onglet indique le point en cours de rédaction et le temps écoulé. Si elle n'a pas eu lieu (rencontre sans ordre du jour, modèle pas encore installé), cliquez sur <span class="bouton">Rédiger le compte rendu</span> ou <span class="bouton">Rédiger un résumé</span>.</p>
+<p>La rédaction se fait toute seule après la rencontre, en arrière-plan. Le bas de l'onglet indique le point en cours de rédaction, le nombre de mots déjà écrits et le temps écoulé. Si elle n'a pas eu lieu (rencontre sans ordre du jour, modèle pas encore installé), cliquez sur <span class="bouton">Rédiger le compte rendu</span> ou <span class="bouton">Rédiger un résumé</span>.</p>
 
-<figure class="fig" data-img="fiche-redaction.png" data-crop="240:140:1440:900">
+<figure class="fig" data-img="fiche-redaction.png" data-crop="260:0:1440:800">
   <figcaption>La rédaction en cours : point 4 sur 9</figcaption>
 </figure>
 
 <h2>Comparer avec la transcription</h2>
 <p><b>Voir dans la transcription</b> affiche la transcription à droite du compte rendu, déroulée jusqu'au point choisi, dont les passages sont surlignés. Vous vérifiez ainsi d'un coup d'œil ce qui a vraiment été dit.</p>
 
-<figure class="fig" data-img="fiche-voir.png" data-crop="240:140:1440:900">
+<figure class="fig" data-img="fiche-voir.png" data-crop="260:0:1440:900">
   <figcaption>Le compte rendu à gauche, la transcription du point 5 surlignée à droite</figcaption>
 </figure>
 
@@ -441,16 +467,16 @@
 
 <p>L'onglet <b>Transcription</b> présente le texte de la rencontre, point par point, avec l'heure de chaque passage et la personne qui parle.</p>
 
-<figure class="fig" data-img="fiche-tr.png" data-crop="240:140:1440:900" data-bulles="1:430:234 2:252:270 3:430:283 4:345:832 5:477:832 6:750:832">
+<figure class="fig" data-img="fiche-tr.png" data-crop="260:150:1440:800" data-bulles="1:420:187 2:290:237 3:536:233 4:1140:330 5:330:785 6:600:767">
   <figcaption>L'onglet Transcription</figcaption>
 </figure>
 <ol class="legende">
-  <li><b>Un intertitre par point</b> de l'ordre du jour.</li>
-  <li><b>L'heure</b> du passage et <b>la voix</b> qui parle, en couleur.</li>
-  <li><b>▶</b> fait entendre ce passage.</li>
+  <li><b>Un intertitre par point</b> de l'ordre du jour; le petit bouton à gauche le replie.</li>
+  <li><b>La voix</b> qui parle, en couleur, et l'heure du passage.</li>
+  <li><b>▶</b> fait entendre ce passage dans le lecteur.</li>
+  <li><b>Voix reconnues</b> : le nom de chaque voix et son temps de parole (voir <a class="ref" href="#voix">Nommer les voix</a>).</li>
   <li><b>Brute</b> ou <b>Nettoyée</b> : la version affichée.</li>
   <li><b>Relancer le nettoyage</b> refait le nettoyage, par exemple après un ajout au lexique.</li>
-  <li><b>Les voix</b> : leur nombre, et les boutons pour les nommer (voir <a class="ref" href="#voix">Nommer les voix</a>).</li>
 </ol>
 
 <h2>Brute ou nettoyée</h2>
@@ -462,32 +488,38 @@
   </tbody>
 </table>
 
-<h2>Réécouter un passage</h2>
-<p>Le bouton <b>▶</b> au début d'un paragraphe fait entendre ce passage. Une barre apparaît au bas de l'onglet : <span class="bouton">Pause</span> et <span class="bouton">Reprendre</span>, ou <span class="bouton">Arrêter</span>. L'écoute est impossible pendant un enregistrement.</p>
+<h2 id="ecouter">Réécouter la rencontre</h2>
+<p>Le <b>lecteur</b>, au bas de la fiche, fait entendre la rencontre à partir de n'importe quel moment : le <b>▶</b> d'un paragraphe, le bouton <b>Écouter</b> d'un point du compte rendu, ou un clic sur la ligne du temps. La lecture continue d'elle-même, et la transcription suit le paragraphe entendu. L'écoute est impossible pendant un enregistrement.</p>
 
-<figure class="fig" data-img="fiche-ecoute.png" data-crop="240:780:1440:900">
-  <figcaption>La barre d'écoute, au bas de l'onglet</figcaption>
+<figure class="fig" data-img="fiche-ecoute.png" data-crop="260:800:1440:900" data-bulles="1:310:810 2:362:810 3:500:836 4:1000:816 5:1000:858">
+  <figcaption>Le lecteur, pendant l'écoute du point 4</figcaption>
 </figure>
+<ol class="legende">
+  <li><b>−5 s</b> et <b>+5 s</b> reculent ou avancent de 5 secondes.</li>
+  <li>Lecture et pause.</li>
+  <li>Le moment entendu et la durée de la rencontre.</li>
+  <li><b>La bande des points</b> : un clic fait entendre ce moment; on peut aussi glisser pour se déplacer.</li>
+  <li><b>La bande des voix</b> : qui parle, dans la couleur de chaque voix.</li>
+</ol>
 
 <!-- ===================================================== 10 -->
 <h1 id="voix">Nommer les voix</h1>
 
-<p>Après chaque rencontre, quand l'application n'a rien d'autre à faire, Tour de table distingue les personnes qui parlent. La transcription et ses exports affichent alors « Voix 1 », « Voix 2 »…, chacune dans sa couleur.</p>
+<p>Pendant la rencontre, Tour de table montre déjà des voix provisoires (voir <a class="ref" href="#voix-direct">Qui parle, en direct</a>). Après la rencontre, quand l'application n'a rien d'autre à faire, il distingue les voix plus précisément. La transcription et ses exports affichent alors le nom de chaque voix, ou « Voix 1 », « Voix 2 »… si elle n'en a pas encore, chacune dans sa couleur.</p>
 
 <ol class="etapes">
-  <li>Dans l'onglet <b>Transcription</b>, cliquez sur <span class="bouton">Nommer les voix</span>.</li>
+  <li>Ouvrez l'onglet <b>Transcription</b> : la carte <b>Voix reconnues</b> est à droite. Quand deux onglets sont côte à côte, cliquez plutôt sur <span class="bouton">Nommer les voix</span>.</li>
   <li>Pour chaque voix, tapez le nom ou le rôle de la personne. Le temps de parole aide à la reconnaître; écoutez un passage avec ▶ en cas de doute.</li>
-  <li>Cliquez sur <span class="bouton">Fermer les noms</span>. Le nom remplace « Voix 1 » dans la transcription et les exports.</li>
+  <li>Le nom remplace « Voix 1 » dans la transcription et les exports, dès que vous quittez le champ.</li>
 </ol>
 
-<figure class="fig" data-img="fiche-voix.png" data-crop="240:560:1440:900" data-bulles="1:545:662 2:660:662 3:746:832 4:877:832">
+<figure class="fig etroite" data-img="fiche-voix.png" data-crop="1138:160:1432:576" data-bulles="1:1188:212 2:1398:212 3:1160:548">
   <figcaption>Les noms donnés aux cinq voix de la rencontre</figcaption>
 </figure>
 <ol class="legende">
-  <li><b>Le nom ou le rôle</b> de chaque voix, enregistré dès que vous quittez le champ.</li>
+  <li><b>Le nom ou le rôle</b> de chaque voix.</li>
   <li><b>Le temps de parole</b> de cette voix.</li>
-  <li><b>Fermer les noms</b> referme la liste.</li>
-  <li><b>Relancer les voix</b> refait la reconnaissance; les noms déjà donnés sont gardés.</li>
+  <li><b>Relancer la reconnaissance</b> refait la reconnaissance des voix; les noms déjà donnés sont gardés.</li>
 </ol>
 
 <div class="encadre astuce">
@@ -495,28 +527,35 @@
   <p>Il arrive qu'une même personne soit reconnue comme deux voix. Donnez-leur le même nom : elles n'en font plus qu'une.</p>
 </div>
 
-<p>Les voix de moins de 30 secondes de parole (rires, deux personnes à la fois) sont écartées. Pour une rencontre plus ancienne, le bouton <span class="bouton">Reconnaître les voix</span> lance la reconnaissance.</p>
+<p>Les voix de moins de 30 secondes de parole sont écartées. Les noms donnés servent aussi aux présences du compte rendu. Pour une rencontre plus ancienne, cliquez sur <span class="bouton">Reconnaître les voix</span>.</p>
 
 <!-- ===================================================== 11 -->
 <h1 id="decoupage">Corriger le découpage par point</h1>
 
-<p>Le bouton <span class="bouton">Découper par points</span> de la fiche ouvre un écran de vérification. Il montre l'heure de début de chaque point et la phrase qui l'a déclenché. Utilisez-le après un import, ou quand un point a été débuté trop tôt ou trop tard.</p>
+<p>Le bouton <span class="bouton">Découper par points</span> de la fiche passe la transcription en <b>mode découpage</b> : chaque point de l'ordre du jour y commence à une ligne précise, et vous pouvez déplacer ce début. Utilisez-le après un import, quand un point a été débuté trop tôt ou trop tard, ou pour découper une rencontre dont l'ordre du jour a été ajouté après coup.</p>
 
-<figure class="fig" data-img="decouper.png" data-crop="240:66:960:420" data-bulles="1:570:140 2:648:140 3:735:140 4:840:140 5:908:140 6:790:187">
-  <figcaption>La vérification du découpage par point : les premières frontières</figcaption>
-</figure>
-<figure class="fig" data-img="decouper.png" data-crop="240:785:960:885" data-bulles="7:405:838 8:572:838">
-  <figcaption>Le bas de l'écran de vérification</figcaption>
+<figure class="fig" data-img="decouper.png" data-crop="260:50:1440:800" data-bulles="1:990:73 2:1240:73 3:322:381 4:876:402 5:991:402 6:1074:402 7:1290:340">
+  <figcaption>Le mode découpage : le début du point 4 est sélectionné</figcaption>
 </figure>
 <ol class="legende">
-  <li><b>Le point</b> qui commence à cette frontière. La liste permet d'en choisir un autre.</li>
-  <li><b>L'heure de début</b>, modifiable (h:mm:ss ou mm:ss).</li>
-  <li><b>−5 s</b> et <b>+5 s</b> déplacent la frontière de 5 secondes.</li>
-  <li><b>Écouter</b> fait entendre 10 secondes autour de la frontière. Pendant l'écoute, une barre montre l'avancement, avec un trait à l'heure de la frontière : on sait si ce qu'on entend tombe avant ou après.</li>
-  <li><b>Retirer</b> supprime la frontière.</li>
-  <li><b>La phrase</b> entendue à cette heure, qui a déclenché le changement.</li>
-  <li><b>Ajouter une frontière</b> en ajoute une, par exemple pour un retour sur un point.</li>
+  <li><b>Le décompte</b> des points placés. Un point de l'ordre du jour qui n'est placé nulle part est marqué « à placer » dans la liste de droite.</li>
   <li><b>Valider le découpage</b> range l'audio et la transcription par point. <b>Annuler</b> ne change rien.</li>
+  <li><b>Le début d'un point</b>, avec l'heure. Cliquez dessus pour le modifier; ▶ fait entendre ce moment.</li>
+  <li><b>Changer de point</b> : un autre point commence à cette ligne.</li>
+  <li>Les <b>flèches</b> déplacent le début d'une ligne plus haut ou plus bas.</li>
+  <li><b>Retirer</b> supprime ce début de point.</li>
+  <li><b>La liste des points</b>, avec l'heure où chacun commence. Cliquez sur un point pour aller à son début.</li>
+</ol>
+
+<p>Pour faire commencer un point ailleurs, cliquez sur la ligne où il commence vraiment, puis sur <span class="bouton">+ Point ici</span>, et choisissez le point dans la liste <b>Quel point commence ici?</b>. Tour de table propose en premier le point qui manque à cet endroit. Les points se rangent d'eux-mêmes selon l'ordre du jour.</p>
+
+<figure class="fig" data-img="decouper-ecoute.png" data-crop="260:150:1440:790" data-bulles="1:1122:547 2:850:695 3:1408:270">
+  <figcaption>Un clic sur une ligne : « Quel point commence ici? »</figcaption>
+</figure>
+<ol class="legende">
+  <li><b>+ Point ici</b> ouvre la liste des points; ▶ fait entendre la ligne.</li>
+  <li>Le point <b>suggéré</b> pour cette ligne; les autres indiquent où ils sont déjà placés.</li>
+  <li>Le point 3 n'est placé nulle part : il est <b>à placer</b>.</li>
 </ol>
 
 <p>Après la validation, cliquez sur <span class="bouton">Régénérer</span> dans l'onglet Compte rendu pour rédiger selon le nouveau découpage.</p>
@@ -526,17 +565,17 @@
 
 <p>Le bouton <span class="bouton">Paramètres</span>, au bas de la colonne de gauche, ouvre la fenêtre des réglages. Elle ne contient que ce que l'application ne peut pas deviner : tout le reste est réglé automatiquement.</p>
 
-<figure class="fig reduite" data-img="parametres.png" data-crop="16:16:536:436" data-bulles="1:455:106 2:470:180 3:315:273 4:515:390">
+<figure class="fig reduite" data-img="parametres.png" data-crop="440:108:1000:792" data-bulles="1:935:244 2:600:334 3:957:488 4:960:700">
   <figcaption>La fenêtre des paramètres</figcaption>
 </figure>
 
 <dl class="definitions">
-  <dt>1. Micro de la salle et Sortie audio à enregistrer</dt>
+  <dt>1. Micro de la salle et Son de l'ordinateur</dt>
   <dd>« Par défaut » convient le plus souvent. Choisissez un autre appareil si le niveau du son ne bouge pas pendant la rencontre, par exemple avec un micro de conférence branché en USB.</dd>
   <dt>2. Les participants à distance sortent-ils dans les haut-parleurs de la salle?</dt>
   <dd><b>Non</b> (casque, ou haut-parleur de conférence qui annule l'écho) : la transcription distingue « Salle » et « À distance ». <b>Oui</b> : le micro capte aussi les participants à distance; les deux sources sont réunies pour éviter que leurs paroles soient transcrites deux fois.</dd>
   <dt>3. Passer automatiquement au point annoncé</dt>
-  <dd>Quand on entend « on passe au point 4 », la rencontre passe seule à ce point, annulable pendant 10 secondes. Décochée (par défaut), le bouton du point annoncé est seulement mis en évidence.</dd>
+  <dd>Quand on entend « on passe au point 4 », la rencontre passe seule à ce point, annulable pendant 10 secondes. Désactivé (par défaut), le bouton du point annoncé est seulement mis en évidence.</dd>
   <dt>4. Lexique</dt>
   <dd>Noms propres, organismes et sigles, un par ligne, pour guider la reconnaissance. On peut aussi y mettre une correction, sous la forme <span class="code">mauvais =&gt; bon</span>, par exemple <span class="code">hydro québec =&gt; Hydro-Québec</span>. Le lexique s'applique aux prochaines rencontres; pour une rencontre déjà transcrite, cliquez sur <b>Relancer le nettoyage</b>.</dd>
 </dl>
@@ -578,6 +617,10 @@
 <h2>Supprimer une rencontre</h2>
 <p>Le bouton corbeille de la fiche, <span class="bouton">Supprimer définitivement</span>, efface la rencontre de l'ordinateur : audio, transcription, compte rendu et fichiers exportés dans son dossier. Ils ne passent pas par la corbeille du système : <b>c'est irréversible</b>. Une fenêtre rappelle le titre et la date de la rencontre avant de confirmer. Le bouton est grisé pendant un travail sur la rencontre (nettoyage, compte rendu, voix, exportation) : attendez qu'il se termine. Pour seulement retirer une rencontre de l'historique, archivez-la plutôt. Une rencontre déjà archivée s'efface en supprimant son fichier .zip du dossier <b>Archives</b>.</p>
 
+<figure class="fig reduite" data-img="supprimer.png" data-crop="440:330:1000:560">
+  <figcaption>La confirmation avant de supprimer définitivement</figcaption>
+</figure>
+
 <div class="encadre regle">
   <p class="titre-encadre">Confidentialité</p>
   <p>L'audio, les transcriptions, les ordres du jour et les comptes rendus restent sur votre ordinateur. La seule connexion est le téléchargement des modèles au premier démarrage. Les détails sont dans la politique de confidentialité, publiée avec le code source.</p>
@@ -591,7 +634,7 @@
   <tbody>
     <tr><td><b>Une fois</b></td><td>Vérifier le micro et la sortie audio; ajouter au lexique les noms propres et les sigles de votre organisme.</td><td>Paramètres</td></tr>
     <tr><td><b>Avant</b></td><td>Déposer l'ordre du jour et vérifier les points reconnus.</td><td>Accueil → Parcourir… ou glisser le document</td></tr>
-    <tr><td><b>Au début</b></td><td>Vérifier les deux sources, puis démarrer sur le premier point.</td><td>Débuter le point (point 1)</td></tr>
+    <tr><td><b>Au début</b></td><td>Vérifier les deux sources, puis démarrer sur le premier point.</td><td>Débuter (point 1)</td></tr>
     <tr><td><b>Pendant</b></td><td>Débuter chaque point quand on le commence; Hors point pour une discussion en dehors de l'ordre du jour; Pause pour un huis clos.</td><td>Onglet Ordre du jour, ou Ctrl + → et Ctrl + H</td></tr>
     <tr><td><b>À la fin</b></td><td>Arrêter l'enregistrement.</td><td>Arrêter</td></tr>
     <tr><td><b>Après</b></td><td>Attendre l'avis « Le compte rendu est prêt ».</td><td>Avis en bas à droite</td></tr>
@@ -606,7 +649,7 @@
 
 <dl class="faq">
   <dt>Rien n'est transcrit.</dt>
-  <dd>Vérifiez que la bonne case est cochée sous <b>Démarrer</b>, et que le niveau du son bouge quand quelqu'un parle. Sinon, choisissez le micro et la sortie audio dans les <a class="ref" href="#parametres">Paramètres</a>.</dd>
+  <dd>Vérifiez que la bonne case est cochée sous <b>Ce qu'on enregistre</b>, et que le niveau du son bouge dans le bandeau d'enregistrement quand quelqu'un parle. Sinon, choisissez le micro et la sortie audio dans les <a class="ref" href="#parametres">Paramètres</a>.</dd>
 
   <dt>Peut-on transcrire une vidéo en ligne?</dt>
   <dd>Oui : enregistrez le son de l'ordinateur pendant que la vidéo joue (voir <a class="ref" href="#video-en-ligne">Transcrire une vidéo en ligne</a>). Si la vidéo vient de votre organisme (Teams, Zoom), vous pouvez aussi télécharger le fichier depuis cette plateforme et l'<a class="ref" href="#import">importer</a>.</dd>
@@ -624,7 +667,7 @@
   <dd>Le document est probablement un PDF numérisé en image. Utilisez le document Word d'origine, ou ajoutez les points à la main avec <b>Modifier les points</b>.</dd>
 
   <dt>Le compte rendu n'apparaît pas.</dt>
-  <dd>La rédaction prend de 0,7 à 1 fois la durée de la rencontre, après le nettoyage. Sans ordre du jour ou si le modèle n'était pas encore installé, cliquez sur <b>Rédiger le compte rendu</b> dans l'onglet Compte rendu.</dd>
+  <dd>La rédaction prend de 0,7 à 1,4 fois la durée de la rencontre, après le nettoyage. Sans ordre du jour ou si le modèle n'était pas encore installé, cliquez sur <b>Rédiger le compte rendu</b> dans l'onglet Compte rendu.</dd>
 
   <dt>Le bouton « Mettre à jour » est grisé.</dt>
   <dd>La mise à jour ferme l'application : elle attend la fin de la rencontre et des travaux en cours (rédaction, découpage).</dd>
