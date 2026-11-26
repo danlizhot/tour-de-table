@@ -33,6 +33,9 @@ const CHEVAUCHEMENT_MAX: usize = 8;
 const BOUCLE_MAX: usize = 30;
 /// À partir de combien de répétitions d'affilée une suite est une boucle.
 const REPETITIONS_BOUCLE: usize = 3;
+/// Dans le texte brut, à la sortie de Whisper : plus prudent, pour garder un vrai « oui, oui, oui, oui ».
+const REPETITIONS_BOUCLE_BRUT: usize = 5;
+const BOUCLE_MAX_BRUT: usize = 12;
 /// Plus courte phrase faite seulement d'interjections (« Ok. », « Oui, merci. ») retirée, en mots.
 const INTERJECTION_MAX: usize = 5;
 
@@ -290,15 +293,40 @@ fn retirer_chevauchement(avant: &[Mot], apres: &mut Vec<Mot>, segment: usize) {
 /// Même suite de 1 à `BOUCLE_MAX` mots répétée `REPETITIONS_BOUCLE` fois ou plus d'affilée :
 /// on n'en garde que la première.
 fn reduire_boucles(mots: &mut Vec<Mot>) {
+    reduire_boucles_de(mots, BOUCLE_MAX, REPETITIONS_BOUCLE);
+}
+
+/// Texte d'un segment à la sortie de Whisper, sans ses boucles : une même suite de 1 à 12 mots répétée 5 fois ou plus
+/// d'affilée (« Oui. Oui. Oui. … » sur un silence) n'apparaît qu'une fois. Le texte brut reste fidèle pour le reste ;
+/// le nettoyage, lui, réduit dès 3 répétitions.
+pub fn sans_boucles(texte: &str) -> String {
+    let mut mots: Vec<Mot> = texte.split_whitespace().map(|m| Mot::new(m, 0)).collect();
+    let avant = mots.len();
+    reduire_boucles_de(&mut mots, BOUCLE_MAX_BRUT, REPETITIONS_BOUCLE_BRUT);
+    if mots.len() == avant {
+        return texte.to_string();
+    }
+    mots.iter().map(|m| m.texte.as_str()).collect::<Vec<_>>().join(" ")
+}
+
+/// Clé d'un segment entier, pour reconnaître le même texte répété d'un segment à l'autre.
+pub fn cle_texte(texte: &str) -> String {
+    texte.split_whitespace().map(cle).filter(|c| !c.is_empty()).collect::<Vec<_>>().join(" ")
+}
+
+/// Segments consécutifs au même texte, `REPETITIONS_BOUCLE_BRUT` fois ou plus : une boucle de Whisper.
+pub const SEGMENTS_EN_BOUCLE: usize = REPETITIONS_BOUCLE_BRUT;
+
+fn reduire_boucles_de(mots: &mut Vec<Mot>, max: usize, repetitions: usize) {
     let mut i = 0;
     while i < mots.len() {
         let mut reduit = false;
-        for n in 1..=BOUCLE_MAX.min((mots.len() - i) / REPETITIONS_BOUCLE) {
+        for n in 1..=max.min((mots.len() - i) / repetitions) {
             let mut r = 1;
             while i + (r + 1) * n <= mots.len() && (0..n).all(|k| mots[i + k].cle == mots[i + r * n + k].cle) {
                 r += 1;
             }
-            if r >= REPETITIONS_BOUCLE {
+            if r >= repetitions {
                 let retires: Vec<Mot> = mots.drain(i + n..i + r * n).collect();
                 mots[i + n - 1].absorber(&retires);
                 reduit = true;
