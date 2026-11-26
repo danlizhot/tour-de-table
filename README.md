@@ -178,7 +178,8 @@ saisir à la main.
   la rencontre tient en une ou deux phrases. Un dernier appel ajoute la levée de la
   séance. Durée mesurée : de 0,7 à 1 fois la durée de la rencontre.
 * **Rencontres sans ordre du jour** : la transcription complète est lue d'un coup, puis résumée dans
-  l'ordre de la rencontre (un intertitre par sujet, sans rubrique de décisions ni de suites à donner).
+  l'ordre de la rencontre (un intertitre par sujet, sans rubrique de décisions ni de suites à donner) ;
+  jusqu'à 6 144 jetons de résumé, assez pour une rencontre de trois heures et plus.
 * **Temps de traitement** : la fiche indique le temps de chaque étape sur l'ordinateur et leur total
   (« Traitement : transcription 35 min · nettoyage 12 s · compte rendu 42 min · total 1 h 17 · voix 12 min
   (à part) »). Pour un enregistrement, la transcription ne compte que la fin, après « Arrêter » ; les voix,
