@@ -115,6 +115,7 @@ figure.fig .cadre {
 figure.fig img { width: 100%; display: block; }
 figure.moyenne { width: 78%; margin-left: auto; margin-right: auto; }
 figure.petite { width: 56%; margin-left: auto; margin-right: auto; }
+figure.etroite { width: 36%; margin-left: auto; margin-right: auto; }
 figcaption {
   counter-increment: figure;
   margin-top: 5pt;
@@ -240,5 +241,5 @@ figure.detail { width: 70%; margin-left: auto; margin-right: auto; }
 .paire figure.fig { flex: 1; margin-top: 4pt; }
 figure.reduite { width: 62%; margin-left: auto; margin-right: auto; }
 /* Capture de toute la fenêtre : un peu en retrait, pour qu'elle tienne avec son texte sur la page. */
-figure.fig:not(.moyenne):not(.petite):not(.detail):not(.reduite) { width: 90%; margin-left: auto; margin-right: auto; }
+figure.fig:not(.moyenne):not(.petite):not(.detail):not(.reduite):not(.etroite) { width: 90%; margin-left: auto; margin-right: auto; }
 .paire figure.fig { width: auto; }

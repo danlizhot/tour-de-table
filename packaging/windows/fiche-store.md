@@ -89,6 +89,10 @@ transcription · compte rendu · réunion · procès-verbal · québécois · or
 
 ## Notes de version (≤ 1 500 caractères)
 
+Version 0.5.1
+* Guide d'utilisation refait pour la nouvelle apparence : nouvelles captures, voix en direct,
+  lecteur, découpage dans la transcription, menu « Aide » et suppression d'une rencontre.
+
 Version 0.5.0
 * Nouvelle apparence de tous les écrans, thèmes clair et foncé, et lecteur au bas de la fiche :
   la transcription suit ce qu'on entend.
