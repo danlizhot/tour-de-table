@@ -35,7 +35,7 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   modèles au premier démarrage, plein écran),
   `widgets.rs` (transcription, Markdown, logo), `apparence.rs` (palettes des thèmes clair et foncé, police Inter
   intégrée — `assets/polices`, licence OFL —, boutons, cartes, choix segmentés, pastilles : les écrans n'emploient
-  que ces couleurs), `colonne.rs` (colonne de gauche), `nouvelle.rs` (écran « Nouvelle rencontre »). Garder chaque fichier sous ~700 lignes. Dans chaque onglet, les
+  que ces couleurs), `colonne.rs` (colonne de gauche), `nouvelle.rs` (écran « Nouvelle rencontre »), `suppression.rs` (« Supprimer définitivement » et « Annuler l'import »). Garder chaque fichier sous ~700 lignes. Dans chaque onglet, les
   boutons sont au bas du volet, sous le texte qui défile (`onglets::pied`). `ecoute.rs` : lecteur fixe au bas de la fiche (lecture
   continue à partir d'un paragraphe, d'un point ou d'un clic sur les bandes des points et des voix, ±5 s ; la
   transcription suit le paragraphe entendu ; `audio/lecture.rs`, morceaux de 20 s dans un fil), jamais pendant un enregistrement.
@@ -43,7 +43,11 @@ interface (ui/)              affichage seulement ; `pump()` vide les canaux à c
   champ `dossier`) avec `rencontre.json`, sauvegardé après chaque
   segment (écriture atomique `.tmp` + `rename`). « Archiver » comprime le dossier dans `Archives/<dossier>.zip`
   (`storage::archiver`, dans un fil ; écrit en `.part`, relu, puis le dossier est retiré) ; l'ancienne corbeille
-  du dossier de données y passe au démarrage (`archiver_corbeille`).
+  du dossier de données y passe au démarrage (`archiver_corbeille`). « Supprimer définitivement » et « Annuler l'import »
+  (`ui/suppression.rs`) : le dossier n'est retiré qu'une fois que plus rien n'y travaille (fil de l'import arrêté par
+  `import::Avancement::annule`, énoncés encore chez Whisper jetés, aucune autre transcription d'ici là : sinon la
+  sauvegarde après chaque segment le recréerait ou les segments iraient dans une autre rencontre). Il est d'abord
+  marqué (`a-supprimer`, `storage::supprimer_dossier`) ; un dossier marqué est retiré au démarrage (`list`).
 * `summary.rs` : compte rendu par le programme auxiliaire. Par défaut, les sujets sont d'abord répartis entre les
   points avec la transcription complète (`repartition.rs`), puis chaque point est rédigé d'après ses sujets et ses
   passages de la transcription, `POSTES` points à la fois ; le mot de bienvenue, les adoptions et la fin gardent la

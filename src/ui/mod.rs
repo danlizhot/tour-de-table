@@ -15,6 +15,7 @@ mod past;
 mod puce;
 mod voix;
 mod settings;
+mod suppression;
 mod mode_decoupage;
 mod verification;
 mod widgets;
@@ -67,6 +68,9 @@ struct FinApresPanne {
 
 /// Rencontre archivée et chemin de son archive, ou l'erreur.
 type FinArchivage = (Meeting, Result<std::path::PathBuf, String>);
+
+/// Titre de la rencontre supprimée (vide pour un import annulé), et le résultat.
+type FinSuppression = (String, Result<(), String>);
 
 pub struct TourDeTableApp {
     cfg: Config,
@@ -141,6 +145,14 @@ pub struct TourDeTableApp {
     /// Archivages en cours (compression dans un fil) : la rencontre revient dans l'historique si l'archivage échoue.
     archivage: (Sender<FinArchivage>, Receiver<FinArchivage>),
     archivages_en_cours: usize,
+    /// Dossier d'un import annulé : retiré une fois le fil de l'import arrêté et les derniers énoncés revenus de
+    /// Whisper, qui ne doivent jamais aller dans une autre rencontre. Rien d'autre n'est transcrit d'ici là.
+    annulation: Option<std::path::PathBuf>,
+    /// Suppressions définitives en cours (titre, résultat), et rencontre dont on demande confirmation.
+    suppression: (Sender<FinSuppression>, Receiver<FinSuppression>),
+    confirmer_suppression: Option<String>,
+    /// « Annuler l'import » cliqué une première fois : la carte demande confirmation.
+    confirmer_annulation: bool,
     /// Écoute d'un passage ou d'un point de la fiche ; transcription à faire défiler jusqu'à une heure (rencontre, ms).
     ecoute: Option<ecoute::Ecoute>,
     aller_a: Option<(String, u64)>,
@@ -207,6 +219,10 @@ impl TourDeTableApp {
             noms_des_voix: None,
             archivage: crossbeam_channel::unbounded(),
             archivages_en_cours: 0,
+            annulation: None,
+            suppression: crossbeam_channel::unbounded(),
+            confirmer_suppression: None,
+            confirmer_annulation: false,
             ecoute: None,
             aller_a: None,
             saut_ecoute: None,
@@ -400,7 +416,8 @@ impl TourDeTableApp {
             && self.recorder.is_none()
             && self.live.is_none()
             && !self.finishing
-            && self.import_job.is_none();
+            && self.import_job.is_none()
+            && self.annulation.is_none();
         if !libre || self.fins_a_transcrire.is_empty() {
             return;
         }
@@ -458,6 +475,8 @@ impl TourDeTableApp {
             let name = name.clone();
             self.import_job = None;
             match result {
+                // Import annulé : son dossier est retiré par `pump_suppression`, une fois Whisper vidé.
+                _ if self.annulation.is_some() => log::info!("Import « {name} » annulé : fil arrêté"),
                 Ok(duration) => {
                     log::info!("Import « {name} » : {duration} s, tous les blocs envoyés à la transcription");
                     if let Some(m) = self.live.as_mut() {
@@ -477,6 +496,10 @@ impl TourDeTableApp {
             }
         }
         while let Ok(u) = self.utt_rx.try_recv() {
+            // Énoncés d'un import annulé, envoyés avant l'arrêt de son fil : jetés.
+            if self.annulation.is_some() {
+                continue;
+            }
             self.voix_direct_pour_import();
             if (self.recorder.is_some() || self.import_job.is_some())
                 && let Some(d) = &self.voix_direct
@@ -527,6 +550,7 @@ impl TourDeTableApp {
             }
         }
         self.recevoir_voix_direct();
+        self.pump_suppression();
         if self.finishing && self.in_flight == 0 && self.utt_rx.is_empty() {
             self.finalize();
         }
@@ -710,6 +734,7 @@ impl eframe::App for TourDeTableApp {
         if self.show_settings {
             self.settings_window(&ctx);
         }
+        self.fenetre_suppression(&ctx);
         self.afficher_avis(&ctx);
         if hovering {
             let screen = ctx.content_rect();

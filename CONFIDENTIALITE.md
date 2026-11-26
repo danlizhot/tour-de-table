@@ -64,7 +64,8 @@ L'application ne fait aucune autre connexion.
 Vos rencontres restent sur votre ordinateur jusqu'à ce que vous les supprimiez. Le bouton
 « Archiver » comprime une rencontre dans un fichier .zip du dossier Musique/Tour de table/Archives
 (le bouton « Archives » de l'application l'ouvre), d'où vous pouvez la récupérer ou l'effacer
-définitivement. Désinstaller l'application supprime ses modèles et ses paramètres (version du
+définitivement. « Supprimer définitivement », dans la fiche d'une rencontre, efface son dossier de
+l'ordinateur sans passer par la corbeille ; « Annuler l'import » efface ce qu'un import en cours a créé. Désinstaller l'application supprime ses modèles et ses paramètres (version du
 Microsoft Store), mais **pas vos rencontres ni vos archives** : elles restent dans Musique/Tour de
 table, où vous pouvez les effacer vous-même.
 

@@ -34,7 +34,7 @@ impl TourDeTableApp {
     /// « Poursuivre la rencontre » : une rencontre arrêtée par une panne reprend dans son dossier,
     /// au point où l'on était rendu, à la suite de son audio et de sa transcription.
     pub(super) fn poursuivre(&mut self, idx: usize) {
-        if self.recorder.is_some() || self.live.is_some() || self.finishing || self.import_job.is_some() || self.fin_apres_panne.is_some() {
+        if self.recorder.is_some() || self.live.is_some() || self.finishing || self.import_job.is_some() || self.annulation.is_some() || self.fin_apres_panne.is_some() {
             self.notify("Attendez la fin de la transcription en cours avant de poursuivre la rencontre.", true);
             return;
         }
@@ -187,7 +187,7 @@ impl TourDeTableApp {
     /// Importe un enregistrement existant (Teams, Zoom, téléphone…) : il devient
     /// une rencontre comme les autres, transcrite par la même chaîne.
     pub(super) fn import_audio(&mut self, path: &std::path::Path) {
-        if self.recorder.is_some() || self.finishing || self.import_job.is_some() {
+        if self.recorder.is_some() || self.finishing || self.import_job.is_some() || self.annulation.is_some() {
             self.notify("Attendez la fin de la transcription en cours avant d'importer un fichier.", true);
             return;
         }
@@ -234,12 +234,15 @@ impl TourDeTableApp {
                     }
                 };
                 let deja = reprise.map_or(0, |ms| ms * audio::SAMPLE_RATE as u64 / 1000);
+                av.verifier()?;
                 let index = import::ecrire_blocs(&source, &travail, &av)?;
                 import::transcrire_blocs(&travail, &index, |k, enonces| {
                     // Un bloc d'avance au plus : la file de Whisper reste courte, la mémoire aussi.
                     while av.enonces_transcrits.load(Ordering::Relaxed) < av.envoyes_avant(k.saturating_sub(1)) {
+                        av.verifier()?;
                         std::thread::sleep(std::time::Duration::from_millis(50));
                     }
+                    av.verifier()?;
                     // Reprise : un énoncé est transcrit en entier ou pas du tout ; ceux d'avant la fin du texte le sont.
                     let enonces: Vec<_> = enonces.into_iter().filter(|u| reprise.is_none() || u.start >= deja).collect();
                     av.bloc_envoye(enonces.len());
@@ -262,7 +265,7 @@ impl TourDeTableApp {
             && self.recorder.is_none()
             && self.live.is_none()
             && !self.finishing
-            && self.import_job.is_none()
+            && self.import_job.is_none() && self.annulation.is_none()
             && self.fin_apres_panne.is_none()
             && self.verification.is_none()
             && self.decoupage_job.is_none();
@@ -312,12 +315,54 @@ impl TourDeTableApp {
             etapes.push(("Compte rendu", "Rédigé d'après l'ordre du jour".into()));
         }
         etapes.push(("Voix", "Quand l'ordinateur est libre".into()));
+        let annulable = self.import_annulable();
+        let (mut demander, mut confirmer, mut garder) = (false, false, false);
+        // Le titre (souvent le nom du fichier, très long) est coupé : sans limite, il élargissait la carte au-delà de la
+        // fenêtre, étapes comprises. La place des boutons est gardée à droite ; la mention ne s'affiche que s'il en reste.
+        let boutons = match (annulable, self.confirmer_annulation) {
+            (true, true) => 440.0,
+            (true, false) => 170.0,
+            _ => 0.0,
+        };
+        let mention = !(annulable && self.confirmer_annulation) && ui.available_width() > boutons + 900.0;
+        let largeur_titre = (ui.available_width() - boutons - if mention { 420.0 } else { 0.0 }).max(120.0);
         ui.horizontal(|ui| {
-            ui.label(gras(&titre, 20.0).color(p.texte));
+            ui.allocate_ui_with_layout(egui::vec2(largeur_titre, 30.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.add(egui::Label::new(gras(&titre, 20.0).color(p.texte)).truncate()).on_hover_text(&titre);
+            });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(RichText::new("Vous pouvez consulter d'autres rencontres : le travail continue.").size(12.5).color(p.texte2));
+                // En deux temps : un clic de trop ne détruit rien.
+                if annulable && self.confirmer_annulation {
+                    confirmer = ui
+                        .add(bouton_widget(ui, "Oui, annuler et supprimer", Genre::Danger, 34.0))
+                        .on_hover_text("Arrête la transcription et supprime les fichiers créés pour cette rencontre ; le fichier importé n'est pas touché")
+                        .clicked();
+                    garder = ui.add(bouton_widget(ui, "Continuer l'import", Genre::Secondaire, 34.0)).clicked();
+                    ui.label(RichText::new("Annuler l'import ?").size(13.0).strong().color(p.texte));
+                } else {
+                    if annulable {
+                        demander = ui
+                            .add(bouton_widget(ui, "Annuler l'import", Genre::Discret, 34.0))
+                            .on_hover_text("Arrête la transcription et supprime les fichiers créés pour cette rencontre (mauvais fichier, déjà importé…)")
+                            .clicked();
+                    }
+                    if mention {
+                        ui.label(RichText::new("Vous pouvez consulter d'autres rencontres : le travail continue.").size(12.5).color(p.texte2));
+                    }
+                }
             });
         });
+        if demander {
+            self.confirmer_annulation = true;
+        }
+        if garder || !annulable {
+            self.confirmer_annulation = false;
+        }
+        if confirmer {
+            self.confirmer_annulation = false;
+            self.annuler_import();
+            return;
+        }
         ui.add_space(10.0);
         ui.columns(etapes.len(), |colonnes| {
             for (k, (nom, detail)) in etapes.iter().enumerate() {

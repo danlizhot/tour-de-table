@@ -296,7 +296,11 @@ est écrit en blocs de 2 minutes ; à la fin, ils sont remplacés par un seul fi
 `AAAAMMJJ-Rencontre-Tour de table.wav` (mode « Sources séparées » : un fichier `-salle` et un
 fichier `-distance`). Le bouton « Archiver » de la fiche comprime une rencontre dans
 `Tour de table/Archives/<dossier>.zip` et la retire de l'historique ; le bouton « Archives », au bas de
-l'historique, ouvre ce dossier. Les modèles, la configuration et
+l'historique, ouvre ce dossier. « Supprimer définitivement » (corbeille de la fiche, après confirmation) efface
+le dossier de la rencontre sans passer par la corbeille du système ; « Annuler l'import », sur la carte d'un import
+en cours, arrête sa transcription et efface ce qu'il a créé (jamais le fichier importé). Le dossier n'est retiré
+qu'une fois que plus rien n'y travaille, et il est d'abord marqué (`a-supprimer`) : une suppression inachevée
+(application fermée, fichier encore ouvert) se termine au démarrage suivant. Les modèles, la configuration et
 le journal restent dans le dossier de l'application ; l'ancienne corbeille (jusqu'à la version 0.2.0) passe
 dans les archives au lancement. Les rencontres des versions
 précédentes (et celles de « Noter », l'ancien nom) y sont déplacées automatiquement au lancement.

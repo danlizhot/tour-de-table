@@ -15,7 +15,7 @@ impl TourDeTableApp {
     pub(super) fn occupe(&self) -> bool {
         self.recorder.is_some()
             || self.finishing
-            || self.import_job.is_some()
+            || self.import_job.is_some() || self.annulation.is_some()
             || self.summary_job.is_some()
             || self.nettoyage_job.is_some()
             || self.decoupage_job.is_some()
