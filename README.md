@@ -149,10 +149,10 @@ saisir à la main.
 * **« Rédiger le compte rendu »** suit la forme des comptes rendus d'organisme : en-tête (titre,
   date et heure, reprises de l'ordre du jour s'il les annonce), présences, puis chaque point de
   l'ordre du jour avec la même numérotation, et la levée de la séance. Chaque point est rédigé au
-  présent et à la troisième personne : une phrase d'introduction (« Mme Bérubé présente… »), les
-  éléments principaux en puces, puis ce qui est convenu (« Il est convenu que… »). Le tour de
-  table donne quelques puces par personne, le varia un sous-titre par sujet, la prochaine
-  rencontre quelques puces. Un point non abordé est indiqué comme tel, et le modèle a pour
+  présent et à la troisième personne, en une synthèse de la discussion de quelques paragraphes, sans
+  puces : ce qui est présenté (« Mme Bérubé présente… »), les points de vue et les questions
+  soulevées, puis ce qui est convenu (« Il est convenu que… »). Le tour de table donne quelques
+  phrases par personne, le varia un sous-titre par sujet, la prochaine rencontre quelques puces. Un point non abordé est indiqué comme tel, et le modèle a pour
   consigne de ne rien inventer.
 * **Présences** : la liste reprend les noms donnés aux voix reconnues, sans passer par le modèle :
   une personne seulement nommée dans la discussion n'y figure pas, une personne qui n'a pas pris

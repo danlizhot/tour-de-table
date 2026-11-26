@@ -9,8 +9,8 @@
 //!
 //! Forme du compte rendu, d'après de vrais comptes rendus d'organisme : en-tête (titre, date,
 //! heure), présences (les noms donnés aux voix, sans le modèle), puis chaque point de l'ordre du jour avec son numéro, rédigé au présent
-//! et à la troisième personne (phrase d'introduction, puces, « Il est convenu… »), et la levée
-//! de la séance. Le tour de table donne un paragraphe par personne, le varia un sous-titre par
+//! et à la troisième personne (synthèse de la discussion en paragraphes, « Il est convenu… »), et la levée
+//! de la séance. Le tour de table donne quelques phrases par personne, le varia un sous-titre par
 //! sujet.
 //!
 //! Rencontre découpée par point : un appel par point, avec seulement sa transcription
@@ -74,12 +74,12 @@ aucune étiquette du genre « Projet : » ou « Statut : ».\n";
 
 const AVEC_ORDRE_DU_JOUR: &str = "Tu es secrétaire de réunion. Rédige le compte rendu de la rencontre \
 en suivant l'ordre du jour fourni, point par point et dans le même ordre, avec la même numérotation.\n\
-Pour chaque point : un titre de niveau 2 (« ## 3. Titre »), une phrase d'introduction, puis une liste à puces \
-des éléments principaux, et s'il y a lieu une phrase sur ce qui est convenu ou reste à suivre.\n\
+Pour chaque point : un titre de niveau 2 (« ## 3. Titre »), puis une synthèse de la discussion en un ou quelques \
+paragraphes, sans liste à puces (ce qui est présenté, les points de vue, les questions soulevées), et s'il y a lieu une phrase sur ce qui est convenu ou reste à suivre.\n\
 Règles :\n\
 - Si un point entier n'a pas été discuté, écris seulement « Point non abordé ou reporté. » sous son titre.\n\
-- Pour un tour de table, une ligne en gras par personne (« **[Prénom Nom]** »), suivie de 2 à 4 puces courtes \
-qui commencent par un verbe (« Poursuit… », « Prépare… »). Seulement des personnes, jamais un groupe (« les comptables »).\n\
+- Pour un tour de table, une ligne en gras par personne (« **[Prénom Nom]** »), suivie d'une ou deux phrases \
+sur ses dossiers (« Poursuit… », « Prépare… »). Seulement des personnes, jamais un groupe (« les comptables »).\n\
 - Si la transcription s'arrête avant un point, écris « Point non abordé ou reporté. » : n'invente rien.\n\
 - « Point non abordé ou reporté. » remplace tout le contenu d'un point : ne l'ajoute jamais sous un point que tu as résumé.\n\
 - L'ordre du jour sert uniquement à structurer : les faits (lieu, heure, montants, noms) viennent \
@@ -144,16 +144,17 @@ const JETONS_DOCUMENT: usize = 3072;
 const PAR_POINT: &str = "Tu es secrétaire de réunion. Voici la transcription d'un seul point de l'ordre du jour : \
 « {point} ». Rédige uniquement ce point, sans titre.\n";
 
-/// Point ordinaire : introduction, puces, conclusion.
-const POINT_ORDINAIRE: &str = "Forme : une phrase d'introduction (« La direction présente… », « Les participants \
-échangent sur… »), puis une liste à puces de 3 à 6 éléments principaux, une idée courte par puce, puis, s'il y a lieu, \
-une phrase sur ce qui est convenu ou reste à suivre (« Il est convenu que… », « La direction indique qu'aucune décision \
-n'a encore été prise. »). Un point très bref peut tenir en une ou deux phrases, sans liste. 150 mots au plus.\n";
+/// Point ordinaire : une synthèse de la discussion en paragraphes, sans puces (comme un résumé), puis ce qui est convenu.
+const POINT_ORDINAIRE: &str = "Forme : une synthèse de la discussion en un ou quelques paragraphes, sans liste à puces. \
+Commence par ce qui est présenté (« La direction présente… », « Les participants échangent sur… »), puis rapporte les \
+éléments principaux, les points de vue exprimés et les questions soulevées, avec les faits et les chiffres dits, et \
+termine, s'il y a lieu, par ce qui est convenu ou reste à suivre (« Il est convenu que… », « La direction indique \
+qu'aucune décision n'a encore été prise. »). Un point très bref peut tenir en une ou deux phrases. 150 mots au plus.\n";
 
-/// Tour de table : un paragraphe par personne.
+/// Tour de table : quelques phrases par personne.
 const POINT_TOUR_DE_TABLE: &str = "Forme : pour chaque personne qui prend la parole, dans l'ordre, son prénom et son nom \
-en gras sur une ligne (« **[Prénom Nom]** »), puis 2 à 4 puces courtes sur ses dossiers et ses travaux en cours, \
-qui commencent par un verbe (« Poursuit les travaux… », « Prépare… »). Seulement des personnes, jamais un groupe \
+en gras sur une ligne (« **[Prénom Nom]** »), puis une ou deux phrases sur ses dossiers et ses travaux en cours, \
+sans liste à puces (« Poursuit les travaux… », « Prépare… »). Seulement des personnes, jamais un groupe \
 (« les comptables »). Si le prénom d'une personne n'a pas été dit, écris « **Participant(e)** » : n'invente \
 aucun nom. Pas de phrase d'introduction. 50 mots au plus par personne.\n";
 
@@ -163,7 +164,7 @@ commence par le prénom de la personne s'il est dit (« Sophie : », souvent ann
 toi, Karim »), sinon par « Personne suivante : ». N'invente aucun nom. ";
 
 /// Varia : un sous-titre par sujet.
-const POINT_VARIA: &str = "Forme : pour chaque sujet distinct, un sous-titre en gras sur une ligne (« **[Sujet]** »), puis une ou deux phrases, ou une phrase suivie de puces. 200 mots au plus.\n";
+const POINT_VARIA: &str = "Forme : pour chaque sujet distinct, un sous-titre en gras sur une ligne (« **[Sujet]** »), puis une ou quelques phrases, sans liste à puces. 200 mots au plus.\n";
 
 /// Prochaine rencontre : des puces seulement.
 const POINT_PROCHAINE: &str = "Forme : 1 à 3 puces seulement : la date, l'heure ou le moment annoncé pour la prochaine \
@@ -878,10 +879,9 @@ fn par_point_complet(r: &Request, rediger: &mut Redacteur) -> Result<String> {
         }
         let consigne = forme
             .consigne()
-            .replace("de 3 à 6 éléments", "de 3 à 10 éléments")
             .replace("150 mots au plus", "400 mots au plus")
             .replace("200 mots au plus", "400 mots au plus")
-            .replace("2 à 4 puces courtes", "2 à 5 puces")
+            .replace("une ou deux phrases sur ses dossiers", "deux ou trois phrases sur ses dossiers")
             .replace("50 mots au plus par personne", "80 mots au plus par personne");
         let autres: Vec<String> = r.points.iter().filter(|q| q.titre != p.titre).map(|q| format!("« {} »", q.titre)).collect();
         let bienvenue = ["bienvenue", "ouverture"].iter().any(|m| p.titre.to_lowercase().contains(m));
@@ -1823,7 +1823,7 @@ mod tests {
         assert!(invites[0].contains("=== TRANSCRIPTION DU POINT ===\nOn ouvre à 19 h.") && !invites[0].contains("budget"));
         // Forme propre au tour de table, forme ordinaire ailleurs.
         assert!(invites[1].contains("en gras sur une ligne") && !invites[2].contains("en gras sur une ligne"));
-        assert!(invites[2].contains("phrase d'introduction") && invites[2].contains("Il est convenu"));
+        assert!(invites[2].contains("synthèse de la discussion") && invites[2].contains("Il est convenu"));
         assert!(invites[3].contains("=== POINTS RÉDIGÉS ===") && invites[3].contains("stationnement est plein"));
         // L'ordre du jour n'a pas de point « Prochaine rencontre » : l'assemblage la demande.
         assert!(invites[3].contains("## Prochaine rencontre"));
