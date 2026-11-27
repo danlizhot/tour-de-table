@@ -34,7 +34,7 @@ Inspiré de [Meetily](https://github.com/Zackriya-Solutions/meetily), réécrit 
 | Interface | WebView (navigateur embarqué) | egui natif (rendu GPU) |
 | Taille | Plusieurs centaines de Mo | **42 Mo** à télécharger sous Windows, 11 Mo sous macOS et Linux (whisper.cpp et llama.cpp inclus) |
 | RAM au repos | WebView + Python | **~0,7 Go**, modèle Whisper déjà chargé (démarrage instantané) |
-| Compte rendu | Ollama ou service infonuagique à configurer | **Qwen3.5 9B ou Qwen3.6 35B intégré**, rédigé point par point selon l'ordre du jour |
+| Compte rendu | Ollama ou service infonuagique à configurer | **Qwen3.6 35B-A3B intégré** (Qwen3.5 9B sur les Mac de moins de 24 Go), rédigé point par point selon l'ordre du jour |
 | Langue | Générique | **Français québécois** (invite, typographie OQLF, lexique) |
 
 ## Pourquoi Rust?
@@ -134,7 +134,14 @@ Pour une rencontre plus ancienne : bouton « Reconnaître les voix » de l'ongle
 * Réglage fixe, sans paramètre : les voix de moins de 30 secondes de parole (rires, deux personnes à
   la fois) sont écartées. Sur trois rencontres d'essai, on retrouve le nombre de personnes, parfois
   avec une voix de plus ; un changement de volume ne change presque rien.
-* Le compte rendu ne lit pas encore les voix : leur effet sur la rédaction reste à mesurer.
+* Le compte rendu se sert des voix nommées pour les présences ; le texte rédigé ne lit pas encore les voix : leur
+  effet sur la rédaction reste à mesurer.
+
+**Voix en direct.** Pendant un enregistrement ou un import, Tour de table montre déjà qui parle : pastilles en
+pointillé dans la transcription et carte « Qui parle », où l'on peut nommer les voix sans attendre la fin. Ces voix
+sont provisoires (recalculées chaque minute, une voix apparaît après 30 s de parole) ; à la fin, le calcul complet
+les remplace et reprend les noms donnés aux voix qui parlent aux mêmes moments. Le calcul tourne dans un processus
+à part, sur un seul cœur (environ 4 % du temps réel).
 
 ## Ordre du jour et compte rendu
 
@@ -251,7 +258,8 @@ d'impression), `couverture.html` et des captures de `docs/guide/captures/` (thè
    Internet, et elle n'a lieu qu'une fois (Hugging Face). Vous pouvez fermer l'application en
    cours de route : l'installation reprend là où elle s'était arrêtée au démarrage suivant.
 2. Au besoin, choisissez le micro et la sortie audio dans **Paramètres** (« Par défaut » convient
-   le plus souvent), puis cliquez sur **Démarrer**.
+   le plus souvent). Sur l'écran **Nouvelle rencontre**, déposez l'ordre du jour si vous l'avez, cochez ce qu'on
+   enregistre (micro de la salle, son de l'ordinateur), puis cliquez sur **Démarrer l'enregistrement**.
 3. La transcription s'affiche au fil de la rencontre et elle est sauvegardée après chaque phrase.
    Vous ne perdez donc rien en cas de panne.
 4. À l'arrêt : **Rédiger le compte rendu** (modèle de langue local), **Exporter** (Markdown,
@@ -267,10 +275,10 @@ transcrits l'un après l'autre (la progression s'affiche par bloc).
 
 À la fin de la transcription, avec un ordre du jour, l'application range l'audio par point
 d'après les annonces reconnues (« on passe au point 3… »), sans rien demander. Sans ordre du
-jour, tout reste hors point. Le bouton « Découper par points » de la fiche ouvre au besoin un
-écran de vérification : l'heure de début de chaque point et la phrase qui l'a déclenchée ; on
-peut écouter 10 s autour de chaque frontière, la déplacer, en ajouter ou en retirer, puis
-valider.
+jour, tout reste hors point. Pour corriger, le bouton « Découper par points » de la fiche affiche la
+transcription ligne par ligne : un clic sur une ligne y fait commencer un point, un clic sur l'en-tête d'un point
+permet d'en changer, de le déplacer d'une ligne ou de le retirer, et le lecteur fait entendre le passage.
+« Valider le découpage » range ensuite l'audio par point.
 
 **Compte rendu automatique** : si un ordre du jour est joint (déposé avant l'import ou avant de
 démarrer la rencontre), le compte rendu est rédigé dès la fin du nettoyage de la transcription
@@ -284,14 +292,15 @@ autre fenêtre. Sous Windows, l'icône montre aussi l'avancement de l'import et 
 comme une barre de progression. Le bouton **Visualiser** de la fiche ouvre le compte rendu dans
 Word (`compte-rendu.docx`).
 
-**Réécouter** : dans l'onglet Transcription, le bouton ▶ d'un paragraphe fait entendre son audio ; dans le compte
-rendu d'une rencontre découpée par points, chaque titre de point a un bouton ▶ (l'audio du point, tous ses
-passages bout à bout) et « Voir dans la transcription », qui l'ouvre à côté du compte rendu pour comparer. Une barre au bas du volet donne Pause, Arrêter et
-l'avancement. L'audio est lu par morceaux de 20 s, jamais chargé en entier ; pas d'écoute pendant un
-enregistrement (le son de l'ordinateur serait capté).
+**Réécouter** : un lecteur est fixé au bas de la fiche. La lecture part du bouton ▶ d'un paragraphe de la
+transcription, du bouton « Écouter » d'un point du compte rendu, ou d'un clic sur la ligne du temps, qui montre les
+points (en haut) et qui parle (en bas) ; elle continue ensuite d'elle-même, avec des bonds de 5 s en arrière ou en
+avant, et la transcription suit le paragraphe entendu. « Voir dans la transcription » ouvre le passage d'un point à
+côté du compte rendu pour comparer. L'audio est lu par morceaux de 20 s, jamais chargé en entier ; pas d'écoute
+pendant un enregistrement (le son de l'ordinateur serait capté).
 
 **Paramètres** : seulement le micro et la sortie audio, la question sur les haut-parleurs de la
-salle et le lexique. Tout le reste (modèles, performance, détection de voix, conservation de
+salle et le lexique. Le thème clair ou foncé se change par le bouton au bas de la colonne de gauche. Tout le reste (modèles, performance, détection de voix, conservation de
 l'audio, compte rendu automatique) est décidé par l'application.
 
 Ligne de commande, pour transcrire un enregistrement existant (il devient une rencontre du
@@ -417,7 +426,9 @@ modification, régénérez la page avec
 ```
 src/
   main.rs        point d'entrée (interface ou --transcrire)
-  ui/mod.rs      interface egui : état, boucle, barre du haut, historique
+  ui/mod.rs      interface egui : état, boucle, historique
+  ui/colonne.rs  colonne de gauche : nouvelle rencontre, historique, guide, archives, paramètres, thème, menu Aide
+  ui/nouvelle.rs écran « Nouvelle rencontre »
   ui/live.rs     rencontre en cours, import, contrôles
   ui/past.rs     fiche d'une rencontre, compte rendu
   ui/onglets.rs  onglets de la fiche (ordre du jour, transcription, compte rendu), un volet ou deux côte à côte
@@ -425,7 +436,10 @@ src/
   ui/agenda.rs   ordre du jour
   ui/settings.rs Paramètres
   ui/installation.rs installation des modèles au premier démarrage
-  ui/widgets.rs  composants, couleurs, logo vectoriel
+  ui/apparence.rs palettes des thèmes clair et foncé, police Inter, boutons, cartes, pastilles
+  ui/widgets.rs  transcription, Markdown, logo vectoriel
+  ui/suppression.rs « Supprimer définitivement » et « Annuler l'import »
+  ui/arriere_plan.rs fenêtre fermée pendant un travail (Windows) ; zone_notification.rs, notification.rs, instance.rs
   audio/mod.rs   capture micro + loopback par plateforme
   audio/dsp.rs   mono, rééchantillonnage 16 kHz (FIR), détection de voix, découpage
   recorder.rs    session : alignement horloge, mixage, changement de point
@@ -437,6 +451,7 @@ src/
   voix.rs        reconnaissance des voix, processus tourdetable --voix (calcul par tourdetable-voix)
   regroupement.rs regroupement des empreintes de voix (liaison moyenne, seuil fixe)
   ui/voix.rs     file de la reconnaissance des voix, « Nommer les voix »
+  voix_direct.rs voix provisoires pendant l'enregistrement, processus tourdetable --voix-direct
   models.rs      modèles (Whisper, rédaction), téléchargement et vérification
   agenda.rs      lecture de l'ordre du jour (Word, PDF, texte)
   summary.rs     compte rendu par le modèle intégré (découpage des longues rencontres)
@@ -444,11 +459,12 @@ src/
   audio/import.rs  import d'enregistrements (MP4, M4A, MP3, WAV, FLAC, OGG), décodage en flux
   audio/frontieres.rs  rangement par point de l'audio d'un import (ou « Découper par points »)
   audio/lecture.rs écoute par morceaux : frontière, paragraphe, point (pause, avancement)
-  ui/ecoute.rs   écoute dans la fiche : barre de lecture, arrêt au changement de rencontre
-  ui/verification.rs  vérification des frontières proposées
+  ui/ecoute.rs   lecteur fixe au bas de la fiche : lecture continue, ligne du temps des points et des voix
+  ui/mode_decoupage.rs « Découper par points » dans la transcription
+  ui/verification.rs  vérification des frontières proposées à la fin d'un import
+  cli.rs         commandes --transcrire et --compte-rendu
 redaction/       programme auxiliaire de rédaction (llama.cpp), séparé à cause de ggml
 voix/            programme auxiliaire de reconnaissance des voix (sherpa-onnx), séparé à cause de std::regex
-  cli.rs         commandes --transcrire et --compte-rendu
 ```
 
 Fils d'exécution : `audio` (capture → 16 kHz → VAD → énoncés) → `whisper` (transcription) →
