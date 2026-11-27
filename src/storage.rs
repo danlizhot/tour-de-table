@@ -1024,7 +1024,6 @@ pub fn ouvrir_guide() -> Result<()> {
 
 /// Ouvre un dossier dans l'explorateur de fichiers du système.
 /// Pages du menu « Aide » : ouvertes dans le navigateur, seulement sur un clic. L'application ne s'y connecte pas.
-pub const LIEN_GUIDE_EN_LIGNE: &str = "https://danlizhot.github.io/tour-de-table/guide/guide-utilisation.pdf";
 pub const LIEN_STORE: &str = "https://apps.microsoft.com/detail/9nz4g5fg7l15";
 pub const LIEN_GITHUB: &str = "https://github.com/danlizhot/tour-de-table";
 
@@ -1395,10 +1394,9 @@ mod tests {
 
     #[test]
     fn liens_de_l_aide() {
-        for lien in [LIEN_GUIDE_EN_LIGNE, LIEN_STORE, LIEN_GITHUB] {
+        for lien in [LIEN_STORE, LIEN_GITHUB] {
             assert!(lien.starts_with("https://") && !lien.contains(' '), "{lien}");
         }
-        assert!(LIEN_GUIDE_EN_LIGNE.ends_with(".pdf"));
     }
 
     #[test]

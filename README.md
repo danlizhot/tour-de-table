@@ -20,9 +20,9 @@ avec Whisper, directement sur votre machine. Aucun son ni texte ne quitte l'ordi
 Linux : voir les [versions sur GitHub](https://github.com/danlizhot/tour-de-table/releases).
 
 📘 **[Guide d'utilisation (PDF imprimable)](https://danlizhot.github.io/tour-de-table/guide/guide-utilisation.pdf)**, avec des captures
-d'écran pas à pas. Il est aussi livré avec l'application : bouton « Guide d'utilisation », au bas de la colonne de gauche.
-Le menu « Aide », à côté du numéro de version, ouvre aussi ce guide à jour en ligne, la fiche du Microsoft Store et
-le projet sur GitHub, dans le navigateur.
+d'écran pas à pas. Il est aussi livré avec l'application : bouton « Guide d'utilisation », au bas de la colonne de gauche : c'est
+celui de la version installée, consultable sans connexion. Le menu « Aide », à côté du numéro de version, ouvre la fiche du
+Microsoft Store et le projet sur GitHub, dans le navigateur.
 
 ![Capture d'écran](assets/capture.png)
 
