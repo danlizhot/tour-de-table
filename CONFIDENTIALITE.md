@@ -47,7 +47,9 @@ Microsoft Store, pour savoir si une mise à jour existe :
    l'application : Tour de table demande à Windows si le Microsoft Store offre une nouvelle
    version, comme le fait Windows pour ses mises à jour automatiques. Seuls l'identifiant et la
    version de l'application sont en jeu ; aucune de vos données n'est transmise. Si une version
-   existe, une bannière l'indique ; « Mettre à jour » ouvre le Microsoft Store, qui l'installe.
+   existe, une bannière l'indique ; « Mettre à jour » demande au Microsoft Store de la télécharger
+   et de l'installer (Windows demande de confirmer). C'est le Store qui télécharge, comme pour ses
+   mises à jour automatiques ; aucune de vos données n'est transmise.
 
 Les comptes rendus sont rédigés **par le modèle intégré, sur votre ordinateur, sans aucune
 connexion** (postes de 16 Go de mémoire vive et plus).

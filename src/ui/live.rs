@@ -17,6 +17,9 @@ use crate::storage::{Meeting, clock};
 
 impl TourDeTableApp {
     pub(super) fn start_recording(&mut self) {
+        if self.mise_a_jour_en_cours() {
+            return;
+        }
         self.suspendre_nettoyage();
         if !self.whisper_disponible() {
             return;
@@ -35,6 +38,9 @@ impl TourDeTableApp {
     /// « Poursuivre la rencontre » : une rencontre arrêtée par une panne reprend dans son dossier,
     /// au point où l'on était rendu, à la suite de son audio et de sa transcription.
     pub(super) fn poursuivre(&mut self, idx: usize) {
+        if self.mise_a_jour_en_cours() {
+            return;
+        }
         if self.recorder.is_some() || self.live.is_some() || self.finishing || self.import_job.is_some() || self.annulation.is_some() || self.fin_apres_panne.is_some() {
             self.notify("Attendez la fin de la transcription en cours avant de poursuivre la rencontre.", true);
             return;
@@ -193,6 +199,9 @@ impl TourDeTableApp {
     /// Importe un enregistrement existant (Teams, Zoom, téléphone…) : il devient
     /// une rencontre comme les autres, transcrite par la même chaîne.
     pub(super) fn import_audio(&mut self, path: &std::path::Path) {
+        if self.mise_a_jour_en_cours() {
+            return;
+        }
         if self.recorder.is_some() || self.finishing || self.import_job.is_some() || self.annulation.is_some() {
             self.notify("Attendez la fin de la transcription en cours avant d'importer un fichier.", true);
             return;
