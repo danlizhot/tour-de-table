@@ -170,6 +170,10 @@ pub struct TourDeTableApp {
     /// Version du Microsoft Store : réponse attendue du Store, puis mise à jour offerte (bannière).
     verification_mise_a_jour: Receiver<bool>,
     mise_a_jour_offerte: bool,
+    /// Mise à jour lancée depuis l'application : avancement envoyé par le fil du Store, dernier état reçu.
+    installation_maj: Option<(Receiver<crate::mise_a_jour::Etat>, crate::mise_a_jour::Etat)>,
+    /// Fenêtre de l'application (Windows), à qui appartient la fenêtre de mise à jour du Store.
+    fenetre: Option<isize>,
     ctx: egui::Context,
 }
 
@@ -241,6 +245,8 @@ impl TourDeTableApp {
                 crate::mise_a_jour::verifier(move || ctx.request_repaint())
             },
             mise_a_jour_offerte: false,
+            installation_maj: None,
+            fenetre: crate::mise_a_jour::fenetre(cc),
             ctx: cc.egui_ctx.clone(),
             cfg,
         };
@@ -265,8 +271,32 @@ impl TourDeTableApp {
     }
 
     /// Bannière « Une nouvelle version est disponible » (version du Microsoft Store). La mise à jour
-    /// ferme l'application : elle attend la fin de la rencontre et des travaux en cours.
+    /// ferme l'application : elle attend la fin de la rencontre et des travaux en cours. Une fois lancée, la bannière
+    /// montre son avancement ; Windows ferme puis relance Tour de table pour l'installer.
     fn bandeau_mise_a_jour(&mut self, ui: &mut Ui) {
+        if let Some((_, etat)) = &self.installation_maj {
+            use crate::mise_a_jour::Etat;
+            let p = apparence::palette(ui);
+            let (texte, part) = match etat {
+                Etat::Telechargement(f) => (format!("Téléchargement de la nouvelle version : {} %", (f * 100.0).round()), Some(*f)),
+                Etat::Installation => ("Installation : Tour de table va se fermer, puis se rouvrir tout seul.".to_string(), None),
+                _ => ("Préparation de la mise à jour…".to_string(), None),
+            };
+            egui::Frame::new().fill(p.accent_doux).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin { left: 16, right: 16, top: 8, bottom: 8 }).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 34.0), Layout::left_to_right(Align::Center), |ui| {
+                    ui.label(apparence::gras(texte, 14.0).color(p.accent_texte));
+                    if let Some(f) = part {
+                        ui.add_space(12.0);
+                        ui.add(egui::ProgressBar::new(f).desired_width(ui.available_width().min(260.0)));
+                    } else {
+                        ui.add_space(8.0);
+                        ui.spinner();
+                    }
+                });
+            });
+            return;
+        }
         let occupe = self.recorder.is_some()
             || self.finishing
             || self.import_job.is_some()
@@ -281,10 +311,12 @@ impl TourDeTableApp {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let bouton = ui
                         .add_enabled(!occupe, apparence::bouton_widget(ui, "Mettre à jour", apparence::Genre::Principal, 34.0))
-                        .on_hover_text("Ouvre le Microsoft Store, qui installe la nouvelle version")
+                        .on_hover_text("Télécharge et installe la nouvelle version par le Microsoft Store ; Tour de table se ferme, puis se rouvre")
                         .on_disabled_hover_text("Après la rencontre et les travaux en cours : la mise à jour ferme Tour de table");
                     if bouton.clicked() {
-                        crate::mise_a_jour::ouvrir_store();
+                        let ctx = self.ctx.clone();
+                        let rx = crate::mise_a_jour::installer(self.fenetre, move || ctx.request_repaint());
+                        self.installation_maj = Some((rx, crate::mise_a_jour::Etat::Attente));
                         self.mise_a_jour_offerte = false;
                     }
                     if ui.add(apparence::bouton_widget(ui, "Plus tard", apparence::Genre::Discret, 34.0)).clicked() {
@@ -293,6 +325,40 @@ impl TourDeTableApp {
                 });
             });
         });
+    }
+
+    /// Avancement de la mise à jour lancée depuis l'application. Refusée : l'avis revient ; échec : la page du Store
+    /// s'est ouverte à la place.
+    fn pump_mise_a_jour(&mut self) {
+        use crate::mise_a_jour::Etat;
+        let Some((rx, etat)) = &mut self.installation_maj else { return };
+        let mut fin = None;
+        while let Ok(e) = rx.try_recv() {
+            match e {
+                Etat::Annulee | Etat::Echec(_) => fin = Some(e),
+                autre => *etat = autre,
+            }
+        }
+        match fin {
+            Some(Etat::Annulee) => {
+                self.installation_maj = None;
+                self.mise_a_jour_offerte = true;
+            }
+            Some(_) => {
+                self.installation_maj = None;
+                self.notify("La mise à jour n'a pas pu se faire d'ici : la page du Microsoft Store s'est ouverte pour la terminer.", false);
+            }
+            None => {}
+        }
+    }
+
+    /// Une mise à jour est lancée : Windows fermera bientôt Tour de table. Rien de neuf ne démarre d'ici là.
+    pub(super) fn mise_a_jour_en_cours(&mut self) -> bool {
+        if self.installation_maj.is_none() {
+            return false;
+        }
+        self.notify("Une mise à jour est en cours : Tour de table va se fermer pour l'installer, puis se rouvrir. Attendez avant de commencer.", true);
+        true
     }
 
     fn appliquer_theme(&self) {
@@ -459,6 +525,7 @@ impl TourDeTableApp {
         if let Ok(oui) = self.verification_mise_a_jour.try_recv() {
             self.mise_a_jour_offerte = oui;
         }
+        self.pump_mise_a_jour();
         if let Some(rx) = &self.audio_export
             && let Ok(res) = rx.try_recv()
         {
@@ -688,7 +755,7 @@ impl eframe::App for TourDeTableApp {
             }
         }
         self.colonne(ui);
-        if self.mise_a_jour_offerte {
+        if self.mise_a_jour_offerte || self.installation_maj.is_some() {
             egui::Panel::top("mise_a_jour")
                 .show_separator_line(false)
                 .frame(egui::Frame::new().fill(apparence::palette(ui).fond).inner_margin(egui::Margin { left: 24, right: 24, top: 16, bottom: 0 }))
